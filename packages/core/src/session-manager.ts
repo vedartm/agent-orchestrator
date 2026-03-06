@@ -1080,17 +1080,15 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
         // Cap per-session enrichment at 2s — subprocess calls (tmux/ps) can be
         // slow under load. If we time out, session keeps its metadata values.
         const enrichTimeout = new Promise<void>((resolve) => setTimeout(resolve, 2_000));
-        await Promise.race([
-          ensureHandleAndEnrich(
-            session,
-            sessionName,
-            sessionsDir,
-            project,
-            selectedAgentName,
-            plugins,
-          ),
-          enrichTimeout,
-        ]);
+        const enrichPromise = ensureHandleAndEnrich(
+          session,
+          sessionName,
+          sessionsDir,
+          project,
+          selectedAgentName,
+          plugins,
+        ).catch(() => {});
+        await Promise.race([enrichPromise, enrichTimeout]);
 
         return session;
       },
