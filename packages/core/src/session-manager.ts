@@ -366,30 +366,7 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
     sessionsDir: string,
     criteria: { issueId?: string; sessionId?: string },
   ): string | undefined {
-    const matchesCriteria = (id: string, raw: Record<string, string> | null): boolean => {
-      if (!raw) return false;
-      if (raw["agent"] !== "opencode") return false;
-      if (criteria.issueId !== undefined && raw["issue"] !== criteria.issueId) return false;
-      if (criteria.sessionId !== undefined && id !== criteria.sessionId) return false;
-      return true;
-    };
-
-    const ids: string[] = [];
-    const maybeAdd = (id: string, raw: Record<string, string> | null) => {
-      if (!matchesCriteria(id, raw)) return;
-      const mapped = raw?.["opencodeSessionId"];
-      if (typeof mapped !== "string" || mapped.length === 0) return;
-      ids.push(mapped);
-    };
-
-    for (const id of sortSessionIdsForReuse(listMetadata(sessionsDir))) {
-      maybeAdd(id, readMetadataRaw(sessionsDir, id));
-    }
-    for (const id of sortSessionIdsForReuse(listArchivedSessionIds(sessionsDir))) {
-      maybeAdd(id, readArchivedMetadataRaw(sessionsDir, id));
-    }
-
-    return [...new Set(ids)][0];
+    return findOpenCodeSessionIds(sessionsDir, criteria)[0];
   }
 
   function findOpenCodeSessionIds(
@@ -1191,7 +1168,9 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
             opencodeSessionId: "",
             opencodeCleanedAt: new Date().toISOString(),
           });
-        } catch {}
+        } catch {
+          void 0;
+        }
       }
     }
 

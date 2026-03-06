@@ -11,6 +11,7 @@ import {
 import { EventEmitter } from "node:events";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import type * as ChildProcessModule from "node:child_process";
 import {
   type Session,
   type CleanupResult,
@@ -58,7 +59,7 @@ function makeMockChild(exitCode: number): EventEmitter {
 }
 
 vi.mock("node:child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:child_process")>();
+  const actual = await importOriginal<typeof ChildProcessModule>();
   return {
     ...actual,
     spawn: (...args: unknown[]) => mockSpawn(...args),
