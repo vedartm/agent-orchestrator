@@ -106,6 +106,7 @@ beforeEach(() => {
   });
 
   mockSessionManager.spawn.mockReset();
+  mockSessionManager.claimPR.mockReset();
   mockExec.mockReset();
 });
 
@@ -304,6 +305,160 @@ describe("spawn command", () => {
       "process.exit(1)",
     );
   });
+
+
+  it("claims a PR for the spawned session when --claim-pr is provided", async () => {
+    const fakeSession: Session = {
+      id: "app-1",
+      projectId: "my-app",
+      status: "spawning",
+      activity: null,
+      branch: "feat/new-session",
+      issueId: null,
+      pr: null,
+      workspacePath: "/tmp/wt",
+      runtimeHandle: { id: "hash-app-1", runtimeName: "tmux", data: {} },
+      agentInfo: null,
+      createdAt: new Date(),
+      lastActivityAt: new Date(),
+      metadata: {},
+    };
+
+    mockSessionManager.spawn.mockResolvedValue(fakeSession);
+    mockSessionManager.claimPR.mockResolvedValue({
+      sessionId: "app-1",
+      projectId: "my-app",
+      pr: {
+        number: 123,
+        url: "https://github.com/org/repo/pull/123",
+        title: "Existing PR",
+        owner: "org",
+        repo: "repo",
+        branch: "feat/claimed-pr",
+        baseBranch: "main",
+        isDraft: false,
+      },
+      branchChanged: true,
+      githubAssigned: false,
+      takenOverFrom: [],
+    });
+
+    await program.parseAsync(["node", "test", "spawn", "my-app", "--claim-pr", "123"]);
+
+    expect(mockSessionManager.spawn).toHaveBeenCalledWith({
+      projectId: "my-app",
+      issueId: undefined,
+      agent: undefined,
+    });
+    expect(mockSessionManager.claimPR).toHaveBeenCalledWith("app-1", "123", {
+      assignOnGithub: undefined,
+      takeover: undefined,
+    });
+
+    const output = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(output).toContain("https://github.com/org/repo/pull/123");
+    expect(output).toContain("feat/claimed-pr");
+  });
+
+  it("passes takeover and GitHub assignment flags through to claimPR", async () => {
+    const fakeSession: Session = {
+      id: "app-1",
+      projectId: "my-app",
+      status: "spawning",
+      activity: null,
+      branch: null,
+      issueId: null,
+      pr: null,
+      workspacePath: "/tmp/wt",
+      runtimeHandle: { id: "hash-app-1", runtimeName: "tmux", data: {} },
+      agentInfo: null,
+      createdAt: new Date(),
+      lastActivityAt: new Date(),
+      metadata: {},
+    };
+
+    mockSessionManager.spawn.mockResolvedValue(fakeSession);
+    mockSessionManager.claimPR.mockResolvedValue({
+      sessionId: "app-1",
+      projectId: "my-app",
+      pr: {
+        number: 123,
+        url: "https://github.com/org/repo/pull/123",
+        title: "Existing PR",
+        owner: "org",
+        repo: "repo",
+        branch: "feat/claimed-pr",
+        baseBranch: "main",
+        isDraft: false,
+      },
+      branchChanged: true,
+      githubAssigned: true,
+      takenOverFrom: ["app-9"],
+    });
+
+    await program.parseAsync([
+      "node",
+      "test",
+      "spawn",
+      "my-app",
+      "--claim-pr",
+      "123",
+      "--takeover",
+      "--assign-on-github",
+    ]);
+
+    expect(mockSessionManager.claimPR).toHaveBeenCalledWith("app-1", "123", {
+      assignOnGithub: true,
+      takeover: true,
+    });
+  });
+
+  it("rejects claim-only flags without --claim-pr", async () => {
+    await expect(
+      program.parseAsync(["node", "test", "spawn", "my-app", "--takeover"]),
+    ).rejects.toThrow("process.exit(1)");
+
+    const errors = vi
+      .mocked(console.error)
+      .mock.calls.map((c) => String(c[0]))
+      .join("\n");
+    expect(errors).toContain("require --claim-pr");
+    expect(mockSessionManager.spawn).not.toHaveBeenCalled();
+    expect(mockSessionManager.claimPR).not.toHaveBeenCalled();
+  });
+
+  it("reports claim failures after creating the session", async () => {
+    const fakeSession: Session = {
+      id: "app-1",
+      projectId: "my-app",
+      status: "spawning",
+      activity: null,
+      branch: null,
+      issueId: null,
+      pr: null,
+      workspacePath: "/tmp/wt",
+      runtimeHandle: { id: "hash-app-1", runtimeName: "tmux", data: {} },
+      agentInfo: null,
+      createdAt: new Date(),
+      lastActivityAt: new Date(),
+      metadata: {},
+    };
+
+    mockSessionManager.spawn.mockResolvedValue(fakeSession);
+    mockSessionManager.claimPR.mockRejectedValue(new Error("already tracked by app-9"));
+
+    await expect(
+      program.parseAsync(["node", "test", "spawn", "my-app", "--claim-pr", "123"]),
+    ).rejects.toThrow("process.exit(1)");
+
+    const errors = vi
+      .mocked(console.error)
+      .mock.calls.map((c) => String(c[0]))
+      .join("\n");
+    expect(errors).toContain(
+      "Session app-1 was created, but failed to claim PR 123: already tracked by app-9",
+    );
+  });
 });
 
 describe("spawn pre-flight checks", () => {
@@ -373,6 +528,31 @@ describe("spawn pre-flight checks", () => {
     await expect(program.parseAsync(["node", "test", "spawn", "my-app"])).rejects.toThrow(
       "process.exit(1)",
     );
+
+    const errors = vi
+      .mocked(console.error)
+      .mock.calls.map((c) => String(c[0]))
+      .join("\n");
+    expect(errors).toContain("not authenticated");
+    expect(mockSessionManager.spawn).not.toHaveBeenCalled();
+  });
+
+  it("checks gh auth when --claim-pr targets a github SCM project", async () => {
+    const projects = (mockConfigRef.current as Record<string, unknown>).projects as Record<
+      string,
+      Record<string, unknown>
+    >;
+    projects["my-app"].tracker = { plugin: "linear" };
+    projects["my-app"].scm = { plugin: "github" };
+
+    mockExec
+      .mockResolvedValueOnce({ stdout: "tmux 3.3a", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "gh version 2.40", stderr: "" })
+      .mockRejectedValueOnce(new Error("not logged in"));
+
+    await expect(
+      program.parseAsync(["node", "test", "spawn", "my-app", "--claim-pr", "123"]),
+    ).rejects.toThrow("process.exit(1)");
 
     const errors = vi
       .mocked(console.error)
