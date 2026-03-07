@@ -485,10 +485,10 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     session: Session,
     sessionName: string,
     sessionsDir: string,
-    selectedAgentName: string | undefined,
+    effectiveAgentName: string,
     sessionListPromise?: Promise<OpenCodeSessionListEntry[]>,
   ): Promise<void> {
-    if (selectedAgentName !== "opencode") return;
+    if (effectiveAgentName !== "opencode") return;
     if (asValidOpenCodeSessionId(session.metadata["opencodeSessionId"])) return;
 
     const discovered = await discoverOpenCodeSessionIdByTitle(
@@ -522,7 +522,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     sessionName: string,
     sessionsDir: string,
     project: ProjectConfig,
-    selectedAgentName: string | undefined,
+    effectiveAgentName: string,
     plugins: ReturnType<typeof resolvePlugins>,
     sessionListPromise?: Promise<OpenCodeSessionListEntry[]>,
   ): Promise<void> {
@@ -530,7 +530,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       session,
       sessionName,
       sessionsDir,
-      selectedAgentName,
+      effectiveAgentName,
       sessionListPromise,
     );
 
@@ -1123,7 +1123,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
   async function list(projectId?: string): Promise<Session[]> {
     const allSessions = listAllSessions(projectId);
     const results: Session[] = [];
-    const openCodeSessionListPromise = fetchOpenCodeSessionList();
+    let openCodeSessionListPromise: Promise<OpenCodeSessionListEntry[]> | undefined;
 
     for (const { sessionName, projectId: sessionProjectId } of allSessions) {
       const project = config.projects[sessionProjectId];
@@ -1146,7 +1146,12 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
       const session = metadataToSession(sessionName, raw, createdAt, modifiedAt);
       const selectedAgentName = raw["agent"];
-      const plugins = resolvePlugins(project, selectedAgentName);
+      const effectiveAgentName = selectedAgentName ?? project.agent ?? config.defaults.agent;
+      const plugins = resolvePlugins(project, effectiveAgentName);
+      const sessionListPromise =
+        effectiveAgentName === "opencode"
+          ? (openCodeSessionListPromise ??= fetchOpenCodeSessionList())
+          : undefined;
 
       let enrichTimeoutId: ReturnType<typeof setTimeout> | null = null;
       const enrichTimeout = new Promise<void>((resolve) => {
@@ -1157,9 +1162,9 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         sessionName,
         sessionsDir,
         project,
-        selectedAgentName,
+        effectiveAgentName,
         plugins,
-        openCodeSessionListPromise,
+        sessionListPromise,
       ).catch(() => {});
       try {
         await Promise.race([enrichPromise, enrichTimeout]);
@@ -1197,13 +1202,14 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       const session = metadataToSession(sessionId, raw, createdAt, modifiedAt);
 
       const selectedAgentName = raw["agent"];
-      const plugins = resolvePlugins(project, selectedAgentName);
+      const effectiveAgentName = selectedAgentName ?? project.agent ?? config.defaults.agent;
+      const plugins = resolvePlugins(project, effectiveAgentName);
       await ensureHandleAndEnrich(
         session,
         sessionId,
         sessionsDir,
         project,
-        selectedAgentName,
+        effectiveAgentName,
         plugins,
       );
 
