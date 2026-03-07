@@ -100,37 +100,48 @@ async function deleteOpenCodeSession(sessionId: string): Promise<void> {
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
-async function discoverOpenCodeSessionIdsByTitle(
-  sessionId: string,
+interface OpenCodeSessionListEntry {
+  id: string;
+  title: string;
+}
+
+async function fetchOpenCodeSessionList(
   timeoutMs = OPENCODE_DISCOVERY_TIMEOUT_MS,
-): Promise<string[]> {
+): Promise<OpenCodeSessionListEntry[]> {
   try {
     const { stdout } = await execFileAsync("opencode", ["session", "list", "--format", "json"], {
       timeout: timeoutMs,
     });
     const parsed = safeJsonParse<unknown>(stdout);
     if (!Array.isArray(parsed)) return [];
-    const title = `AO:${sessionId}`;
-    const candidates = parsed.filter((entry) => {
-      if (!entry || typeof entry !== "object") return false;
-      const candidateTitle = typeof entry["title"] === "string" ? entry["title"] : "";
-      const candidateId = typeof entry["id"] === "string" ? entry["id"] : "";
-      return candidateTitle === title && candidateId.length > 0;
-    });
 
-    return candidates
-      .map((entry) => asValidOpenCodeSessionId(entry["id"]))
-      .filter((id): id is string => typeof id === "string");
+    return parsed.flatMap((entry) => {
+      if (!entry || typeof entry !== "object") return [];
+      const title = typeof entry["title"] === "string" ? entry["title"] : "";
+      const id = asValidOpenCodeSessionId(entry["id"]);
+      return id ? [{ id, title }] : [];
+    });
   } catch {
     return [];
   }
 }
 
+async function discoverOpenCodeSessionIdsByTitle(
+  sessionId: string,
+  timeoutMs = OPENCODE_DISCOVERY_TIMEOUT_MS,
+  sessionListPromise?: Promise<OpenCodeSessionListEntry[]>,
+): Promise<string[]> {
+  const sessions = await (sessionListPromise ?? fetchOpenCodeSessionList(timeoutMs));
+  const title = `AO:${sessionId}`;
+  return sessions.filter((entry) => entry.title === title).map((entry) => entry.id);
+}
+
 async function discoverOpenCodeSessionIdByTitle(
   sessionId: string,
   timeoutMs?: number,
+  sessionListPromise?: Promise<OpenCodeSessionListEntry[]>,
 ): Promise<string | undefined> {
-  const matches = await discoverOpenCodeSessionIdsByTitle(sessionId, timeoutMs);
+  const matches = await discoverOpenCodeSessionIdsByTitle(sessionId, timeoutMs, sessionListPromise);
   return matches[0];
 }
 
@@ -475,11 +486,16 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     sessionName: string,
     sessionsDir: string,
     selectedAgentName: string | undefined,
+    sessionListPromise?: Promise<OpenCodeSessionListEntry[]>,
   ): Promise<void> {
     if (selectedAgentName !== "opencode") return;
     if (asValidOpenCodeSessionId(session.metadata["opencodeSessionId"])) return;
 
-    const discovered = await discoverOpenCodeSessionIdByTitle(sessionName);
+    const discovered = await discoverOpenCodeSessionIdByTitle(
+      sessionName,
+      OPENCODE_DISCOVERY_TIMEOUT_MS,
+      sessionListPromise,
+    );
     if (!discovered) return;
 
     session.metadata["opencodeSessionId"] = discovered;
@@ -508,8 +524,15 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     project: ProjectConfig,
     selectedAgentName: string | undefined,
     plugins: ReturnType<typeof resolvePlugins>,
+    sessionListPromise?: Promise<OpenCodeSessionListEntry[]>,
   ): Promise<void> {
-    await ensureOpenCodeSessionMapping(session, sessionName, sessionsDir, selectedAgentName);
+    await ensureOpenCodeSessionMapping(
+      session,
+      sessionName,
+      sessionsDir,
+      selectedAgentName,
+      sessionListPromise,
+    );
 
     const handleFromMetadata = session.runtimeHandle !== null;
     if (!handleFromMetadata) {
@@ -1100,6 +1123,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
   async function list(projectId?: string): Promise<Session[]> {
     const allSessions = listAllSessions(projectId);
     const results: Session[] = [];
+    const openCodeSessionListPromise = fetchOpenCodeSessionList();
 
     for (const { sessionName, projectId: sessionProjectId } of allSessions) {
       const project = config.projects[sessionProjectId];
@@ -1135,6 +1159,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         project,
         selectedAgentName,
         plugins,
+        openCodeSessionListPromise,
       ).catch(() => {});
       try {
         await Promise.race([enrichPromise, enrichTimeout]);

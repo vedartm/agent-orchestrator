@@ -38,6 +38,7 @@ function installMockOpencode(
   sessionListJson: string,
   deleteLogPath: string,
   listDelaySeconds = 0,
+  listLogPath?: string,
 ): string {
   const binDir = join(tmpDir, "mock-bin");
   mkdirSync(binDir, { recursive: true });
@@ -48,6 +49,7 @@ function installMockOpencode(
       "#!/usr/bin/env bash",
       "set -euo pipefail",
       'if [[ "$1" == "session" && "$2" == "list" ]]; then',
+      listLogPath ? `  printf '%s\n' "$*" >> '${listLogPath.replace(/'/g, "'\\''")}'` : "",
       listDelaySeconds > 0 ? `  sleep ${listDelaySeconds}` : "",
       `  printf '%s\n' '${sessionListJson.replace(/'/g, "'\\''")}'`,
       "  exit 0",
@@ -1364,6 +1366,52 @@ describe("get", () => {
     expect(meta?.["opencodeSessionId"]).toBe("ses_get_discovered");
   });
 
+  it("reuses a single OpenCode session list lookup when multiple unmapped sessions are listed", async () => {
+    const deleteLogPath = join(tmpDir, "opencode-delete-list-shared.log");
+    const listLogPath = join(tmpDir, "opencode-list-shared.log");
+    const mockBin = installMockOpencode(
+      JSON.stringify([
+        { id: "ses_get_discovered_1", title: "AO:app-1" },
+        { id: "ses_get_discovered_2", title: "AO:app-2" },
+      ]),
+      deleteLogPath,
+      0,
+      listLogPath,
+    );
+    process.env.PATH = `${mockBin}:${originalPath ?? ""}`;
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+      agent: "opencode",
+      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+    });
+    writeMetadata(sessionsDir, "app-2", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+      agent: "opencode",
+      runtimeHandle: JSON.stringify(makeHandle("rt-2")),
+    });
+
+    const sm = createSessionManager({ config, registry: mockRegistry });
+    const sessions = await sm.list();
+
+    expect(sessions).toHaveLength(2);
+    expect(readMetadataRaw(sessionsDir, "app-1")?.["opencodeSessionId"]).toBe(
+      "ses_get_discovered_1",
+    );
+    expect(readMetadataRaw(sessionsDir, "app-2")?.["opencodeSessionId"]).toBe(
+      "ses_get_discovered_2",
+    );
+
+    const listInvocations = readFileSync(listLogPath, "utf-8").trim().split("\n").filter(Boolean);
+    expect(listInvocations).toHaveLength(1);
+  });
+
   it("preserves arbitrary metadata flags on loaded sessions", async () => {
     writeMetadata(sessionsDir, "app-1", {
       worktree: "/tmp",
@@ -2252,6 +2300,40 @@ describe("remap", () => {
     expect(mapped).toBe("ses_discovered_valid");
     const meta = readMetadataRaw(sessionsDir, "app-1");
     expect(meta?.["opencodeSessionId"]).toBe("ses_discovered_valid");
+  });
+
+  it("uses the project agent fallback when metadata does not persist the agent name", async () => {
+    const deleteLogPath = join(tmpDir, "opencode-delete-remap-project-agent.log");
+    const mockBin = installMockOpencode(
+      JSON.stringify([
+        {
+          id: "ses_project_agent",
+          title: "AO:app-1",
+        },
+      ]),
+      deleteLogPath,
+    );
+    process.env.PATH = `${mockBin}:${originalPath ?? ""}`;
+
+    config.projects["my-app"] = {
+      ...config.projects["my-app"]!,
+      agent: "opencode",
+    };
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+    });
+
+    const sm = createSessionManager({ config, registry: mockRegistry });
+    const mapped = await sm.remap("app-1");
+
+    expect(mapped).toBe("ses_project_agent");
+    const meta = readMetadataRaw(sessionsDir, "app-1");
+    expect(meta?.["opencodeSessionId"]).toBe("ses_project_agent");
   });
 });
 
