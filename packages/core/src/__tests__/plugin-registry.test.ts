@@ -216,6 +216,30 @@ describe("loadBuiltins", () => {
       retries: 4,
     });
   });
+
+  it("passes notifier config from config.notifiers when loading builtins", async () => {
+    const registry = createPluginRegistry();
+    const fakeOpenClaw = makePlugin("notifier", "openclaw");
+    const cfg = makeOrchestratorConfig({
+      notifiers: {
+        openclaw: {
+          plugin: "openclaw",
+          url: "http://127.0.0.1:18789/hooks/agent",
+          token: "tok",
+        },
+      },
+    });
+
+    await registry.loadBuiltins(cfg, async (pkg: string) => {
+      if (pkg === "@composio/ao-plugin-notifier-openclaw") return fakeOpenClaw;
+      throw new Error(`Not found: ${pkg}`);
+    });
+
+    expect(fakeOpenClaw.create).toHaveBeenCalledWith({
+      url: "http://127.0.0.1:18789/hooks/agent",
+      token: "tok",
+    });
+  });
 });
 
 describe("extractPluginConfig (via register with config)", () => {
