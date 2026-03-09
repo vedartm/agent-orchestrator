@@ -58,10 +58,12 @@ export function useSessionEvents(
           const snapshot = data as SSESnapshotEvent;
           dispatch({ type: "snapshot", patches: snapshot.sessions });
         }
-      } catch {}
+      } catch {
+        return;
+      }
     };
 
-    es.onerror = () => {};
+    es.onerror = () => undefined;
 
     return () => {
       es.close();

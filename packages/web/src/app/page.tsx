@@ -11,7 +11,7 @@ import {
 } from "@/lib/serialize";
 import { prCache, prCacheKey } from "@/lib/cache";
 import { getProjectName } from "@/lib/project-name";
-import type { Session, OrchestratorConfig } from "@composio/ao-core";
+import type { OrchestratorConfig } from "@composio/ao-core";
 
 export const dynamic = "force-dynamic";
 
@@ -114,7 +114,10 @@ export default async function Home() {
     });
     const enrichTimeout = new Promise<void>((resolve) => setTimeout(resolve, 4_000));
     await Promise.race([Promise.allSettled(enrichPromises), enrichTimeout]);
-  } catch {}
+  } catch {
+    sessions = [];
+    orchestratorId = null;
+  }
 
   return (
     <Dashboard

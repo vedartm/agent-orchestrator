@@ -608,7 +608,7 @@ describe("API Routes", () => {
 
     it("filters sessions by sessionPrefix when projectId does not match", async () => {
       const prefixMatchSessions = [
-        makeSession({ id: "app-1", projectId: "", status: "working", activity: "active" }),
+        makeSession({ id: "my-app-1", projectId: "", status: "working", activity: "active" }),
         makeSession({
           id: "backend-1",
           projectId: "backend",
@@ -626,7 +626,7 @@ describe("API Routes", () => {
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.sessions.length).toBe(1);
-      expect(data.sessions[0].id).toBe("app-1");
+      expect(data.sessions[0].id).toBe("my-app-1");
     });
 
     it("returns all sessions when project=all", async () => {
