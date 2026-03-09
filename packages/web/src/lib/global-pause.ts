@@ -1,3 +1,10 @@
+import {
+  GLOBAL_PAUSE_REASON_KEY,
+  GLOBAL_PAUSE_SOURCE_KEY,
+  GLOBAL_PAUSE_UNTIL_KEY,
+  parsePauseUntil,
+} from "@composio/ao-core";
+
 export interface GlobalPauseState {
   pausedUntil: string;
   reason: string;
@@ -8,15 +15,13 @@ export function resolveGlobalPause(
   sessions: Array<{ id: string; metadata: Record<string, string> }>,
 ): GlobalPauseState | null {
   const orchestrator = sessions.find((session) => session.id.endsWith("-orchestrator"));
-  const pausedUntil = orchestrator?.metadata["globalPauseUntil"];
-  if (!pausedUntil) return null;
-
-  const parsed = new Date(pausedUntil);
-  if (Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) return null;
+  const pausedUntilRaw = orchestrator?.metadata[GLOBAL_PAUSE_UNTIL_KEY];
+  const parsed = parsePauseUntil(pausedUntilRaw);
+  if (!parsed || parsed.getTime() <= Date.now()) return null;
 
   return {
     pausedUntil: parsed.toISOString(),
-    reason: orchestrator?.metadata["globalPauseReason"] ?? "Model rate limit reached",
-    sourceSessionId: orchestrator?.metadata["globalPauseSource"] ?? null,
+    reason: orchestrator?.metadata[GLOBAL_PAUSE_REASON_KEY] ?? "Model rate limit reached",
+    sourceSessionId: orchestrator?.metadata[GLOBAL_PAUSE_SOURCE_KEY] ?? null,
   };
 }
