@@ -1,28 +1,49 @@
 import { getServices } from "@/lib/services";
 import { sessionToDashboard } from "@/lib/serialize";
 import { getAttentionLevel } from "@/lib/types";
+import type { Session } from "@composio/ao-core";
 
 export const dynamic = "force-dynamic";
 
-/**
- * GET /api/events — SSE stream for real-time lifecycle events
- *
- * Sends session state updates to connected clients.
- * Polls SessionManager.list() on an interval (no SSE push from core yet).
+function matchesProject(
+  session: { id: string; projectId: string },
+  projectId: string,
+  projects: Record<string, { sessionPrefix?: string }>,
+): boolean {
+  if (session.projectId === projectId) return true;
+  const project = projects[projectId];
+  if (project?.sessionPrefix && session.id.startsWith(project.sessionPrefix)) return true;
+  return false;
+}
+
+/** GET /api/events — SSE stream for real-time lifecycle events
+ * Query params:
+ * - project: Filter to a specific project. "all" = no filter.
  */
-export async function GET(): Promise<Response> {
+export async function GET(request: Request): Promise<Response> {
+  const { searchParams } = new URL(request.url);
+  const projectFilter = searchParams.get("project");
+
   const encoder = new TextEncoder();
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let updates: ReturnType<typeof setInterval> | undefined;
 
+  const filterSessions = (
+    sessions: Session[],
+    config: { projects: Record<string, { sessionPrefix?: string }> },
+  ) => {
+    if (!projectFilter || projectFilter === "all") return sessions;
+    return sessions.filter((s) => matchesProject(s, projectFilter, config.projects));
+  };
+
   const stream = new ReadableStream({
     start(controller) {
-      // Send initial snapshot
       void (async () => {
         try {
-          const { sessionManager } = await getServices();
+          const { sessionManager, config } = await getServices();
           const sessions = await sessionManager.list();
-          const dashboardSessions = sessions.map(sessionToDashboard);
+          const filteredSessions = filterSessions(sessions, config);
+          const dashboardSessions = filteredSessions.map(sessionToDashboard);
 
           const initialEvent = {
             type: "snapshot",
@@ -36,14 +57,12 @@ export async function GET(): Promise<Response> {
           };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(initialEvent)}\n\n`));
         } catch {
-          // If services aren't available, send empty snapshot
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify({ type: "snapshot", sessions: [] })}\n\n`),
           );
         }
       })();
 
-      // Send periodic heartbeat
       heartbeat = setInterval(() => {
         try {
           controller.enqueue(encoder.encode(`: heartbeat\n\n`));
@@ -53,16 +72,15 @@ export async function GET(): Promise<Response> {
         }
       }, 15000);
 
-      // Poll for session state changes every 5 seconds
       updates = setInterval(() => {
         void (async () => {
           let dashboardSessions;
           try {
-            const { sessionManager } = await getServices();
+            const { sessionManager, config } = await getServices();
             const sessions = await sessionManager.list();
-            dashboardSessions = sessions.map(sessionToDashboard);
+            const filteredSessions = filterSessions(sessions, config);
+            dashboardSessions = filteredSessions.map(sessionToDashboard);
           } catch {
-            // Transient service error — skip this poll, retry on next interval
             return;
           }
 
@@ -79,7 +97,6 @@ export async function GET(): Promise<Response> {
             };
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
           } catch {
-            // enqueue failure means the stream is closed — clean up both intervals
             clearInterval(updates);
             clearInterval(heartbeat);
           }

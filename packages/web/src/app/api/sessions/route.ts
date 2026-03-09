@@ -28,24 +28,58 @@ async function settlesWithin(promise: Promise<unknown>, timeoutMs: number): Prom
   }
 }
 
-/** GET /api/sessions — List all sessions with full state
+/**
+ * Check if a session belongs to a specific project.
+ * Matches by projectId or sessionPrefix (same logic as resolveProject).
+ */
+function matchesProject(
+  session: { id: string; projectId: string },
+  projectId: string,
+  projects: Record<string, { sessionPrefix?: string }>,
+): boolean {
+  if (session.projectId === projectId) return true;
+  const project = projects[projectId];
+  if (project?.sessionPrefix && session.id.startsWith(project.sessionPrefix)) return true;
+  return false;
+}
+
+/** GET /api/sessions — List sessions with full state
  * Query params:
+ * - project: Filter to a specific project (by projectId or sessionPrefix). "all" = no filter.
  * - active=true: Only return non-exited sessions
  */
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
+    const projectFilter = searchParams.get("project");
     const activeOnly = searchParams.get("active") === "true";
 
     const { config, registry, sessionManager } = await getServices();
     const coreSessions = await sessionManager.list();
 
-    // Find orchestrator session ID (if running) and expose to clients
-    const orchSession = coreSessions.find((s) => s.id.endsWith("-orchestrator"));
-    const orchestratorId = orchSession ? orchSession.id : null;
+    // Find orchestrator session ID for the project (if running) and expose to clients
+    let orchestratorId: string | null = null;
+    if (projectFilter && projectFilter !== "all") {
+      // Find orchestrator for the specific project
+      const orchSession = coreSessions.find(
+        (s) => s.id.endsWith("-orchestrator") && matchesProject(s, projectFilter, config.projects),
+      );
+      orchestratorId = orchSession ? orchSession.id : null;
+    } else {
+      // No project filter: find first orchestrator (backward compatible)
+      const orchSession = coreSessions.find((s) => s.id.endsWith("-orchestrator"));
+      orchestratorId = orchSession ? orchSession.id : null;
+    }
 
     // Filter out orchestrator sessions — they get their own button, not a card
     let workerSessions = coreSessions.filter((s) => !s.id.endsWith("-orchestrator"));
+
+    // Apply project filter if specified
+    if (projectFilter && projectFilter !== "all") {
+      workerSessions = workerSessions.filter((s) =>
+        matchesProject(s, projectFilter, config.projects),
+      );
+    }
 
     // Convert to dashboard format
     let dashboardSessions = workerSessions.map(sessionToDashboard);
