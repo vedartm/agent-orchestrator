@@ -1547,7 +1547,7 @@ describe("kill", () => {
     await expect(sm.kill("app-1")).resolves.toBeUndefined();
   });
 
-  it("purges mapped OpenCode session on default kill", async () => {
+  it("does not purge mapped OpenCode session on default kill", async () => {
     const deleteLogPath = join(tmpDir, "opencode-delete-kill-default.log");
     const mockBin = installMockOpencode("[]", deleteLogPath);
     process.env.PATH = `${mockBin}:${originalPath ?? ""}`;
@@ -1565,8 +1565,7 @@ describe("kill", () => {
     const sm = createSessionManager({ config, registry: mockRegistry });
     await sm.kill("app-1");
 
-    const deleteLog = readFileSync(deleteLogPath, "utf-8");
-    expect(deleteLog).toContain("session delete ses_keep");
+    expect(existsSync(deleteLogPath)).toBe(false);
   });
 
   it("purges mapped OpenCode session when requested", async () => {
@@ -2547,6 +2546,10 @@ describe("spawnOrchestrator", () => {
   });
 
   it("destroys orphaned runtime when reuse strategy finds alive runtime but get returns null", async () => {
+    const deleteLogPath = join(tmpDir, "opencode-delete-orphaned-runtime.log");
+    const mockBin = installMockOpencode("[]", deleteLogPath);
+    process.env.PATH = `${mockBin}:${originalPath ?? ""}`;
+
     const opencodeAgent: Agent = {
       ...mockAgent,
       name: "opencode",
@@ -2914,7 +2917,7 @@ describe("spawnOrchestrator", () => {
       createdAt: new Date().toISOString(),
     });
 
-    vi.mocked(mockRuntime.isAlive).mockResolvedValueOnce(false);
+    vi.mocked(mockRuntime.isAlive).mockResolvedValue(false);
 
     const sm = createSessionManager({ config, registry: mockRegistry });
     await sm.spawnOrchestrator({ projectId: "my-app" });
@@ -3075,7 +3078,7 @@ describe("spawnOrchestrator", () => {
     expect(mockRuntime.create).not.toHaveBeenCalled();
   });
 
-  it("throws on reservation conflict when existing session is not usable", async () => {
+  it("recovers reservation conflict when existing session is not usable", async () => {
     writeMetadata(sessionsDir, "app-orchestrator", {
       worktree: join(tmpDir, "my-app"),
       branch: "main",
@@ -3089,12 +3092,11 @@ describe("spawnOrchestrator", () => {
     vi.mocked(mockRuntime.isAlive).mockResolvedValue(false);
 
     const sm = createSessionManager({ config, registry: mockRegistry });
-    await expect(sm.spawnOrchestrator({ projectId: "my-app" })).rejects.toThrow(
-      "already exists but is not in a reusable state",
-    );
+    await expect(sm.spawnOrchestrator({ projectId: "my-app" })).resolves.toBeDefined();
+    expect(mockRuntime.create).toHaveBeenCalledTimes(1);
   });
 
-  it("never creates duplicate runtime on reservation conflict", async () => {
+  it("creates only one runtime on reservation conflict", async () => {
     writeMetadata(sessionsDir, "app-orchestrator", {
       worktree: join(tmpDir, "my-app"),
       branch: "main",
@@ -3108,9 +3110,8 @@ describe("spawnOrchestrator", () => {
     vi.mocked(mockRuntime.isAlive).mockResolvedValue(false);
 
     const sm = createSessionManager({ config, registry: mockRegistry });
-    await expect(sm.spawnOrchestrator({ projectId: "my-app" })).rejects.toThrow();
-
-    expect(mockRuntime.create).not.toHaveBeenCalled();
+    await expect(sm.spawnOrchestrator({ projectId: "my-app" })).resolves.toBeDefined();
+    expect(mockRuntime.create).toHaveBeenCalledTimes(1);
   });
 });
 
