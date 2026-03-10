@@ -2,11 +2,7 @@
 
 import { useRouter, usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
-
-interface ProjectInfo {
-  id: string;
-  name: string;
-}
+import type { ProjectInfo } from "@/lib/project-name";
 
 interface ProjectSidebarProps {
   projects: ProjectInfo[];

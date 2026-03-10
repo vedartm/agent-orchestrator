@@ -15,11 +15,7 @@ import { PRTableRow } from "./PRStatus";
 import { DynamicFavicon } from "./DynamicFavicon";
 import { useSessionEvents } from "@/hooks/useSessionEvents";
 import { ProjectSidebar } from "./ProjectSidebar";
-
-interface ProjectInfo {
-  id: string;
-  name: string;
-}
+import type { ProjectInfo } from "@/lib/project-name";
 
 interface DashboardProps {
   initialSessions: DashboardSession[];
