@@ -69,8 +69,7 @@ async function postWithRetry(
     }
 
     if (attempt < retries) {
-      const retryAttempt = attempt + 1;
-      const delay = retryDelayMs * 2 ** retryAttempt;
+      const delay = retryDelayMs * 2 ** attempt;
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
