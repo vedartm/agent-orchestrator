@@ -76,6 +76,19 @@ Use this if:
 - You need agent-specific configuration
 - You're evaluating different AI coding assistants
 
+### [webhook-notifier.yaml](./webhook-notifier.yaml)
+
+**Generic HTTP webhook notifications**
+
+Configure webhook notifications for any service that accepts HTTP POST requests with JSON payloads.
+
+Use this if:
+
+- You want to integrate with custom notification systems
+- You need to route events to your own backend or monitoring tools
+- You want full control over notification handling
+- You're building custom integrations on top of Agent Orchestrator events
+
 ## Configuration Tips
 
 1. **Start simple** - Use `simple-github.yaml` as a starting point
@@ -94,6 +107,10 @@ export LINEAR_API_KEY="lin_api_..."
 
 # Slack notifications
 export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
+
+# Generic webhook notifications
+export WEBHOOK_URL="https://your-server.com/webhook"
+export WEBHOOK_TOKEN="your-auth-token"
 
 # GitHub (usually set by gh CLI)
 # export GITHUB_TOKEN="ghp_..."
