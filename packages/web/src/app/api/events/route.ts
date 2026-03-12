@@ -1,41 +1,66 @@
-import { getServices, startBacklogPoller } from "@/lib/services";
+import { getServices } from "@/lib/services";
 import { sessionToDashboard } from "@/lib/serialize";
 import { getAttentionLevel } from "@/lib/types";
-import { filterWorkerSessions } from "@/lib/project-utils";
-import type { Session } from "@composio/ao-core";
+import { createCorrelationId, createProjectObserver } from "@composio/ao-core";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/events — SSE stream for real-time lifecycle events
- * Query params:
- * - project: Filter to a specific project. "all" = no filter.
+/**
+ * GET /api/events — SSE stream for real-time lifecycle events
+ *
+ * Sends session state updates to connected clients.
+ * Polls SessionManager.list() on an interval (no SSE push from core yet).
  */
-export async function GET(request: Request): Promise<Response> {
-  const { searchParams } = new URL(request.url);
-  const projectFilter = searchParams.get("project");
-
+export async function GET(): Promise<Response> {
   const encoder = new TextEncoder();
+  const correlationId = createCorrelationId("sse");
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let updates: ReturnType<typeof setInterval> | undefined;
-
-  const filterSessions = (
-    sessions: Session[],
-    config: { projects: Record<string, { sessionPrefix?: string }> },
-  ) => filterWorkerSessions(sessions, projectFilter, config.projects);
-
-  startBacklogPoller();
+  let observerProjectId: string | undefined;
 
   const stream = new ReadableStream({
     start(controller) {
       void (async () => {
         try {
-          const { sessionManager, config } = await getServices();
+          const { config } = await getServices();
+          observerProjectId = Object.keys(config.projects)[0];
+          if (observerProjectId) {
+            const observer = createProjectObserver(config, "web-events");
+            observer.recordOperation({
+              metric: "sse_connect",
+              operation: "sse.connect",
+              outcome: "success",
+              correlationId,
+              projectId: observerProjectId,
+              data: { path: "/api/events" },
+              level: "info",
+            });
+            observer.setHealth({
+              surface: "sse.events",
+              status: "ok",
+              projectId: observerProjectId,
+              correlationId,
+              details: { projectId: observerProjectId, connection: "open" },
+            });
+          }
+        } catch {
+          void 0;
+        }
+      })();
+
+      // Send initial snapshot
+      void (async () => {
+        try {
+          const { config, sessionManager } = await getServices();
           const sessions = await sessionManager.list();
-          const filteredSessions = filterSessions(sessions, config);
-          const dashboardSessions = filteredSessions.map(sessionToDashboard);
+          const dashboardSessions = sessions.map(sessionToDashboard);
+          const projectId = observerProjectId ?? Object.keys(config.projects)[0];
+          const observer = projectId ? createProjectObserver(config, "web-events") : null;
 
           const initialEvent = {
             type: "snapshot",
+            correlationId,
+            emittedAt: new Date().toISOString(),
             sessions: dashboardSessions.map((s) => ({
               id: s.id,
               status: s.status,
@@ -45,13 +70,28 @@ export async function GET(request: Request): Promise<Response> {
             })),
           };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(initialEvent)}\n\n`));
+          if (observer && projectId) {
+            observer.recordOperation({
+              metric: "sse_snapshot",
+              operation: "sse.snapshot",
+              outcome: "success",
+              correlationId,
+              projectId,
+              data: { sessionCount: dashboardSessions.length, initial: true },
+              level: "info",
+            });
+          }
         } catch {
+          // If services aren't available, send empty snapshot
           controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: "snapshot", sessions: [] })}\n\n`),
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "snapshot", correlationId, emittedAt: new Date().toISOString(), sessions: [] })}\n\n`,
+            ),
           );
         }
       })();
 
+      // Send periodic heartbeat
       heartbeat = setInterval(() => {
         try {
           controller.enqueue(encoder.encode(`: heartbeat\n\n`));
@@ -61,33 +101,64 @@ export async function GET(request: Request): Promise<Response> {
         }
       }, 15000);
 
+      // Poll for session state changes every 5 seconds
       updates = setInterval(() => {
         void (async () => {
           let dashboardSessions;
           try {
-            const { sessionManager, config } = await getServices();
+            const { config, sessionManager } = await getServices();
             const sessions = await sessionManager.list();
-            const filteredSessions = filterSessions(sessions, config);
-            dashboardSessions = filteredSessions.map(sessionToDashboard);
-          } catch {
-            return;
-          }
+            dashboardSessions = sessions.map(sessionToDashboard);
+            const projectId = observerProjectId ?? Object.keys(config.projects)[0];
+            const observer = projectId ? createProjectObserver(config, "web-events") : null;
 
-          try {
-            const event = {
-              type: "snapshot",
-              sessions: dashboardSessions.map((s) => ({
-                id: s.id,
-                status: s.status,
-                activity: s.activity,
-                attentionLevel: getAttentionLevel(s),
-                lastActivityAt: s.lastActivityAt,
-              })),
-            };
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+            if (observer && projectId) {
+              observer.setHealth({
+                surface: "sse.events",
+                status: "ok",
+                projectId,
+                correlationId,
+                details: {
+                  projectId,
+                  sessionCount: dashboardSessions.length,
+                  lastEventAt: new Date().toISOString(),
+                },
+              });
+            }
+
+            try {
+              const event = {
+                type: "snapshot",
+                correlationId,
+                emittedAt: new Date().toISOString(),
+                sessions: dashboardSessions.map((s) => ({
+                  id: s.id,
+                  status: s.status,
+                  activity: s.activity,
+                  attentionLevel: getAttentionLevel(s),
+                  lastActivityAt: s.lastActivityAt,
+                })),
+              };
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+              if (observer && projectId) {
+                observer.recordOperation({
+                  metric: "sse_snapshot",
+                  operation: "sse.snapshot",
+                  outcome: "success",
+                  correlationId,
+                  projectId,
+                  data: { sessionCount: dashboardSessions.length, initial: false },
+                  level: "info",
+                });
+              }
+            } catch {
+              // enqueue failure means the stream is closed — clean up both intervals
+              clearInterval(updates);
+              clearInterval(heartbeat);
+            }
           } catch {
-            clearInterval(updates);
-            clearInterval(heartbeat);
+            // Transient service error — skip this poll, retry on next interval
+            return;
           }
         })();
       }, 5000);
@@ -95,6 +166,33 @@ export async function GET(request: Request): Promise<Response> {
     cancel() {
       clearInterval(heartbeat);
       clearInterval(updates);
+      void (async () => {
+        try {
+          const { config } = await getServices();
+          const projectId = observerProjectId ?? Object.keys(config.projects)[0];
+          if (!projectId) return;
+          const observer = createProjectObserver(config, "web-events");
+          observer.recordOperation({
+            metric: "sse_disconnect",
+            operation: "sse.disconnect",
+            outcome: "success",
+            correlationId,
+            projectId,
+            data: { path: "/api/events" },
+            level: "info",
+          });
+          observer.setHealth({
+            surface: "sse.events",
+            status: "warn",
+            projectId,
+            correlationId,
+            reason: "SSE connection closed",
+            details: { projectId, connection: "closed" },
+          });
+        } catch {
+          void 0;
+        }
+      })();
     },
   });
 

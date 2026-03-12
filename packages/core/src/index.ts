@@ -104,6 +104,26 @@ export {
 export { asValidOpenCodeSessionId } from "./opencode-session-id.js";
 export { normalizeOrchestratorSessionStrategy } from "./orchestrator-session-strategy.js";
 export type { NormalizedOrchestratorSessionStrategy } from "./orchestrator-session-strategy.js";
+export {
+  createCorrelationId,
+  createProjectObserver,
+  readObservabilitySummary,
+} from "./observability.js";
+export type {
+  ObservabilityHealthStatus,
+  ObservabilityHealthSurface,
+  ObservabilityLevel,
+  ObservabilityMetricCounter,
+  ObservabilityMetricName,
+  ObservabilityOutcome,
+  ObservabilityProjectSnapshot,
+  ObservabilitySessionStatus,
+  ObservabilitySummary,
+  ObservabilityTraceRecord,
+  ProjectObserver,
+  RecordOperationInput,
+  SetHealthInput,
+} from "./observability.js";
 
 // Feedback tools — contracts, validation, and report storage
 export {
@@ -138,6 +158,7 @@ export {
   getOriginFilePath,
   generateSessionName,
   generateTmuxName,
+  getObservabilityBaseDir,
   parseTmuxName,
   expandHome,
   validateAndStoreOrigin,

@@ -1,5 +1,4 @@
 import { ACTIVITY_STATE } from "@composio/ao-core";
-import { NextResponse } from "next/server";
 import { getServices, getSCM } from "@/lib/services";
 import {
   sessionToDashboard,
@@ -8,8 +7,7 @@ import {
   enrichSessionsMetadata,
   computeStats,
 } from "@/lib/serialize";
-import { resolveGlobalPause } from "@/lib/global-pause";
-import { filterWorkerSessions, findOrchestratorSessionId } from "@/lib/project-utils";
+import { getCorrelationId, jsonWithCorrelation, recordApiObservation } from "@/lib/observability";
 
 const METADATA_ENRICH_TIMEOUT_MS = 3_000;
 const PR_ENRICH_TIMEOUT_MS = 4_000;
@@ -30,23 +28,26 @@ async function settlesWithin(promise: Promise<unknown>, timeoutMs: number): Prom
   }
 }
 
-/** GET /api/sessions — List sessions with full state
+/** GET /api/sessions — List all sessions with full state
  * Query params:
- * - project: Filter to a specific project (by projectId or sessionPrefix). "all" = no filter.
  * - active=true: Only return non-exited sessions
  */
 export async function GET(request: Request) {
+  const correlationId = getCorrelationId(request);
+  const startedAt = Date.now();
   try {
     const { searchParams } = new URL(request.url);
-    const projectFilter = searchParams.get("project");
     const activeOnly = searchParams.get("active") === "true";
 
     const { config, registry, sessionManager } = await getServices();
     const coreSessions = await sessionManager.list();
 
-    const orchestratorId = findOrchestratorSessionId(coreSessions, projectFilter, config.projects);
+    // Find orchestrator session ID (if running) and expose to clients
+    const orchSession = coreSessions.find((s) => s.id.endsWith("-orchestrator"));
+    const orchestratorId = orchSession ? orchSession.id : null;
 
-    let workerSessions = filterWorkerSessions(coreSessions, projectFilter, config.projects);
+    // Filter out orchestrator sessions — they get their own button, not a card
+    let workerSessions = coreSessions.filter((s) => !s.id.endsWith("-orchestrator"));
 
     // Convert to dashboard format
     let dashboardSessions = workerSessions.map(sessionToDashboard);
@@ -85,16 +86,44 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({
-      sessions: dashboardSessions,
-      stats: computeStats(dashboardSessions),
-      orchestratorId,
-      globalPause: resolveGlobalPause(coreSessions),
+    recordApiObservation({
+      config,
+      method: "GET",
+      path: "/api/sessions",
+      correlationId,
+      startedAt,
+      outcome: "success",
+      statusCode: 200,
+      data: { sessionCount: dashboardSessions.length, activeOnly },
     });
+
+    return jsonWithCorrelation(
+      {
+        sessions: dashboardSessions,
+        stats: computeStats(dashboardSessions),
+        orchestratorId,
+      },
+      { status: 200 },
+      correlationId,
+    );
   } catch (err) {
-    return NextResponse.json(
+    const { config } = await getServices().catch(() => ({ config: undefined }));
+    if (config) {
+      recordApiObservation({
+        config,
+        method: "GET",
+        path: "/api/sessions",
+        correlationId,
+        startedAt,
+        outcome: "failure",
+        statusCode: 500,
+        reason: err instanceof Error ? err.message : "Failed to list sessions",
+      });
+    }
+    return jsonWithCorrelation(
       { error: err instanceof Error ? err.message : "Failed to list sessions" },
       { status: 500 },
+      correlationId,
     );
   }
 }

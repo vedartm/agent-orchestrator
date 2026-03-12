@@ -15,6 +15,13 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, request } from "node:http";
+import {
+  createCorrelationId,
+  createProjectObserver,
+  loadConfig,
+  type OrchestratorConfig,
+  type ProjectObserver,
+} from "@composio/ao-core";
 import { findTmux, resolveTmuxSession, validateSessionId } from "./tmux-utils.js";
 
 /** Cached full path to tmux binary */
@@ -27,11 +34,86 @@ interface TtydInstance {
   process: ChildProcess;
 }
 
+interface TerminalHealthMetrics {
+  activeInstances: number;
+  totalSpawns: number;
+  totalErrors: number;
+  totalReused: number;
+  lastSpawnAt?: string;
+  lastErrorAt?: string;
+  lastErrorReason?: string;
+}
+
 const instances = new Map<string, TtydInstance>();
+const metrics: TerminalHealthMetrics = {
+  activeInstances: 0,
+  totalSpawns: 0,
+  totalErrors: 0,
+  totalReused: 0,
+};
 const availablePorts = new Set<number>(); // Pool of recycled ports
 let nextPort = 7800; // Start ttyd instances from port 7800
 const MAX_PORT = 7900; // Prevent unbounded port allocation
 
+function createObserverContext(): {
+  config: OrchestratorConfig | undefined;
+  observer: ProjectObserver | undefined;
+} {
+  try {
+    const config = loadConfig();
+    return {
+      config,
+      observer: createProjectObserver(config, "terminal-websocket"),
+    };
+  } catch {
+    return { config: undefined, observer: undefined };
+  }
+}
+
+function inferProjectId(
+  config: OrchestratorConfig | undefined,
+  sessionId: string,
+): string | undefined {
+  if (!config) {
+    return undefined;
+  }
+
+  for (const [projectId, project] of Object.entries(config.projects)) {
+    const prefix = project.sessionPrefix;
+    if (sessionId === prefix || sessionId.startsWith(`${prefix}-`)) {
+      return projectId;
+    }
+  }
+
+  return undefined;
+}
+
+const { config: observabilityConfig, observer } = createObserverContext();
+
+function recordWebsocketMetric(input: {
+  metric: "websocket_connect" | "websocket_disconnect" | "websocket_error";
+  outcome: "success" | "failure";
+  sessionId?: string;
+  reason?: string;
+  data?: Record<string, unknown>;
+}): void {
+  if (!observer) {
+    return;
+  }
+
+  const correlationId = createCorrelationId("ws");
+  observer.recordOperation({
+    metric: input.metric,
+    operation: `terminal.websocket.${input.metric}`,
+    outcome: input.outcome,
+    correlationId,
+    projectId: input.sessionId ? inferProjectId(observabilityConfig, input.sessionId) : undefined,
+    sessionId: input.sessionId,
+    reason: input.reason,
+    data: input.data,
+    level: input.outcome === "failure" ? "error" : "info",
+  });
+}
 
 /**
  * Check if ttyd is ready to accept connections by making a test request.
@@ -113,7 +195,16 @@ function waitForTtyd(port: number, sessionId: string, timeoutMs = 3000): Promise
  */
 function getOrSpawnTtyd(sessionId: string, tmuxSessionName: string): TtydInstance {
   const existing = instances.get(sessionId);
-  if (existing) return existing;
+  if (existing) {
+    metrics.totalReused += 1;
+    recordWebsocketMetric({
+      metric: "websocket_connect",
+      outcome: "success",
+      sessionId,
+      data: { reused: true, port: existing.port },
+    });
+    return existing;
+  }
 
   // Allocate port: reuse from pool if available, otherwise increment
   let port: number;
@@ -130,6 +221,8 @@ function getOrSpawnTtyd(sessionId: string, tmuxSessionName: string): TtydInstanc
   }
 
   console.log(`[Terminal] Spawning ttyd for ${tmuxSessionName} on port ${port}`);
+  metrics.totalSpawns += 1;
+  metrics.lastSpawnAt = new Date().toISOString();
 
   // Enable mouse mode for scrollback support
   const mouseProc = spawn(TMUX, ["set-option", "-t", tmuxSessionName, "mouse", "on"]);
@@ -178,12 +271,20 @@ function getOrSpawnTtyd(sessionId: string, tmuxSessionName: string): TtydInstanc
     const current = instances.get(sessionId);
     if (current?.process === proc) {
       instances.delete(sessionId);
+      metrics.activeInstances = instances.size;
       // Only recycle port on clean exit (code 0), not on errors
       // Failed ttyd processes may leave ports in TIME_WAIT state
       if (code === 0) {
         availablePorts.add(port);
       }
     }
+    recordWebsocketMetric({
+      metric: "websocket_disconnect",
+      outcome: code === 0 ? "success" : "failure",
+      sessionId,
+      reason: `ttyd_exit:${code}`,
+      data: { port },
+    });
   });
 
   proc.once("error", (err) => {
@@ -192,8 +293,19 @@ function getOrSpawnTtyd(sessionId: string, tmuxSessionName: string): TtydInstanc
     const current = instances.get(sessionId);
     if (current?.process === proc) {
       instances.delete(sessionId);
+      metrics.activeInstances = instances.size;
       // Don't recycle port on error - may still be in use or TIME_WAIT
     }
+    metrics.totalErrors += 1;
+    metrics.lastErrorAt = new Date().toISOString();
+    metrics.lastErrorReason = err.message;
+    recordWebsocketMetric({
+      metric: "websocket_error",
+      outcome: "failure",
+      sessionId,
+      reason: err.message,
+      data: { port },
+    });
     // Kill any running process
     try {
       proc.kill();
@@ -204,6 +316,13 @@ function getOrSpawnTtyd(sessionId: string, tmuxSessionName: string): TtydInstanc
 
   const instance: TtydInstance = { sessionId, port, process: proc };
   instances.set(sessionId, instance);
+  metrics.activeInstances = instances.size;
+  recordWebsocketMetric({
+    metric: "websocket_connect",
+    outcome: "success",
+    sessionId,
+    data: { reused: false, port },
+  });
   return instance;
 }
 
@@ -245,6 +364,11 @@ const server = createServer(async (req, res) => {
     if (!sessionId) {
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Missing session parameter" }));
+      recordWebsocketMetric({
+        metric: "websocket_error",
+        outcome: "failure",
+        reason: "Missing session parameter",
+      });
       return;
     }
 
@@ -252,6 +376,12 @@ const server = createServer(async (req, res) => {
     if (!validateSessionId(sessionId)) {
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Invalid session ID" }));
+      recordWebsocketMetric({
+        metric: "websocket_error",
+        outcome: "failure",
+        sessionId,
+        reason: "Invalid session ID",
+      });
       return;
     }
 
@@ -261,6 +391,12 @@ const server = createServer(async (req, res) => {
     if (!tmuxSessionId) {
       res.writeHead(404, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Session not found" }));
+      recordWebsocketMetric({
+        metric: "websocket_error",
+        outcome: "failure",
+        sessionId,
+        reason: "Session not found",
+      });
       return;
     }
 
@@ -284,6 +420,15 @@ const server = createServer(async (req, res) => {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error(`[Terminal] Failed to start terminal for ${sessionId}:`, errorMsg);
+      metrics.totalErrors += 1;
+      metrics.lastErrorAt = new Date().toISOString();
+      metrics.lastErrorReason = errorMsg;
+      recordWebsocketMetric({
+        metric: "websocket_error",
+        outcome: "failure",
+        sessionId,
+        reason: errorMsg,
+      });
       res.writeHead(503, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Failed to start terminal" }));
     }
@@ -298,6 +443,7 @@ const server = createServer(async (req, res) => {
         instances: Object.fromEntries(
           [...instances.entries()].map(([id, inst]) => [id, { port: inst.port }]),
         ),
+        metrics,
       }),
     );
     return;
