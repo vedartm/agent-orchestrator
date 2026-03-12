@@ -60,20 +60,27 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     if (err instanceof WorkspaceMissingError) {
       return jsonWithCorrelation({ error: err.message }, { status: 422 }, correlationId);
     }
-    const { config, sessionManager } = await getServices();
-    const projectId = await resolveProjectIdForSession(sessionManager, id);
-    recordApiObservation({
-      config,
-      method: "POST",
-      path: "/api/sessions/[id]/restore",
-      correlationId,
-      startedAt,
-      outcome: "failure",
-      statusCode: 500,
-      projectId,
-      sessionId: id,
-      reason: err instanceof Error ? err.message : "Failed to restore session",
-    });
+    const { config, sessionManager } = await getServices().catch(() => ({
+      config: undefined,
+      sessionManager: undefined,
+    }));
+    const projectId = sessionManager
+      ? await resolveProjectIdForSession(sessionManager, id)
+      : undefined;
+    if (config) {
+      recordApiObservation({
+        config,
+        method: "POST",
+        path: "/api/sessions/[id]/restore",
+        correlationId,
+        startedAt,
+        outcome: "failure",
+        statusCode: 500,
+        projectId,
+        sessionId: id,
+        reason: err instanceof Error ? err.message : "Failed to restore session",
+      });
+    }
     const msg = err instanceof Error ? err.message : "Failed to restore session";
     return jsonWithCorrelation({ error: msg }, { status: 500 }, correlationId);
   }
