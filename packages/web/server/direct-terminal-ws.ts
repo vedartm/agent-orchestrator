@@ -297,6 +297,7 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
       if (activeSessions.get(sessionId)?.pty === pty) {
         activeSessions.delete(sessionId);
       }
+      recordDisconnect("failure", `ws_error:${err.message}`);
       metrics.activeConnections = activeSessions.size;
       metrics.totalErrors += 1;
       metrics.lastErrorAt = new Date().toISOString();
