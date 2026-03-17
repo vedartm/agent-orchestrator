@@ -60,6 +60,10 @@ type SpawnFunction = (
     env?: NodeJS.ProcessEnv;
   },
 ) => IPty;
+
+try {
+  const pty = await import("node-pty");
+  ptySpawn = pty.spawn;
 } catch (err) {
   console.error(
     "[DirectTerminal] Failed to load node-pty:",
@@ -406,7 +410,7 @@ if (isMainModule) {
   const TMUX = findTmux();
   console.log(`[DirectTerminal] Using tmux: ${TMUX}`);
 
-  const { server, shutdown } = createDirectTerminalServer(ensurePtySpawn());
+  const { server, shutdown } = createDirectTerminalServer(undefined, ensurePtySpawn());
   const PORT = parseInt(process.env.DIRECT_TERMINAL_PORT ?? "14801", 10);
 
   server.listen(PORT, () => {
