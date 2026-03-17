@@ -23,7 +23,6 @@ import { createObserverContext, inferProjectId } from "./terminal-observability.
 // Dynamically import node-pty with graceful fallback for missing prebuilt binaries
 // This allows the dashboard to start on platforms where node-pty doesn't have
 // prebuilt binaries (e.g., linux-arm64 without build tools)
-let ptySpawn: any = null;
 
 // Type for PTY instance (defined here to avoid top-level await type issues)
 interface IPty {
@@ -33,6 +32,23 @@ interface IPty {
   resize(cols: number, rows: number): void;
   kill(): void;
 }
+
+// Proper function signature for pty.spawn
+interface PtyOptions {
+  name?: string;
+  cols?: number;
+  rows?: number;
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+}
+
+type PtySpawnFn = (
+  file: string,
+  args: readonly string[] | string[],
+  options?: PtyOptions,
+) => IPty;
+
+let ptySpawn: PtySpawnFn | null = null;
 
 try {
   const pty = await import("node-pty");
