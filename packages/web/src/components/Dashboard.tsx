@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   type DashboardSession,
   type DashboardStats,
@@ -58,6 +59,8 @@ export function Dashboard({
     initialGlobalPause,
     projectId,
   );
+  const searchParams = useSearchParams();
+  const activeSessionId = searchParams.get("session") ?? undefined;
   const [rateLimitDismissed, setRateLimitDismissed] = useState(false);
   const [globalPauseDismissed, setGlobalPauseDismissed] = useState(false);
   const [activeOrchestrators, setActiveOrchestrators] =
@@ -66,6 +69,11 @@ export function Dashboard({
   const [spawnErrors, setSpawnErrors] = useState<Record<string, string>>({});
   const showSidebar = projects.length > 1;
   const allProjectsView = showSidebar && projectId === undefined;
+
+  const displaySessions = useMemo(() => {
+    if (allProjectsView || !activeSessionId) return sessions;
+    return sessions.filter((s) => s.id === activeSessionId);
+  }, [sessions, allProjectsView, activeSessionId]);
 
   useEffect(() => {
     setActiveOrchestrators((current) => mergeOrchestrators(current, orchestratorLinks));
@@ -80,11 +88,11 @@ export function Dashboard({
       working: [],
       done: [],
     };
-    for (const session of sessions) {
+    for (const session of displaySessions) {
       zones[getAttentionLevel(session)].push(session);
     }
     return zones;
-  }, [sessions]);
+  }, [displaySessions]);
 
   const sessionsByProject = useMemo(() => {
     const groupedSessions = new Map<string, DashboardSession[]>();
@@ -100,14 +108,14 @@ export function Dashboard({
   }, [sessions]);
 
   const openPRs = useMemo(() => {
-    return sessions
+    return displaySessions
       .filter(
         (session): session is DashboardSession & { pr: DashboardPR } =>
           session.pr?.state === "open",
       )
       .map((session) => session.pr)
       .sort((a, b) => mergeScore(a) - mergeScore(b));
-  }, [sessions]);
+  }, [displaySessions]);
 
   const projectOverviews = useMemo(() => {
     if (!allProjectsView) return [];
@@ -246,7 +254,14 @@ export function Dashboard({
 
   return (
     <div className="flex h-screen">
-      {showSidebar && <ProjectSidebar projects={projects} activeProjectId={projectId} />}
+      {showSidebar && (
+        <ProjectSidebar
+          projects={projects}
+          sessions={sessions}
+          activeProjectId={projectId}
+          activeSessionId={activeSessionId}
+        />
+      )}
       <div className="flex-1 overflow-y-auto px-8 py-7">
         <DynamicFavicon sessions={sessions} projectName={projectName} />
         <div className="mb-8 flex items-center justify-between border-b border-[var(--color-border-subtle)] pb-6">
