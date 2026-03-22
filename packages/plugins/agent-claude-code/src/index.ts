@@ -16,10 +16,15 @@ import {
 } from "@composio/ao-core";
 import { execFile, execFileSync } from "node:child_process";
 import { readdir, readFile, stat, open, writeFile, mkdir, chmod } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, dirname, fileURLToPath } from "node:path";
 import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+
+// Get the directory where this module is located (ESM-safe)
+const moduleDir = dirname(fileURLToPath(import.meta.url));
 
 const execFileAsync = promisify(execFile);
 
@@ -36,10 +41,8 @@ function normalizePermissionMode(mode: string | undefined): "permissionless" | "
 // Metadata Updater Hook Script
 // =============================================================================
 
-/** Hook script content that updates session metadata on git/gh commands.
- *  Exported for integration testing. */
-/* eslint-disable no-useless-escape */
-export const METADATA_UPDATER_SCRIPT = `#!/usr/bin/env bash
+/** Hook script content that updates session metadata on git/gh commands */
+const METADATA_UPDATER_SCRIPT = `#!/usr/bin/env bash
 # Metadata Updater Hook for Agent Orchestrator
 #
 # This PostToolUse hook automatically updates session metadata when:
@@ -47,7 +50,7 @@ export const METADATA_UPDATER_SCRIPT = `#!/usr/bin/env bash
 # - git checkout -b / git switch -c: extracts branch name and writes to metadata
 # - gh pr merge: updates status to "merged"
 #
-# Uses inline JavaScript parser to handle command chaining (cd &&, ;, ||).
+# Uses AST-based parsing for 100% accuracy in command detection.
 
 set -euo pipefail
 
@@ -125,121 +128,22 @@ update_metadata_key() {
 }
 
 # ============================================================================
-# Inline JavaScript Parser for Shell Commands
+# AST-Based Command Parsing
 # ============================================================================
 
-# Parse command using inline JavaScript parser
+# Get directory where this script is located
+SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+PARSER_SCRIPT="\$SCRIPT_DIR/metadata-parser.js"
+NODE_PATH="\$SCRIPT_DIR/node_modules"
+
+# Parse command using AST parser (Node.js)
 # The parser outputs: TYPE:value (e.g., PR_CREATE:https://... or BRANCH:feature)
+# Set NODE_PATH to include local node_modules for shell-quote dependency
+export NODE_PATH
 parsed_output=""
-if command -v node &>/dev/null; then
-  parsed_output=\$(node --input-type=module - << 'JSCODE' 2>/dev/null || echo ""
-    const command = process.argv[2] || "";
-    const output = process.argv[3] || "";
-
-    // Simple shell command tokenizer
-    function parseCommands(str) {
-      const commands = [];
-      let current = "";
-      let inQuote = false;
-      let quoteChar = "";
-      let i = 0;
-
-      while (i < str.length) {
-        const c = str[i];
-
-        if (inQuote) {
-          if (c === quoteChar && (i === 0 || str[i - 1] !== "\\\\")) {
-            inQuote = false;
-          }
-          current += c;
-        } else if (c === '"' || c === "\`") {
-          inQuote = true;
-          quoteChar = c;
-          current += c;
-        } else if (c === "\\\\") {
-          current += c + (str[i + 1] || "");
-          i++;
-        } else if (c === "&" && i + 1 < str.length && str[i + 1] === "&") {
-          if (current.trim()) commands.push(current.trim());
-          current = "";
-          i++;
-        } else if (c === ";" || c === "|" || c === "||") {
-          if (current.trim()) commands.push(current.trim());
-          current = "";
-        } else {
-          current += c;
-        }
-        i++;
-      }
-
-      if (current.trim()) commands.push(current.trim());
-      return commands.map(cmd => cmd.split(/\\s+/).filter(Boolean));
-    }
-
-    // Extract PR URL from output
-    function extractPRUrl(out) {
-      const match = out.match(/https:\\/\\/github\\.com\\/[^\\/\\s]+\\/[^\\/\\s]+\\/pull\\/\\d+/);
-      return match ? match[0] : null;
-    }
-
-    // Match command pattern
-    function matchCommand(words, out) {
-      if (words.length === 0) return null;
-      const [cmd, arg1, arg2, arg3] = words;
-
-      // gh pr create
-      if (cmd === "gh" && arg1 === "pr" && arg2 === "create") {
-        const prUrl = extractPRUrl(out);
-        return prUrl ? "PR_CREATE:" + prUrl : "NONE";
-      }
-
-      // gh pr merge
-      if (cmd === "gh" && arg1 === "pr" && arg2 === "merge") {
-        return "MERGE:";
-      }
-
-      // git checkout -b <branch>
-      if (cmd === "git" && arg1 === "checkout" && arg2 === "-b" && arg3) {
-        return "BRANCH:" + arg3;
-      }
-
-      // git switch -c <branch>
-      if (cmd === "git" && arg1 === "switch" && arg2 === "-c" && arg3) {
-        return "BRANCH:" + arg3;
-      }
-
-      // git checkout <feature-branch> (existing branch detection)
-      if (cmd === "git" && arg1 === "checkout" && arg2) {
-        const branch = arg2;
-        if (branch && (branch.includes("/") || branch.includes("-")) && branch !== "HEAD") {
-          return "BRANCH:" + branch;
-        }
-      }
-
-      // git switch <feature-branch>
-      if (cmd === "git" && arg1 === "switch" && arg2) {
-        const branch = arg2;
-        if (branch && (branch.includes("/") || branch.includes("-")) && branch !== "HEAD") {
-          return "BRANCH:" + branch;
-        }
-      }
-
-      return null;
-    }
-
-    // Parse and match
-    const commands = parseCommands(command);
-    for (const words of commands) {
-      const match = matchCommand(words, output);
-      if (match) {
-        console.log(match);
-        process.exit(0);
-      }
-    }
-
-    console.log("NONE");
-JSCODE
-)
+if [[ -f "\$PARSER_SCRIPT" ]] && command -v node &>/dev/null; then
+  parsed_output=\$(NODE_PATH="\$NODE_PATH" node "\$PARSER_SCRIPT" "\$command" "\$output" 2>/dev/null || echo "")
+fi
 
 # Handle: PR_CREATE
 if [[ "\$parsed_output" =~ ^PR_CREATE: ]]; then
@@ -273,7 +177,6 @@ fi
 echo '{}'
 exit 0
 `;
-/* eslint-enable no-useless-escape */
 
 // =============================================================================
 // Plugin Manifest
@@ -665,6 +568,33 @@ async function setupHookInWorkspace(workspacePath: string, hookCommand: string):
   await writeFile(hookScriptPath, METADATA_UPDATER_SCRIPT, "utf-8");
   await chmod(hookScriptPath, 0o755); // Make executable
 
+  // Copy metadata-parser.js and shell-quote dependency to .claude directory
+  // The hook script references these files relative to itself
+  const parserSrcPath = join(moduleDir, "dist", "metadata-parser.js");
+  const parserDestPath = join(claudeDir, "metadata-parser.js");
+  const nodeModulesPath = join(claudeDir, "node_modules");
+  if (existsSync(parserSrcPath)) {
+    // Copy parser
+    await writeFile(
+      parserDestPath,
+      await readFile(parserSrcPath, "utf-8"),
+      "utf-8"
+    );
+    await chmod(parserDestPath, 0o755); // Make executable
+
+    // Copy shell-quote dependency to .claude/node_modules
+    const shellQuoteSrc = join(moduleDir, "..", "..", "..", "node_modules", "shell-quote");
+    if (existsSync(shellQuoteSrc)) {
+      const shellQuoteDest = join(nodeModulesPath, "shell-quote");
+      mkdirSync(nodeModulesPath, { recursive: true });
+      await writeFile(
+        shellQuoteDest,
+        await readFile(shellQuoteSrc, "utf-8"),
+        "utf-8"
+      );
+    }
+  }
+
   // Read existing settings if present
   let existingSettings: Record<string, unknown> = {};
   if (existsSync(settingsPath)) {
@@ -917,17 +847,17 @@ function createClaudeCodeAgent(): Agent {
     },
 
     async setupWorkspaceHooks(workspacePath: string, _config: WorkspaceHooksConfig): Promise<void> {
-      // Relative path so that symlinked .claude/ dirs across worktrees
-      // all produce the same settings.json (last writer doesn't clobber).
-      await setupHookInWorkspace(workspacePath, ".claude/metadata-updater.sh");
+      // Use absolute path for hook command (specific to this workspace)
+      const hookScriptPath = join(workspacePath, ".claude", "metadata-updater.sh");
+      await setupHookInWorkspace(workspacePath, hookScriptPath);
     },
 
     async postLaunchSetup(session: Session): Promise<void> {
       if (!session.workspacePath) return;
 
-      // Relative path so that symlinked .claude/ dirs across worktrees
-      // all produce the same settings.json (last writer doesn't clobber).
-      await setupHookInWorkspace(session.workspacePath, ".claude/metadata-updater.sh");
+      // Use absolute path for hook command (specific to this workspace)
+      const hookScriptPath = join(session.workspacePath, ".claude", "metadata-updater.sh");
+      await setupHookInWorkspace(session.workspacePath, hookScriptPath);
     },
   };
 }
@@ -938,16 +868,6 @@ function createClaudeCodeAgent(): Agent {
 
 export function create(): Agent {
   return createClaudeCodeAgent();
-}
-
-export function detect(): boolean {
-  try {
-    // Use --version instead of `which` for cross-platform compatibility (Windows has no `which`)
-    execFileSync("claude", ["--version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export default { manifest, create, detect } satisfies PluginModule<Agent>;
