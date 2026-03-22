@@ -36,8 +36,9 @@ function normalizePermissionMode(mode: string | undefined): "permissionless" | "
 // Metadata Updater Hook Script
 // =============================================================================
 
-/** Hook script content that updates session metadata on git/gh commands */
-const METADATA_UPDATER_SCRIPT = `#!/usr/bin/env bash
+/** Hook script content that updates session metadata on git/gh commands.
+ *  Exported for integration testing. */
+export const METADATA_UPDATER_SCRIPT = `#!/usr/bin/env bash
 # Metadata Updater Hook for Agent Orchestrator
 #
 # This PostToolUse hook automatically updates session metadata when:
@@ -825,17 +826,17 @@ function createClaudeCodeAgent(): Agent {
     },
 
     async setupWorkspaceHooks(workspacePath: string, _config: WorkspaceHooksConfig): Promise<void> {
-      // Use absolute path for hook command (specific to this workspace)
-      const hookScriptPath = join(workspacePath, ".claude", "metadata-updater.sh");
-      await setupHookInWorkspace(workspacePath, hookScriptPath);
+      // Relative path so that symlinked .claude/ dirs across worktrees
+      // all produce the same settings.json (last writer doesn't clobber).
+      await setupHookInWorkspace(workspacePath, ".claude/metadata-updater.sh");
     },
 
     async postLaunchSetup(session: Session): Promise<void> {
       if (!session.workspacePath) return;
 
-      // Use absolute path for hook command (specific to this workspace)
-      const hookScriptPath = join(session.workspacePath, ".claude", "metadata-updater.sh");
-      await setupHookInWorkspace(session.workspacePath, hookScriptPath);
+      // Relative path so that symlinked .claude/ dirs across worktrees
+      // all produce the same settings.json (last writer doesn't clobber).
+      await setupHookInWorkspace(session.workspacePath, ".claude/metadata-updater.sh");
     },
   };
 }
