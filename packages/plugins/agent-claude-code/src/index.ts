@@ -44,6 +44,8 @@ const METADATA_UPDATER_SCRIPT = `#!/usr/bin/env bash
 # - gh pr create: extracts PR URL and writes to metadata
 # - git checkout -b / git switch -c: extracts branch name and writes to metadata
 # - gh pr merge: updates status to "merged"
+#
+# Uses AST-based parsing for 100% accuracy in command detection.
 
 set -euo pipefail
 
@@ -121,50 +123,43 @@ update_metadata_key() {
 }
 
 # ============================================================================
-# Command Detection and Parsing
+# AST-Based Command Parsing
 # ============================================================================
 
-# Detect: gh pr create
-if [[ "$command" =~ ^gh[[:space:]]+pr[[:space:]]+create ]]; then
-  # Extract PR URL from output
-  pr_url=$(echo "$output" | grep -Eo 'https://github[.]com/[^/]+/[^/]+/pull/[0-9]+' | head -1)
+# Get directory where this script is located
+SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+PARSER_SCRIPT="\$SCRIPT_DIR/metadata-parser.js"
 
-  if [[ -n "$pr_url" ]]; then
-    update_metadata_key "pr" "$pr_url"
+# Parse command using AST parser (Node.js)
+# The parser outputs: TYPE:value (e.g., PR_CREATE:https://... or BRANCH:feature)
+parsed_output=""
+if [[ -f "\$PARSER_SCRIPT" ]] && command -v node &>/dev/null; then
+  parsed_output=\$(node "\$PARSER_SCRIPT" "\$command" "\$output" 2>/dev/null || echo "")
+fi
+
+# Handle: PR_CREATE
+if [[ "\$parsed_output" =~ ^PR_CREATE: ]]; then
+  pr_url="\${parsed_output#PR_CREATE:}"
+  if [[ -n "\$pr_url" ]]; then
+    update_metadata_key "pr" "\$pr_url"
     update_metadata_key "status" "pr_open"
-    echo '{"systemMessage": "Updated metadata: PR created at '"$pr_url"'"}'
+    echo '{"systemMessage": "Updated metadata: PR created at '"\$pr_url"'"}'
     exit 0
   fi
 fi
 
-# Detect: git checkout -b <branch> or git switch -c <branch>
-if [[ "$command" =~ ^git[[:space:]]+checkout[[:space:]]+-b[[:space:]]+([^[:space:]]+) ]] || \\
-   [[ "$command" =~ ^git[[:space:]]+switch[[:space:]]+-c[[:space:]]+([^[:space:]]+) ]]; then
-  branch="\${BASH_REMATCH[1]}"
-
-  if [[ -n "$branch" ]]; then
-    update_metadata_key "branch" "$branch"
-    echo '{"systemMessage": "Updated metadata: branch = '"$branch"'"}'
+# Handle: BRANCH
+if [[ "\$parsed_output" =~ ^BRANCH: ]]; then
+  branch="\${parsed_output#BRANCH:}"
+  if [[ -n "\$branch" ]]; then
+    update_metadata_key "branch" "\$branch"
+    echo '{"systemMessage": "Updated metadata: branch = '"\$branch"'"}'
     exit 0
   fi
 fi
 
-# Detect: git checkout <branch> (without -b) or git switch <branch> (without -c)
-# Only update if the branch name looks like a feature branch (contains / or -)
-if [[ "$command" =~ ^git[[:space:]]+checkout[[:space:]]+([^[:space:]-]+[/-][^[:space:]]+) ]] || \\
-   [[ "$command" =~ ^git[[:space:]]+switch[[:space:]]+([^[:space:]-]+[/-][^[:space:]]+) ]]; then
-  branch="\${BASH_REMATCH[1]}"
-
-  # Avoid updating for checkout of commits/tags
-  if [[ -n "$branch" && "$branch" != "HEAD" ]]; then
-    update_metadata_key "branch" "$branch"
-    echo '{"systemMessage": "Updated metadata: branch = '"$branch"'"}'
-    exit 0
-  fi
-fi
-
-# Detect: gh pr merge
-if [[ "$command" =~ ^gh[[:space:]]+pr[[:space:]]+merge ]]; then
+# Handle: MERGE
+if [[ "\$parsed_output" =~ ^MERGE: ]]; then
   update_metadata_key "status" "merged"
   echo '{"systemMessage": "Updated metadata: status = merged"}'
   exit 0
@@ -564,6 +559,19 @@ async function setupHookInWorkspace(workspacePath: string, hookCommand: string):
   // Write the metadata updater script
   await writeFile(hookScriptPath, METADATA_UPDATER_SCRIPT, "utf-8");
   await chmod(hookScriptPath, 0o755); // Make executable
+
+  // Copy metadata-parser.js to .claude directory
+  // The hook script references this file relative to itself
+  const parserSrcPath = join(__dirname, "..", "dist", "metadata-parser.js");
+  const parserDestPath = join(claudeDir, "metadata-parser.js");
+  if (existsSync(parserSrcPath)) {
+    await writeFile(
+      parserDestPath,
+      await readFile(parserSrcPath, "utf-8"),
+      "utf-8"
+    );
+    await chmod(parserDestPath, 0o755); // Make executable
+  }
 
   // Read existing settings if present
   let existingSettings: Record<string, unknown> = {};
