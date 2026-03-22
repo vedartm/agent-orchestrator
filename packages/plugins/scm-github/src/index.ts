@@ -97,7 +97,7 @@ async function cachedGh(args: string[]): Promise<string> {
   const ttl = ghCache.getTTL(args);
 
   // Check cache first
-  const cached = ghCache.get<string>(cacheKey, ttl);
+  const cached = ghCache.get<string>(cacheKey);
   if (cached !== null) {
     return cached;
   }
