@@ -101,7 +101,7 @@ async function cachedGh(args: string[]): Promise<string> {
 
   // Check cache first
   const cached = ghCache.get<string>(cacheKey);
-  if (cached !== null) {
+  if (cached != null) {
     return cached;
   }
 
@@ -252,7 +252,7 @@ async function getCIChecksFromStatusRollup(pr: PRInfo): Promise<CICheck[]> {
 
       return check;
     })
-    .filter((check): check is CICheck => check !== null);
+    .filter((check): check is CICheck => check != null);
 }
 
 function getGitHubWebhookConfig(project: ProjectConfig) {
