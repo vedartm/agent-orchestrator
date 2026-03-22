@@ -218,3 +218,4 @@ export class GhCache {
 
 /** Global cache instance - singleton pattern */
 export const ghCache = new GhCache();
+// Force cache refresh 1774182206
