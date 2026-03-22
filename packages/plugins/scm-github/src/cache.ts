@@ -141,15 +141,23 @@ export class GhCache {
   invalidatePR(pr: { owner: string; repo: string; number: number }): void {
     const repoStr = `${pr.owner}/${pr.repo}`;
     const prNum = String(pr.number);
-    const patterns = [
+    const prNumPatterns = [
       `:${prNum}:`, // Matches `gh:pr:view:123:--repo:owner/repo:...`
       `number=${prNum}`, // Matches GraphQL queries `...-F number=123`
       `pulls/${prNum}/`, // Matches REST API `repos/.../pulls/123/comments`
     ];
 
     Array.from(this.cache.keys()).forEach((key) => {
-      const hasRepo = key.includes(`--repo:${repoStr}`) || key.includes(`/${repoStr}/`);
-      const hasPrNum = patterns.some((p) => key.includes(p));
+      // Match repo in multiple formats:
+      // - `--repo:owner/repo` for CLI commands
+      // - `/owner/repo/` for REST API URLs
+      // - `owner=owner` and `name=repo` for GraphQL queries
+      const hasRepo =
+        key.includes(`--repo:${repoStr}`) ||
+        key.includes(`/${repoStr}/`) ||
+        (key.includes(`owner=${pr.owner}`) && key.includes(`name=${pr.repo}`));
+
+      const hasPrNum = prNumPatterns.some((p) => key.includes(p));
       if (hasRepo && hasPrNum) {
         this.cache.delete(key);
       }
@@ -161,17 +169,25 @@ export class GhCache {
    *
    * Useful for bulk operations or webhook-driven invalidation.
    *
-   * Matches keys containing `--repo:owner/repo` or `/owner/repo/` patterns.
+   * Matches keys containing:
+   * - `--repo:owner/repo` for CLI commands
+   * - `/owner/repo/` for REST API URLs
+   * - `owner=owner` and `name=repo` for GraphQL queries
    *
    * @param owner - Repository owner
    * @param repo - Repository name
    */
   invalidateRepo(owner: string, repo: string): void {
     const repoStr = `${owner}/${repo}`;
-    const patterns = [`--repo:${repoStr}`, `/${repoStr}/`];
+    const repoName = repo;
 
     Array.from(this.cache.keys()).forEach((key) => {
-      if (patterns.some((p) => key.includes(p))) {
+      const matches =
+        key.includes(`--repo:${repoStr}`) ||
+        key.includes(`/${repoStr}/`) ||
+        (key.includes(`owner=${owner}`) && key.includes(`name=${repoName}`));
+
+      if (matches) {
         this.cache.delete(key);
       }
     });
