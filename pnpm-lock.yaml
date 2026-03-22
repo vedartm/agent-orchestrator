@@ -243,9 +243,6 @@ importers:
       '@composio/ao-core':
         specifier: workspace:*
         version: link:../../core
-      '@types/shell-quote':
-        specifier: ^1.7.5
-        version: 1.7.5
       shell-quote:
         specifier: ^1.8.2
         version: 1.8.3
@@ -253,6 +250,9 @@ importers:
       '@types/node':
         specifier: ^25.2.3
         version: 25.2.3
+      '@types/shell-quote':
+        specifier: ^1.7.5
+        version: 1.7.5
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
