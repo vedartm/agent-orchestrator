@@ -545,8 +545,18 @@ describe("plugin integration", () => {
         sessionManager: mockSM,
       });
 
-      // getPRState → merged
-      mockGh({ state: "MERGED" });
+      // getPRState → merged (batched response includes all fields)
+      mockGh({
+        state: "MERGED",
+        title: "feat: add feature",
+        additions: 10,
+        deletions: 5,
+        reviewDecision: "APPROVED",
+        reviews: [],
+        mergeable: "MERGEABLE",
+        mergeStateStatus: "CLEAN",
+        isDraft: false,
+      });
 
       await lm.check("app-1");
 
@@ -573,12 +583,20 @@ describe("plugin integration", () => {
         sessionManager: mockSM,
       });
 
-      // 1. getPRState → open
-      mockGh({ state: "OPEN" });
+      // 1. getPRState → open (batched response includes all fields including reviewDecision)
+      mockGh({
+        state: "OPEN",
+        title: "feat: add feature",
+        additions: 10,
+        deletions: 5,
+        reviewDecision: "CHANGES_REQUESTED",
+        reviews: [],
+        mergeable: "MERGEABLE",
+        mergeStateStatus: "CLEAN",
+        isDraft: false,
+      });
       // 2. getCISummary → passing (using correct field names: state and link)
       mockGh([{ name: "lint", state: "SUCCESS", link: "", startedAt: "", completedAt: "" }]);
-      // 3. getReviewDecision (gh pr view with reviewDecision)
-      mockGh({ reviewDecision: "CHANGES_REQUESTED" });
 
       await lm.check("app-1");
 
