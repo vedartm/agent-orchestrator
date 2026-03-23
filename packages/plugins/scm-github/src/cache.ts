@@ -25,13 +25,13 @@ interface CacheEntry<T> {
  * Multiple callers requesting different fields for the same PR
  * get combined into a single gh CLI call.
  */
-interface PRViewBatch {
+interface PRViewBatch<T> {
   /** PR identifier key: "owner:repo:number" */
   prKey: string;
   /** Set of all fields requested by callers */
   requestedFields: Set<string>;
-  /** Resolver function that will be called with the full result */
-  resolve: (result: unknown) => void;
+  /** Resolver function that will be called with the result */
+  resolve: (value: T) => void;
   /** Reject function for errors */
   reject: (err: unknown) => void;
   /** Arguments to reconstruct the gh call */
@@ -42,7 +42,7 @@ export class GhCache {
   private cache = new Map<string, CacheEntry<unknown>>();
   private pendingRequests = new Map<string, Promise<unknown>>();
   /** Batching queue for gh pr view calls */
-  private pendingBatches = new Map<string, PRViewBatch[]>();
+  private pendingBatches = new Map<string, PRViewBatch<Record<string, unknown>>[]>();
 
   /**
    * TTL per operation (milliseconds)
@@ -255,16 +255,17 @@ export class GhCache {
    * @param fn - Function to execute the gh CLI call
    * @returns Result with only the requested fields
    */
-  async batchGhPRView<T>(
+  async batchGhPRView(
     prKey: string,
     args: string[],
-    fn: (fields: string) => Promise<T>,
-  ): Promise<T> {
+    fn: (fields: string) => Promise<string>,
+  ): Promise<Record<string, unknown>> {
     // Extract requested JSON fields from args
     const jsonIndex = args.indexOf("--json");
     if (jsonIndex === -1 || jsonIndex + 1 >= args.length) {
-      // No --json flag, execute directly
-      return fn("");
+      // No --json flag, execute directly and parse JSON
+      const result = await fn("");
+      return JSON.parse(result);
     }
 
     const requestedFields = args[jsonIndex + 1];
@@ -274,7 +275,7 @@ export class GhCache {
 
     if (existingBatch) {
       // Add this request to existing batch
-      return new Promise<T>((resolve, reject) => {
+      return new Promise<Record<string, unknown>>((resolve, reject) => {
         const fieldsSet = new Set(requestedFields.split(","));
         existingBatch.push({
           prKey,
@@ -290,11 +291,11 @@ export class GhCache {
     }
 
     // No existing batch - create a new one
-    const batch: PRViewBatch[] = [];
+    const batch: PRViewBatch<Record<string, unknown>>[] = [];
     this.pendingBatches.set(prKey, batch);
 
     const fieldsSet = new Set(requestedFields.split(","));
-    const promise = new Promise<T>((resolve, reject) => {
+    const promise = new Promise<Record<string, unknown>>((resolve, reject) => {
       batch.push({
         prKey,
         requestedFields: fieldsSet,
@@ -319,9 +320,9 @@ export class GhCache {
    * Combines all requested fields into a single gh call, then distributes
    * the results to all waiting callers.
    */
-  private async processPRViewBatch<T>(
+  private async processPRViewBatch(
     prKey: string,
-    fn: (fields: string) => Promise<T>,
+    fn: (fields: string) => Promise<string>,
   ): Promise<void> {
     const batch = this.pendingBatches.get(prKey);
     if (!batch) return;
@@ -336,7 +337,8 @@ export class GhCache {
 
     try {
       // Execute single gh call with all fields
-      const fullResult = await fn(allFields);
+      const resultString = await fn(allFields);
+      const fullResult = JSON.parse(resultString);
 
       // Distribute results to all callers, extracting only requested fields
       for (const request of batch) {
@@ -349,11 +351,11 @@ export class GhCache {
         const partial: Record<string, unknown> = {};
         for (const field of request.requestedFields) {
           if (field in fullResult) {
-            partial[field] = (fullResult as Record<string, unknown>)[field];
+            partial[field] = fullResult[field];
           }
         }
 
-        request.resolve(partial as T);
+        request.resolve(partial);
       }
     } catch (err) {
       // Reject all callers if batch fails

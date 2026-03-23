@@ -128,16 +128,15 @@ async function cachedGh(args: string[]): Promise<string> {
         args,
         async (fields) => {
           const result = await _gh(["pr", "view", prNumber, "--repo", repoFlag, "--json", fields]);
-          // Cache the full batch result with all fields
-          ghCache.set(cacheKey, result, ttl);
-          return JSON.parse(result);
+          // Note: Caching with batching is more complex since different
+          // callers request different field sets. For now, batching
+          // handles concurrent requests without caching the intermediate results.
+          return result;
         },
       );
 
-      // Re-serialize to string as cachedGh returns string
-      return typeof batchedResult === "string"
-        ? batchedResult
-        : JSON.stringify(batchedResult);
+      // batchedResult is Record<string, unknown>, serialize to JSON string
+      return JSON.stringify(batchedResult);
     });
   }
 
