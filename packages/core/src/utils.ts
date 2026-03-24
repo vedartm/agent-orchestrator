@@ -5,9 +5,6 @@
 import { open, stat } from "node:fs/promises";
 import type { OrchestratorConfig } from "./types.js";
 
-// Logging statement for test issue #649
-console.log("Utils module loaded - Issue #649");
-
 /**
  * POSIX-safe shell escaping: wraps value in single quotes,
  * escaping any embedded single quotes as '\\'' .
