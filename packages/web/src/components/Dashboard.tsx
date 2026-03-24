@@ -177,6 +177,13 @@ export function Dashboard({
     }
   }, []);
 
+  const handleRequestReview = useCallback(async (prNumber: number) => {
+    const res = await fetch(`/api/prs/${prNumber}/request-review`, { method: "POST" });
+    if (!res.ok) {
+      console.error(`Failed to request review for PR #${prNumber}:`, await res.text());
+    }
+  }, []);
+
   const handleRestore = useCallback(async (sessionId: string) => {
     if (!confirm(`Restore session ${sessionId}?`)) return;
     const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/restore`, {
@@ -402,6 +409,7 @@ export function Dashboard({
                   onKill={handleKill}
                   onMerge={handleMerge}
                   onRestore={handleRestore}
+                  onRequestReview={handleRequestReview}
                 />
               ))}
             </div>
