@@ -84,11 +84,9 @@ WORKDIR /app
 # Non-root user
 RUN groupadd -r aouser && useradd -r -g aouser -m aouser
 
-COPY --from=build /app/packages/cli/dist packages/cli/dist
-COPY --from=build /app/packages/cli/package.json packages/cli/package.json
-COPY --from=build /app/packages/cli/templates packages/cli/templates
-COPY --from=build /app/packages/core/dist packages/core/dist
-COPY --from=build /app/packages/core/package.json packages/core/package.json
+# Copy all built packages (cli, core, plugins, web) — pnpm workspace symlinks
+# in node_modules resolve to packages/*/ so all must be present
+COPY --from=build /app/packages packages
 COPY --from=build /app/node_modules node_modules
 COPY --from=build /app/package.json package.json
 

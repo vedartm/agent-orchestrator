@@ -79,12 +79,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /app/packages/web/.next packages/web/.next
-COPY --from=build /app/packages/web/dist-server packages/web/dist-server
-COPY --from=build /app/packages/web/package.json packages/web/package.json
-COPY --from=build /app/packages/web/next.config.js packages/web/next.config.js
-COPY --from=build /app/packages/core/dist packages/core/dist
-COPY --from=build /app/packages/core/package.json packages/core/package.json
+# Copy all built packages (web, core, plugins) — pnpm workspace symlinks
+# in node_modules resolve to packages/*/ so all must be present
+COPY --from=build /app/packages packages
 COPY --from=build /app/node_modules node_modules
 COPY --from=build /app/package.json package.json
 
