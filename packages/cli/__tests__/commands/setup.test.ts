@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Command } from "commander";
+import * as YAML from "yaml";
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks — must be defined before any imports that use them
@@ -199,12 +200,12 @@ describe("setup openclaw command", () => {
       ]);
 
       const writtenYaml = mockWriteFileSync.mock.calls[0][1] as string;
-      const matches = writtenYaml.match(/openclaw/g);
-      // "openclaw" appears in: defaults.notifiers list, notifiers.openclaw key,
-      // plugin: openclaw, and the token ref. Should not have extra duplicates.
-      // Count just in defaults section
-      const defaultsSection = writtenYaml.split("notifiers:")[0] + writtenYaml.split("notifiers:")[1];
-      expect(defaultsSection).toBeDefined();
+      const doc = YAML.parseDocument(writtenYaml);
+      const notifiers = doc.getIn(["defaults", "notifiers"]) as YAML.YAMLSeq;
+      const openclawEntries = notifiers.items.filter(
+        (item) => String(item) === "openclaw",
+      );
+      expect(openclawEntries).toHaveLength(1);
     });
 
     it("writes correct notifier block structure", async () => {
