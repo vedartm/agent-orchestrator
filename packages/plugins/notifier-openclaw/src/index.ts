@@ -187,8 +187,6 @@ export function create(config?: Record<string, unknown>): Notifier {
   // Dashboard configuration for constructing dashboard URLs
   const dashboardBaseUrl =
     typeof config?.dashboardBaseUrl === "string" ? config.dashboardBaseUrl : undefined;
-  const dashboardPort =
-    typeof config?.dashboardPort === "number" ? config.dashboardPort : undefined;
 
   const { retries, retryDelayMs } = normalizeRetryConfig(config);
 
@@ -204,17 +202,14 @@ export function create(config?: Record<string, unknown>): Notifier {
 
   /**
    * Construct the dashboard URL for a session.
-   * Uses dashboardBaseUrl if configured, otherwise falls back to localhost:port.
+   * Uses dashboardBaseUrl if configured.
+   * Returns undefined if no dashboard URL is configured.
    */
   function buildDashboardUrl(sessionId: string): string | undefined {
     if (dashboardBaseUrl) {
       // Remove trailing slash from base URL
       const baseUrl = dashboardBaseUrl.replace(/\/$/, "");
       return `${baseUrl}/sessions/${sanitizeSessionId(sessionId)}`;
-    }
-    if (dashboardPort) {
-      // Fallback: use port from config (localhost only)
-      return `http://localhost:${dashboardPort}/sessions/${sanitizeSessionId(sessionId)}`;
     }
     return undefined;
   }

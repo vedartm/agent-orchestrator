@@ -77,8 +77,8 @@ function extractPluginConfig(
           if (restConfig["dashboardBaseUrl"] === null || restConfig["dashboardBaseUrl"] === undefined) {
             restConfig["dashboardBaseUrl"] = config.dashboardBaseUrl;
           }
-        }
-        if (config.port !== undefined && config.port !== null) {
+          // Only inject dashboardPort when dashboardBaseUrl is configured, as port alone
+          // doesn't give us a meaningful public URL (it would still be localhost)
           if (restConfig["dashboardPort"] === null || restConfig["dashboardPort"] === undefined) {
             restConfig["dashboardPort"] = config.port;
           }
