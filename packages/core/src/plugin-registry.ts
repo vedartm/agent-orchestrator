@@ -71,16 +71,11 @@ function extractPluginConfig(
       if (matches) {
         const { plugin: _plugin, ...rest } = notifierConfig as Record<string, unknown>;
         const restConfig = rest as Record<string, unknown>;
-        // Include dashboard configuration for notifiers that need to construct dashboard URLs,
+        // Include dashboardBaseUrl for notifiers that need to construct dashboard URLs,
         // but allow per-notifier overrides to take precedence.
         if (config.dashboardBaseUrl !== undefined && config.dashboardBaseUrl !== null) {
           if (restConfig["dashboardBaseUrl"] === null || restConfig["dashboardBaseUrl"] === undefined) {
             restConfig["dashboardBaseUrl"] = config.dashboardBaseUrl;
-          }
-          // Only inject dashboardPort when dashboardBaseUrl is configured, as port alone
-          // doesn't give us a meaningful public URL (it would still be localhost)
-          if (restConfig["dashboardPort"] === null || restConfig["dashboardPort"] === undefined) {
-            restConfig["dashboardPort"] = config.port;
           }
         }
         return restConfig;

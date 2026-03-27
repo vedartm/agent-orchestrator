@@ -20,7 +20,6 @@ export async function GET(request: Request): Promise<Response> {
   const encoder = new TextEncoder();
   const correlationId = createCorrelationId("sse");
   const { searchParams } = new URL(request.url);
-  const origin = new URL(request.url).origin;
   const projectFilter = searchParams.get("project");
   type ServicesConfig = Awaited<ReturnType<typeof getServices>>["config"];
   let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -82,7 +81,6 @@ export async function GET(request: Request): Promise<Response> {
           const dashboardSessions = workerSessions.map((session) =>
             sessionToDashboard(session, {
               dashboardBaseUrl: config.dashboardBaseUrl,
-              origin,
             }),
           );
           const projectObserver = ensureObserver(config);
@@ -146,7 +144,6 @@ export async function GET(request: Request): Promise<Response> {
             dashboardSessions = workerSessions.map((session) =>
               sessionToDashboard(session, {
                 dashboardBaseUrl: config.dashboardBaseUrl,
-                origin,
               }),
             );
             const projectObserver = ensureObserver(config);
