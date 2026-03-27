@@ -82,7 +82,6 @@ export async function GET(request: Request): Promise<Response> {
           const dashboardSessions = workerSessions.map((session) =>
             sessionToDashboard(session, {
               dashboardBaseUrl: config.dashboardBaseUrl,
-              port: config.port,
               origin,
             }),
           );
@@ -147,7 +146,6 @@ export async function GET(request: Request): Promise<Response> {
             dashboardSessions = workerSessions.map((session) =>
               sessionToDashboard(session, {
                 dashboardBaseUrl: config.dashboardBaseUrl,
-                port: config.port,
                 origin,
               }),
             );

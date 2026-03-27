@@ -62,7 +62,6 @@ export const getDashboardPageData = cache(async function getDashboardPageData(pr
     pageData.sessions = coreSessions.map((session) =>
       sessionToDashboard(session, {
         dashboardBaseUrl: config.dashboardBaseUrl,
-        port: config.port,
       }),
     );
 

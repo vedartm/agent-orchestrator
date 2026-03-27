@@ -49,7 +49,6 @@ export async function POST(request: NextRequest) {
       {
         session: sessionToDashboard(session, {
           dashboardBaseUrl: config.dashboardBaseUrl,
-          port: config.port,
           origin: request.nextUrl.origin,
         }),
       },

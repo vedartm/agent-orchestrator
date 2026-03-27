@@ -48,7 +48,7 @@ export function resolveProject(
 /** Convert a core Session to a DashboardSession (without PR/issue enrichment). */
 export function sessionToDashboard(
   session: Session,
-  config?: { dashboardBaseUrl?: string; port?: number; origin?: string },
+  config?: { dashboardBaseUrl?: string; origin?: string },
 ): DashboardSession {
   const agentSummary = session.agentInfo?.summary;
   const summary = agentSummary ?? session.metadata["summary"] ?? null;

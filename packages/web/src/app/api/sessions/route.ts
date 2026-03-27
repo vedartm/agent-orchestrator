@@ -82,7 +82,6 @@ export async function GET(request: NextRequest) {
     let dashboardSessions = workerSessions.map((session) =>
       sessionToDashboard(session, {
         dashboardBaseUrl: config.dashboardBaseUrl,
-        port: config.port,
         origin: request.nextUrl.origin,
       }),
     );
