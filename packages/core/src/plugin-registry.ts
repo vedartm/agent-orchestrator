@@ -74,12 +74,12 @@ function extractPluginConfig(
         // Include dashboard configuration for notifiers that need to construct dashboard URLs,
         // but allow per-notifier overrides to take precedence.
         if (config.dashboardBaseUrl !== undefined && config.dashboardBaseUrl !== null) {
-          if (restConfig["dashboardBaseUrl"] == null) {
+          if (restConfig["dashboardBaseUrl"] === null || restConfig["dashboardBaseUrl"] === undefined) {
             restConfig["dashboardBaseUrl"] = config.dashboardBaseUrl;
           }
         }
         if (config.port !== undefined && config.port !== null) {
-          if (restConfig["dashboardPort"] == null) {
+          if (restConfig["dashboardPort"] === null || restConfig["dashboardPort"] === undefined) {
             restConfig["dashboardPort"] = config.port;
           }
         }
