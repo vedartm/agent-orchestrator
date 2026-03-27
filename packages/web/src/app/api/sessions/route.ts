@@ -1,4 +1,5 @@
 import { ACTIVITY_STATE, isOrchestratorSession } from "@composio/ao-core";
+import { type NextRequest } from "next/server";
 import { getServices, getSCM } from "@/lib/services";
 import {
   sessionToDashboard,
@@ -31,7 +32,7 @@ async function settlesWithin(promise: Promise<unknown>, timeoutMs: number): Prom
   }
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const correlationId = getCorrelationId(request);
   const startedAt = Date.now();
   try {
