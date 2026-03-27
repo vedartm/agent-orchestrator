@@ -45,7 +45,7 @@ async function withConcurrencyLimit<T>(
   const deadline = Date.now() + deadlineMs;
   const queue = [...items];
   let active = 0;
-  const results: Promise<void>[] = [];
+  const results: Promise<unknown>[] = [];
 
   const runNext = (): void => {
     if (queue.length === 0 || active >= limit || Date.now() > deadline) {
