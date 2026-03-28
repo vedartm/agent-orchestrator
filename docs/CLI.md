@@ -41,3 +41,12 @@ ao config-help                         # Show full config schema reference
 `ao doctor` checks PATH and launcher resolution, required binaries, configured plugin resolution, tmux and GitHub CLI health, config support directories, stale AO temp files, and core build/runtime sanity. If your config enables `runtime: docker`, it also verifies Docker daemon access, checks that an image is configured, and warns about Linux rootless/GPU setup.
 
 `ao update` fast-forwards the local install on `main`, reinstalls dependencies, clean-rebuilds core packages, refreshes the launcher, and runs smoke tests. Use `ao update --skip-smoke` to stop after rebuild, or `ao update --smoke-only` to rerun just the smoke checks.
+
+## Runtime override examples
+
+```bash
+ao start --runtime docker --runtime-image ghcr.io/composio/ao:latest
+ao start --runtime docker --runtime-memory 4g --runtime-cpus 2 --runtime-read-only
+ao spawn 123 --runtime docker --runtime-network bridge --runtime-cap-drop ALL
+ao spawn 123 --runtime docker --runtime-config '{"limits":{"memory":"4g"}}'
+```
