@@ -380,7 +380,7 @@ async function checkPRListETag(
 
     // Extract new ETag from response headers
     // ETag header format: "etag": "W/"abc123..." or "etag": "abc123..."
-    const etagMatch = output.match(/etag:\s*"([^"]+)"/i);
+    const etagMatch = output.match(/etag:\s*(.+)/i);
     if (etagMatch) {
       const newETag = etagMatch[1];
       setPRListETag(owner, repo, newETag);
@@ -437,7 +437,7 @@ async function checkCommitStatusETag(
     }
 
     // Extract new ETag from response headers
-    const etagMatch = output.match(/etag:\s*"([^"]+)"/i);
+    const etagMatch = output.match(/etag:\s*(.+)/i);
     if (etagMatch) {
       const newETag = etagMatch[1];
       setCommitStatusETag(owner, repo, sha, newETag);
