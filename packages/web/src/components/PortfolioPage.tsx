@@ -89,7 +89,7 @@ function LauncherCard({
         <div className="text-[var(--font-size-xl)] font-medium tracking-[-0.025em] text-[var(--color-text-primary)]">
           {label}
         </div>
-        <p className="mt-2 text-[13px] leading-6 text-[var(--color-text-secondary)]">
+        <p className="mt-2 text-[var(--font-size-base)] leading-snug text-[var(--color-text-secondary)]">
           {description}
         </p>
       </div>
