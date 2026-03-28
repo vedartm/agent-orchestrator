@@ -544,7 +544,7 @@ function createGitHubSCM(config?: GitHubSCMConfig): SCM {
           "--head",
           session.branch,
           "--json",
-          "number,url,title,headRefName,baseRefName,isDraft",
+          "number,url,title,headRefName,baseRefName,isDraft,headRefOid",
           "--limit",
           "1",
         ]);
