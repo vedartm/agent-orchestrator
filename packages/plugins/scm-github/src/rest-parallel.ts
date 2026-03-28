@@ -688,22 +688,41 @@ export async function enrichSessionsPRBatch(
   observer?.log(`Starting batch enrichment for ${prs.length} PRs`);
 
   // Filter PRs that need refresh using 2-Guard strategy
+  // Group PRs by repo to optimize PR-list ETag checks (once per repo)
+  const repoGroups = new Map<string, PRInfo[]>();
+  for (const pr of prs) {
+    const repoKey = `${pr.owner}/${pr.repo}`;
+    if (!repoGroups.has(repoKey)) {
+      repoGroups.set(repoKey, []);
+    }
+    repoGroups.get(repoKey)!.push(pr);
+  }
+
+  // Check PR-list ETag once per repo and mark PRs for refresh
   const prsNeedingRefresh: PRInfo[] = [];
   const cacheHits: PREnrichmentData[] = [];
 
-  for (const pr of prs) {
-    const shouldRefresh = await shouldRefreshPREnrichment(pr, etagCache, observer);
-    if (shouldRefresh) {
-      prsNeedingRefresh.push(pr);
+  for (const [repoKey, repoPRs] of repoGroups.entries()) {
+    const [owner, repo] = repoKey.split("/");
+    const prListChanged = await checkPRListETag(owner, repo, etagCache);
+    if (prListChanged) {
+      observer?.log(`PR list ETag changed for ${repoKey}`);
+      // All PRs in this repo need refresh
+      prsNeedingRefresh.push(...repoPRs);
     } else {
-      const cacheKey = prCacheKey(pr);
-      const cached = prCache.get(cacheKey);
-      if (cached && cached.success) {
-        cacheHits.push(cached.enrichment);
-        result.set(cacheKey, cached.enrichment);
-      } else if (!cached) {
-        // No cache but guard says no change - still need to refresh
-        prsNeedingRefresh.push(pr);
+      // PR list unchanged - check cache for each PR
+      for (const pr of repoPRs) {
+        const cacheKey = prCacheKey(pr);
+        const cached = prCache.get(cacheKey);
+        if (cached && cached.success) {
+          // Cache hit - use cached enrichment
+          cacheHits.push(cached.enrichment);
+          result.set(cacheKey, cached.enrichment);
+        } else if (!cached) {
+          // No cache - need to refresh
+          prsNeedingRefresh.push(pr);
+        }
+        // If cached.success is false (partial data), we'll refresh anyway
       }
     }
   }
