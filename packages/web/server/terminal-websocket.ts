@@ -192,6 +192,12 @@ function getOrSpawnTtyd(sessionId: string, tmuxSessionName: string): TtydInstanc
     console.error(`[Terminal] Failed to set mouse mode for ${tmuxSessionName}:`, err.message);
   });
 
+  // Set scrollback history limit to provide sufficient history for viewing past output
+  const historyLimitProc = spawn(TMUX, ["set-option", "-t", tmuxSessionName, "history-limit", "10000"]);
+  historyLimitProc.on("error", (err) => {
+    console.error(`[Terminal] Failed to set history limit for ${tmuxSessionName}:`, err.message);
+  });
+
   // Hide the green status bar for cleaner appearance
   const statusProc = spawn(TMUX, ["set-option", "-t", tmuxSessionName, "status", "off"]);
   statusProc.on("error", (err) => {

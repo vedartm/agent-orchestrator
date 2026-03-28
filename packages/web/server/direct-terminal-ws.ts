@@ -177,6 +177,15 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
       console.error(`[DirectTerminal] Failed to set mouse mode for ${tmuxSessionId}:`, err.message);
     });
 
+    // Set scrollback history limit to provide sufficient history for viewing past output
+    // This is particularly important since xterm.js scrollback is disabled to fix
+    // the cursor moving with the viewport issue. Users will scroll through tmux's
+    // scrollback buffer instead (via copy mode: Ctrl+b, [)
+    const historyLimitProc = spawn(TMUX, ["set-option", "-t", tmuxSessionId, "history-limit", "10000"]);
+    historyLimitProc.on("error", (err) => {
+      console.error(`[DirectTerminal] Failed to set history limit for ${tmuxSessionId}:`, err.message);
+    });
+
     // Hide the green status bar for cleaner appearance
     const statusProc = spawn(TMUX, ["set-option", "-t", tmuxSessionId, "status", "off"]);
     statusProc.on("error", (err) => {
