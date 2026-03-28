@@ -452,6 +452,15 @@ function createCodexAgent(): Agent {
               return { state: ageMs > threshold ? "idle" : "active", timestamp };
           }
         }
+
+        // Session file exists but no parseable entry — use mtime as proxy
+        try {
+          const s = await stat(sessionFile);
+          const ageMs = Date.now() - s.mtimeMs;
+          return { state: ageMs > threshold ? "idle" : "active", timestamp: s.mtime };
+        } catch {
+          // stat failed — fall through
+        }
       }
 
       // 2. Fallback: check AO activity JSONL (terminal-derived) for waiting_input/blocked

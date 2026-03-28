@@ -108,12 +108,10 @@ export { normalizeOrchestratorSessionStrategy } from "./orchestrator-session-str
 
 // Activity log — JSONL activity tracking for agents without native JSONL
 export {
-  getActivityLogPath,
   appendActivityEntry,
   readLastActivityEntry,
   checkActivityLogState,
   classifyTerminalActivity,
-  ACTIVITY_INPUT_STALENESS_MS,
 } from "./activity-log.js";
 
 // Agent workspace hooks — shared PATH-wrapper setup for non-Claude agents
