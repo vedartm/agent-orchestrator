@@ -191,7 +191,7 @@ function createAiderAgent(): Agent {
       // 1. Check AO activity JSONL first (written by recordActivity from terminal output).
       //    This is the only source of waiting_input/blocked states for Aider.
       const activityResult = await readLastActivityEntry(session.workspacePath);
-      const activityState = checkActivityLogState(activityResult, threshold);
+      const activityState = checkActivityLogState(activityResult);
       if (activityState) return activityState;
 
       // 2. Fallback: check for recent git commits (Aider auto-commits changes)

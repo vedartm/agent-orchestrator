@@ -457,7 +457,7 @@ function createCodexAgent(): Agent {
       // 2. Fallback: check AO activity JSONL (terminal-derived) for waiting_input/blocked
       //    that the native JSONL may not have captured.
       const activityResult = await readLastActivityEntry(session.workspacePath);
-      const activityState = checkActivityLogState(activityResult, threshold);
+      const activityState = checkActivityLogState(activityResult);
       if (activityState) return activityState;
 
       return null;

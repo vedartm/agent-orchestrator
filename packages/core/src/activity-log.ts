@@ -99,34 +99,30 @@ export async function readLastActivityEntry(
 }
 
 /**
- * Check the AO activity JSONL for the current state.
+ * Check the AO activity JSONL for actionable states only.
  *
- * Returns an `ActivityDetection` for `waiting_input`/`blocked` (with a staleness
- * cap), fresh non-critical states within `thresholdMs`, or `null` if nothing
- * useful was found. Callers should fall through to their own fallback signals
- * when this returns `null`.
+ * Only returns `waiting_input`/`blocked` (with a staleness cap).
+ * Non-critical states (`active`, `ready`, `idle`) always return `null` so
+ * callers fall through to their native signals (git commits, chat history,
+ * API queries, native JSONL). This prevents the lifecycle manager's
+ * `recordActivity` writes (which refresh `mtime` every poll cycle) from
+ * shadowing those richer detection methods and breaking stuck-detection.
  */
 export function checkActivityLogState(
   activityResult: { entry: ActivityLogEntry; modifiedAt: Date } | null,
-  thresholdMs: number,
 ): ActivityDetection | null {
   if (!activityResult) return null;
 
   const { entry, modifiedAt } = activityResult;
-  const ageMs = Date.now() - modifiedAt.getTime();
 
   if (entry.state === "waiting_input" || entry.state === "blocked") {
+    const ageMs = Date.now() - modifiedAt.getTime();
     if (ageMs <= ACTIVITY_INPUT_STALENESS_MS) {
       return { state: entry.state, timestamp: modifiedAt };
     }
-    // Stale — fall through so callers use other signals
-    return null;
   }
 
-  if (ageMs <= thresholdMs) {
-    return { state: entry.state, timestamp: modifiedAt };
-  }
-
+  // Non-critical states and stale entries — fall through to native signals
   return null;
 }
 

@@ -484,16 +484,19 @@ describe("getActivityState with activity JSONL", () => {
     expect(result?.state).toBe("blocked");
   });
 
-  it("uses activity JSONL state when fresh", async () => {
+  it("falls through to native signals for non-critical JSONL states", async () => {
     mockTmuxWithProcess("aider");
     mockReadLastActivityEntry.mockResolvedValueOnce({
       entry: { ts: new Date().toISOString(), state: "active", source: "terminal" },
       modifiedAt: new Date(),
     });
 
+    // Non-critical "active" from AO JSONL is ignored — falls through to
+    // git/chat fallbacks. With no git commits or chat history, returns idle
+    // from the stale activity entry.
     const result = await agent.getActivityState(
       makeSession({ runtimeHandle: makeTmuxHandle() }),
     );
-    expect(result?.state).toBe("active");
+    expect(result?.state).toBe("idle");
   });
 });

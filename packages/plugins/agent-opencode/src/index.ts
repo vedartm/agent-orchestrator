@@ -317,7 +317,7 @@ function createOpenCodeAgent(): Agent {
       //    This is the only source of waiting_input/blocked states for OpenCode.
       if (session.workspacePath) {
         const activityResult = await readLastActivityEntry(session.workspacePath);
-        const activityState = checkActivityLogState(activityResult, threshold);
+        const activityState = checkActivityLogState(activityResult);
         if (activityState) return activityState;
       }
 
