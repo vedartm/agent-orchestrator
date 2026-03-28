@@ -1,216 +1,157 @@
 # Design System — Agent Orchestrator
 
 ## Product Context
-- **What this is:** A dashboard for managing fleets of parallel AI coding agents working on your codebase
-- **Who it's for:** Developers and engineering leads who supervise AI-assisted development at scale
-- **Space/industry:** Developer tools — peers include Linear, Vercel, Railway, Retool
-- **Project type:** Data-dense operator dashboard (web app)
+- **What this is:** A web-based dashboard for managing fleets of parallel AI coding agents. Each agent gets its own git worktree, branch, and PR. The dashboard is the operator's single pane of glass.
+- **Who it's for:** Developers running 10-30+ AI coding agents in parallel. From solo devs to engineering teams.
+- **Space/industry:** AI agent orchestration. Competitors: Conductor.build, T3 Code, OpenAI Codex app, Emdash. All are native Mac apps. Agent Orchestrator is the web-based alternative.
+- **Project type:** Web app (Next.js 15, React 19, Tailwind v4). Kanban board with 6 attention-priority columns.
 
 ## Aesthetic Direction
-- **Direction:** Industrial/Utilitarian with Linear-lineage polish
-- **Decoration level:** Intentional — subtle gradient surfaces on dark cards, ambient radial glow on body background, glass-effect nav with backdrop blur. Light mode is minimal (no decoration).
-- **Mood:** Serious operator console. Technical, calm, trustworthy. Prioritizes scan-ability and data density. The interface should feel like mission control for autonomous agents — you're supervising work, not doing it.
-- **Reference sites:** linear.app, vercel.com/geist, railway.com
+- **Direction:** Industrial Precision
+- **Decoration level:** Intentional — subtle depth through surface hierarchy, ambient glow on active states, gradient surfaces in dark mode. No decorative blobs, no gratuitous gradients.
+- **Mood:** Trading terminal meets control room. Dense, scannable, utilitarian, with just enough warmth that developers want to live in it for 10 hours. "I'm running an operation" not "I'm organizing tasks."
+- **Reference sites:** Conductor.build, t3.codes, openai.com/codex, emdash.dev
 
 ## Typography
-- **Display/Hero:** IBM Plex Sans (700) — engineered, open-source, warm enough to avoid sterile terminal cosplay. Letter-spacing: -0.025em at display sizes.
-- **Body:** IBM Plex Sans (400, 500) — readable at small sizes (13px base), supports the "operator console" thesis.
-- **UI/Labels:** IBM Plex Mono (400, 500) — used for session IDs, branch names, diff stats, PR numbers, timestamps. Anything that reads as "data" rather than "prose."
-- **Data/Tables:** IBM Plex Mono (400) with `font-variant-numeric: tabular-nums` — columns of numbers must align.
-- **Code/Terminal:** JetBrains Mono (400, 500) — used exclusively in terminal/xterm views and code blocks. Distinguished from IBM Plex Mono by context: Plex Mono is UI chrome, JetBrains Mono is agent output.
-- **Loading:** Google Fonts via `next/font/google` with `display: swap`. CSS variables: `--font-ibm-plex-sans`, `--font-ibm-plex-mono`, `--font-jetbrains-mono`.
+- **Display/Hero:** Geist Sans, weight 680, letter-spacing -0.035em — same font as body but differentiated through weight and tracking. Tighter and heavier creates display hierarchy without a font swap. No cognitive gear-shifts on a scan-heavy dashboard.
+- **Body:** Geist Sans, weight 400, letter-spacing -0.011em — purpose-built for dense interfaces at 13px. Better digit alignment than IBM Plex Sans, designed for exactly this density level.
+- **UI/Labels:** Geist Sans, weight 600, letter-spacing 0.06em, uppercase, 10-11px — column headers, section labels, status indicators.
+- **Data/Tables:** JetBrains Mono, weight 400, 11-13px, tabular-nums — agent IDs, branch names, timestamps, commit hashes, diff stats, PR numbers.
+- **Code:** JetBrains Mono, weight 400 — terminal output, code blocks, inline code.
+- **Loading:** Google Fonts via next/font/google. CSS variables: `--font-sans` (Geist), `--font-mono` (JetBrains Mono). Display strategy: swap.
 - **Scale:**
-
-  | Token | Size | Usage |
-  |-------|------|-------|
-  | xs | 10px | Column headers, uppercase labels, timestamps |
-  | sm | 11px | Secondary text, captions, chip labels |
-  | base | 13px | Body text, card descriptions, alerts |
-  | lg | 15px | Section titles, detail headers |
-  | xl | 17px | Page titles, hero headings |
-
-- **Global letter-spacing:** -0.011em on body. Uppercase labels use +0.06em to +0.08em.
+  - xs: 10px (timestamps, metadata)
+  - sm: 11px (secondary text, captions, labels)
+  - base: 13px (body text, card content)
+  - lg: 15px (section titles)
+  - xl: 17px (page titles)
+  - display: clamp(22px, 2.8vw, 32px) (hero headings)
 
 ## Color
+- **Approach:** Restrained with signal accents. Color is a priority channel, not decoration.
+- **Accent (cool):** #5B7EF8 — interactive elements, links, focus rings. Used sparingly.
+- **Accent hover:** #7a96ff
+- **Accent tint:** rgba(91, 126, 248, 0.12)
+- **Attention (warm):** #f1be64 — states requiring human input. Amber is universally "needs attention" without the panic of red.
 
-### Approach
-Balanced — indigo (#5e6ad2) as the interactive accent, standard semantic status colors, blue-tinted graphite surfaces in dark mode. The system uses two complete palettes (light and dark) with CSS custom properties toggled via `.dark` class.
-
-### Light Mode
-
+### Surfaces (Dark Mode)
 | Token | Value | Usage |
 |-------|-------|-------|
-| `--color-bg-base` | `#ffffff` | Page background |
-| `--color-bg-surface` | `#ffffff` | Card surfaces |
-| `--color-bg-elevated` | `#ffffff` | Elevated panels |
-| `--color-bg-elevated-hover` | `#f7f7f8` | Hover state on elevated surfaces |
-| `--color-bg-subtle` | `#f2f2f2` | Subtle backgrounds, chip fills |
-| `--color-text-primary` | `#1b1b1f` | Headings, primary content |
-| `--color-text-secondary` | `#5e5e66` | Descriptions, body text |
-| `--color-text-tertiary` | `#737380` | Captions, timestamps, muted labels |
-| `--color-border-subtle` | `#e8e8ec` | Section dividers, card borders |
-| `--color-border-default` | `#d9d9de` | Input borders, stronger dividers |
-| `--color-border-strong` | `#c1c1c6` | Emphasis borders |
-| `--color-accent` | `#5e6ad2` | Interactive elements, links, accent |
-| `--color-accent-hover` | `#4850b8` | Hover state for accent |
-| `--color-accent-subtle` | `rgba(94, 106, 210, 0.08)` | Accent tint backgrounds |
+| bg-base | #0a0d12 | Page background |
+| bg-surface | #11161d | Card/column backgrounds |
+| bg-elevated | #171d26 | Modals, popovers, hover states |
+| bg-elevated-hover | #1c2430 | Hover on elevated surfaces |
+| bg-subtle | rgba(177, 206, 255, 0.05) | Subtle tints, pill backgrounds |
 
-### Dark Mode
-
+### Surfaces (Light Mode)
 | Token | Value | Usage |
 |-------|-------|-------|
-| `--color-bg-base` | `#0a0d12` | Page background (deep graphite) |
-| `--color-bg-surface` | `#11161d` | Card surfaces |
-| `--color-bg-elevated` | `#171d26` | Elevated panels |
-| `--color-bg-elevated-hover` | `#1c2430` | Hover state |
-| `--color-bg-subtle` | `rgba(177, 206, 255, 0.05)` | Subtle blue-tinted background |
-| `--color-text-primary` | `#eef3ff` | Headings (blue-white) |
-| `--color-text-secondary` | `#a5afc4` | Body text (blue-gray) |
-| `--color-text-tertiary` | `#6f7c94` | Muted text |
-| `--color-border-subtle` | `rgba(160, 190, 255, 0.08)` | Blue-tinted subtle borders |
-| `--color-border-default` | `rgba(160, 190, 255, 0.14)` | Default borders |
-| `--color-border-strong` | `rgba(185, 214, 255, 0.24)` | Strong borders |
-| `--color-accent` | `#8fb4ff` | Interactive elements (lighter for dark bg) |
-| `--color-accent-hover` | `#b4ccff` | Hover state |
-| `--color-accent-subtle` | `rgba(143, 180, 255, 0.16)` | Accent tint backgrounds |
+| bg-base | #f5f5f7 | Page background |
+| bg-surface | #ffffff | Card/column backgrounds |
+| bg-elevated | #ffffff | Modals, popovers |
+| bg-elevated-hover | #f7f7f8 | Hover states |
+| bg-subtle | #f0f0f2 | Subtle tints |
+
+### Text (Dark Mode)
+| Token | Value | Usage |
+|-------|-------|-------|
+| text-primary | #eef3ff | Headings, card titles, body. Blue-white, not pure white. |
+| text-secondary | #a5afc4 | Descriptions, metadata. Readable in dense layouts. |
+| text-tertiary | #6f7c94 | Timestamps, placeholders, disabled states. |
+
+### Text (Light Mode)
+| Token | Value | Usage |
+|-------|-------|-------|
+| text-primary | #1b1b1f | Headings, card titles, body. |
+| text-secondary | #5e5e66 | Descriptions, metadata. |
+| text-tertiary | #8e8e96 | Timestamps, placeholders. |
+
+### Borders (Dark Mode)
+| Token | Value | Usage |
+|-------|-------|-------|
+| border-subtle | rgba(160, 190, 255, 0.08) | Dividers, section separators |
+| border-default | rgba(160, 190, 255, 0.14) | Card edges, input borders |
+| border-strong | rgba(185, 214, 255, 0.24) | Hover states, focus indicators |
 
 ### Status Colors
+| Status | Dark Mode | Light Mode | Usage |
+|--------|-----------|------------|-------|
+| Working | #22c55e | #16a34a | Agent actively coding. Green dot with pulse ring animation. |
+| Ready | #5B7EF8 | #5e6ad2 | Queued, awaiting start or CI pending. |
+| Respond | #f1be64 | #ca8a04 | Needs human input. Amber = attention without panic. |
+| Review | #06b6d4 | #0891b2 | Code ready for review. Cyan = "look when ready." |
+| Error | #ef4444 | #dc2626 | CI failed, agent crashed. Red = broken. |
+| Done | #3a4252 | #d0d7de | Completed. Fades to secondary text. Done items recede. |
 
-| Status | Light | Dark | Meaning |
-|--------|-------|------|---------|
-| Working | `#5e6ad2` | `#6e8fff` | Agent is actively coding |
-| Ready | `#1a7f37` | `#73e0aa` | PR approved, CI green, cleared to merge |
-| Attention | `#9a6700` | `#f1be64` | Needs human decision |
-| Error | `#cf222e` | `#ff7b72` | CI failed, agent stuck |
-| Done | `#d0d7de` | `#202838` | Session completed |
-
-### Semantic Accents
-
-| Name | Light | Dark |
-|------|-------|------|
-| Blue | `#5e6ad2` | `#8fb4ff` |
-| Green | `#1a7f37` | `#5fd39a` |
-| Yellow | `#9a6700` | `#f1be64` |
-| Orange | `#bc4c00` | `#ff9d57` |
-| Red | `#cf222e` | `#ff7b72` |
-| Violet | `#8250df` | `#b59cff` |
-
-Each semantic color has a corresponding tint token (`--color-tint-{name}`) at 8% opacity (light) or 12% opacity (dark) for pill/badge backgrounds.
-
-### Dark Mode Strategy
-- Blue-biased graphite surfaces — not neutral gray, not warm. The blue tint makes the interface feel computational and live.
-- `rgba()` borders with blue channel bias — borders glow faintly blue without being precious about it.
-- Ambient radial glow on body — two radial gradients (blue at top-left 20% opacity, teal/violet at bottom-right 8% opacity) prevent the deep base from feeling like a void.
-- Desaturated status colors — dark mode status values are lighter and slightly desaturated for readability against dark surfaces.
-- Gradient card surfaces — subtle top-to-bottom gradient on cards creates depth layering.
-- Inset highlight — `inset 0 1px 0 rgba(255,255,255,0.04)` on elevated surfaces implies a top light source.
+- **Dark mode strategy:** Blue-tinted graphite palette (not neutral gray). Reduce font weight by one step in dark mode (semibold becomes 500, bold becomes 600). Inset highlights on elevated surfaces: `inset 0 1px 0 rgba(255,255,255,0.04)`. Subtle radial gradients on body for ambient depth.
 
 ## Spacing
 - **Base unit:** 4px
-- **Density:** Comfortable — the dashboard is data-dense but not cramped. Cards have 10-12px internal padding, columns have 12px padding.
-- **Scale:**
-
-  | Token | Value |
-  |-------|-------|
-  | `--space-1` | 4px |
-  | `--space-2` | 8px |
-  | `--space-3` | 12px |
-  | `--space-4` | 16px |
-  | `--space-5` | 20px |
-  | `--space-6` | 24px |
-  | `--space-8` | 32px |
-  | `--space-10` | 40px |
-  | `--space-12` | 48px |
-  | `--space-16` | 64px |
+- **Density:** Comfortable — dense enough for 30+ cards, spacious enough for 10-hour sessions
+- **Scale:** 1(4) 2(8) 3(12) 4(16) 5(20) 6(24) 8(32) 10(40) 12(48) 16(64)
 
 ## Layout
-- **Approach:** Grid-disciplined kanban
-- **Primary layout:** Attention-priority kanban columns — Working > Pending > Review > Respond > Ready. Each column represents a level of human attention needed.
-- **Grid:** 5 equal columns on desktop, 3 on tablet, stacked on mobile
-- **Max content width:** No hard max — the dashboard is full-width to maximize data density
-- **Card height:** ~242px for session cards (flexible based on content)
+- **Approach:** Grid-disciplined
+- **Kanban grid:** 6 equal-width columns on desktop, 3 on tablet, stacked on mobile
+- **Mobile column order:** Respond > Review > Pending > Working (urgency-first)
+- **Max content width:** 1280px for settings/detail pages
 - **Border radius:**
-
-  | Token | Value | Usage |
-  |-------|-------|-------|
-  | `--radius-sm` | 4px | Chips, small pills, inputs |
-  | `--radius-md` | 6px | Theme toggle, dropdowns |
-  | `--radius-lg` | 8px | Modals, larger containers |
-  | `--radius-xl` | 12px | Feature cards |
-  | `0` | 0px | Session cards, kanban columns, buttons — the utilitarian stance |
-
-- **Note:** Cards and primary interactive surfaces use `border-radius: 0` as a deliberate design choice — sharp corners reinforce the industrial/utilitarian aesthetic.
+  - base: 2px (cards, buttons, inputs — consistent, sharp, intentional)
+  - sm: 4px (tooltips, small transient elements)
+  - md: 6px (dropdowns, floating interactive elements)
+  - lg: 8px (modals, large floating overlays)
+  - full: 9999px (pills, badges, count indicators)
+- **Card inset highlight:** `inset 0 1px 0 rgba(255,255,255,0.04)` in dark mode
+- **Status accent:** 2px solid left border on session cards, colored by status
 
 ## Motion
-- **Approach:** Minimal-functional, with one standout exception
-- **Easing:** ease (default), ease-out (entrances), ease-in-out (continuous)
+- **Approach:** Intentional — every animation has a clear purpose and passes the frequency test
+- **Easing:**
+  - enter/exit: `cubic-bezier(0.16, 1, 0.3, 1)` (spring-like deceleration, feels responsive)
+  - move/morph: `cubic-bezier(0.77, 0, 0.175, 1)` (natural acceleration/deceleration)
+  - hover/color: `ease-out`
+  - constant (spinner, marquee): `linear`
 - **Duration:**
+  - micro: 100-160ms (button press, hover state)
+  - short: 150-200ms (tooltips, popovers, card entrance)
+  - medium: 200-300ms (modals, drawers, card expand)
+  - long: 2s (status dot pulse, continuous indicators)
+- **Card entrance:** `translateY(8px)` + opacity, 0.2s with 40ms stagger between siblings
+- **Status pulse:** GPU-composited pseudo-element on Working dots. `transform: scale(0.8→1.3)` + `opacity: 0.5→0`, 2s ease-in-out infinite. Not box-shadow (triggers paint).
+- **Button press:** `transform: scale(0.97)` on `:active`, 160ms ease-out
+- **Rules:**
+  - Never animate keyboard-initiated actions (command palette toggle, shortcuts)
+  - One animation per element, one purpose per animation
+  - CSS transitions for interruptible UI, keyframes for continuous indicators
+  - All animations must respect `prefers-reduced-motion: reduce`
+  - Use `contain: layout style paint` on session cards for performance with 30+ cards
 
-  | Token | Value | Usage |
-  |-------|-------|-------|
-  | `--transition-quick` | 0.1s | Hover states, micro-interactions |
-  | `--transition-regular` | 0.25s | Expand/collapse, page transitions |
+## Performance Guidelines
+- Use `contain: layout style paint` and `content-visibility: auto` on session cards
+- Animate only `transform` and `opacity` (GPU-composited). Never animate `padding`, `margin`, `height`, `width`, `border`, or `box-shadow`.
+- Status dot pulse must use pseudo-element with `will-change: transform, opacity`, not box-shadow rings
+- Backdrop blur on nav capped at 12px (diminishing returns above 12)
+- Pause all non-essential animations when tab is hidden
 
-- **Animations:**
-
-  | Name | Description | Usage |
-  |------|-------------|-------|
-  | `slide-up` | 4px translateY + opacity fade | Card entrance in kanban columns |
-  | `activity-pulse` | Box-shadow pulse (0 → 4px) | Activity dots on working sessions |
-  | `spin` | 360deg rotate | Loading spinners |
-  | `pulse` | Opacity 1 → 0.4 → 1 | Skeleton loading states |
-  | `ready-rail-breathe` | Box-shadow intensity oscillation | Ready-to-Merge card body glow |
-  | `ready-dot-pulse` | Scale 1 → 1.22 | Ready status indicator dot |
-  | `ready-sheen` | Horizontal gradient sweep | Top-edge highlight on Ready cards |
-
-- **Standout moment:** The Ready-to-Merge card is the system's most distinctive design element. It combines breathing box-shadow, a pulsing status dot, a green radial glow from below, and a horizontal sheen animation. This card earns visual prominence through motion, not just color — it's the single most recognizable UI moment in the product.
-
-## Dark Mode Card Surfaces
-
-Cards in dark mode use gradient backgrounds rather than flat colors to create depth:
-
-| Token | Value |
-|-------|-------|
-| `--card-bg` | `linear-gradient(180deg, rgba(22,28,37,0.98) 0%, rgba(16,21,29,0.98) 100%)` |
-| `--card-expanded-bg` | `linear-gradient(180deg, rgba(26,34,45,0.98) 0%, rgba(18,24,33,0.98) 100%)` |
-| `--card-merge-bg` | `rgba(17,23,31,0.98)` |
-| `--card-shadow` | `0 18px 36px rgba(2,6,12,0.24)` |
-| `--card-shadow-hover` | `0 24px 54px rgba(2,6,12,0.34)` |
-| `--card-inset` | `inset 0 1px 0 rgba(255,255,255,0.04)` |
-
-Light mode cards use flat `#ffffff` with no shadows by default and minimal hover shadows.
-
-## Z-Index Scale
-
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--z-base` | 0 | Default layer |
-| `--z-raised` | 10 | Cards, elevated content |
-| `--z-nav` | 100 | Navigation bar |
-| `--z-modal` | 200 | Modal dialogs |
-| `--z-overlay` | 300 | Overlay backgrounds |
-| `--z-toast` | 400 | Toast notifications |
-
-## Future Considerations
-
-Insights from competitive research and external design reviews (Codex + independent assessment, March 2026):
-
-1. **Color system expansion:** The current palette has one light/dark value per accent. A full semantic ramp (subtle fill, strong fill, hover, pressed, focus, text-on-accent) would make the system more complete.
-2. **Light mode investment:** Dark mode received significantly more design attention (gradients, ambient glow, inset highlights). Light mode is functional but flat — it could benefit from subtle surface differentiation and shadow depth.
-3. **Mono font consolidation:** Two mono families (IBM Plex Mono for UI, JetBrains Mono for terminal) adds font weight. Consider whether one family could serve both roles.
-4. **Brand differentiation:** The system is recognizably Linear-adjacent (same indigo accent, similar neutral ramp). A signature accent color could give the product its own visual identity.
-5. **Border radius as semantic signal:** `border-radius: 0` everywhere creates visual monotony. Consider: sharp = structural containers, pill = status labels, rounded = interactive buttons.
-6. **Motion vocabulary:** The Ready-to-Merge card proves the team can create distinctive motion. Extend that investment to Working-state cards (subtle shimmer, gradient shift) to make the active state feel more alive.
-7. **"Done" treatment:** `#d0d7de` (light) reads more like "disabled" than "completed." Consider a desaturated steel or cool sage that signals accomplishment.
+## Anti-Patterns (Never Do)
+- Purple/violet gradients as default accent
+- 3-column feature grid with icons in colored circles
+- Centered everything with uniform spacing
+- Uniform bubbly border-radius (8-12px) on all elements
+- Gradient buttons as primary CTA pattern
+- `transition: all` — always specify exact properties
+- `scale(0)` entry animations — start from `scale(0.95)` with `opacity: 0`
+- `ease-in` on UI elements — use `ease-out` for responsiveness
+- Animations over 300ms on frequently-triggered UI elements
 
 ## Decisions Log
-
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-03-27 | Initial design system formalized into DESIGN.md | Created by /design-consultation with competitive research (Linear, Vercel, Railway) and external design voices (Codex + Claude subagent). Documents existing system as-is. |
-| 2026-03-27 | Keep IBM Plex Sans as primary font | Engineered, open-source, technical feel. Supports the "operator console" thesis better than Inter. Both reviewers validated the choice. |
-| 2026-03-27 | Keep dual mono families (Plex Mono + JetBrains) | Semantic distinction: Plex Mono = UI chrome (session IDs, stats), JetBrains Mono = agent output (terminal, code). Flagged as potential consolidation target. |
-| 2026-03-27 | Keep blue-tinted graphite dark mode | Both external reviewers called this the strongest part of the system. The blue bias makes the interface feel computational and live. |
-| 2026-03-27 | Keep `border-radius: 0` on cards | Deliberate utilitarian stance. Both reviewers flagged this as both a strength (distinctive) and a risk (visual monotony). Keeping for now. |
-| 2026-03-27 | Darken tertiary text to #737380 | /design-review found #8b8b93 fails WCAG AA (3.38:1). New value passes at 4.67:1. |
-| 2026-03-27 | Add prefers-reduced-motion | /design-review: all animations disabled for users who prefer reduced motion. |
+| 2026-03-28 | Initial design system created | Created by /design-consultation with competitive research (Conductor.build, T3 Code, OpenAI Codex, Emdash) + 4 design voices (primary, Codex CLI, Claude subagent, Emil Kowalski design eng) |
+| 2026-03-28 | Geist Sans + JetBrains Mono (2 fonts only) | Emil review: 4 fonts creates cognitive gear-shifts on scan-heavy dashboards. Two fonts, hierarchy through weight + tracking. |
+| 2026-03-28 | Accent #5B7EF8 instead of Tailwind blue-500 | Emil review: stock Tailwind blue reads "default" and undermines Industrial Precision identity. Existing token-reference blue is more sophisticated. |
+| 2026-03-28 | Dual accent (cool blue + warm amber) | All 3 outside voices independently proposed amber for attention states. Two accents with clear semantic roles beat a single color. |
+| 2026-03-28 | Fixed-width kanban columns (not variable) | Emil review: variable width breaks spatial memory. Encode urgency in column header dots instead. |
+| 2026-03-28 | 2px base border-radius | Full 0px risks looking unstyled. 2px reads as intentionally sharp while feeling designed. Consistent across cards, buttons, inputs. Distinct from competitors' 8-12px rounded corners. |
+| 2026-03-28 | Keep dot pulse, remove border heartbeat | Emil review: 4s border animation on 15+ cards is "decorative anxiety" with high perf cost. Existing 8px dot pulse is correct pattern — small surface, GPU-composited. |
+| 2026-03-28 | Simplify ready-to-merge to single animation | Emil review: 3 concurrent keyframe animations on merge-ready cards is over-engineered. One animation per element, one purpose. Keep dot pulse only. |
