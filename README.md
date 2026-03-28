@@ -63,6 +63,7 @@ To install from source (for contributors):
 git clone https://github.com/ComposioHQ/agent-orchestrator.git
 cd agent-orchestrator && bash scripts/setup.sh
 ```
+
 </details>
 
 ### Start
@@ -135,6 +136,42 @@ reactions:
 CI fails → agent gets the logs and fixes it. Reviewer requests changes → agent addresses them. PR approved with green CI → you get a notification to merge.
 
 See [`agent-orchestrator.yaml.example`](agent-orchestrator.yaml.example) for the full reference, or run `ao config-help` for the complete schema.
+
+### Using Docker runtime
+
+Docker is opt-in. The local default stays `tmux`, but you can switch a project or a single startup to Docker when you want isolation or a reproducible server/CI environment.
+
+```yaml
+projects:
+  my-app:
+    repo: owner/my-app
+    path: ~/my-app
+    defaultBranch: main
+    runtime: docker
+    runtimeConfig:
+      image: ghcr.io/composio/ao:latest
+      limits:
+        cpus: 2
+        memory: 4g
+      readOnlyRoot: true
+      capDrop: [ALL]
+      tmpfs: [/tmp]
+```
+
+You can also override runtime per command:
+
+```bash
+ao start --runtime docker --runtime-image ghcr.io/composio/ao:latest
+ao spawn 123 --runtime docker --runtime-image ghcr.io/composio/ao:latest
+ao spawn 123 --runtime docker --runtime-memory 4g --runtime-cpus 2 --runtime-read-only
+```
+
+Recommended for servers:
+
+- Prefer rootless Docker on Linux
+- Use a pinned image instead of `latest` for reproducibility
+- Add `readOnlyRoot`, `capDrop`, and explicit CPU/memory limits for multi-tenant hosts
+- Use `ao doctor` after changing Docker runtime config; it now checks Docker daemon access and warns about missing image/rootless/GPU setup
 
 ## Plugin Architecture
 

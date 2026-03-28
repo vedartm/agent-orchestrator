@@ -38,6 +38,18 @@ import { updateMetadata } from "./metadata.js";
 import { getSessionsDir } from "./paths.js";
 import { createCorrelationId, createProjectObserver } from "./observability.js";
 import { resolveAgentSelection, resolveSessionRole } from "./agent-selection.js";
+import { resolveRuntimeName as resolveStoredRuntimeName } from "./runtime-selection.js";
+
+function resolveRuntimeNameForSession(
+  session: Session,
+  project: _ProjectConfig,
+  defaults: OrchestratorConfig["defaults"],
+): string {
+  return (
+    session.runtimeHandle?.runtimeName ??
+    resolveStoredRuntimeName(project, defaults.runtime, { raw: session.metadata })
+  );
+}
 
 /** Parse a duration string like "10m", "30s", "1h" to milliseconds. */
 function parseDuration(str: string): number {
@@ -356,7 +368,8 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
 
     // 1. Check if runtime is alive
     if (session.runtimeHandle) {
-      const runtime = registry.get<Runtime>("runtime", project.runtime ?? config.defaults.runtime);
+      const runtimeName = resolveRuntimeNameForSession(session, project, config.defaults);
+      const runtime = registry.get<Runtime>("runtime", runtimeName);
       if (runtime) {
         const alive = await runtime.isAlive(session.runtimeHandle).catch(() => true);
         if (!alive) return "killed";
@@ -383,10 +396,8 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           // proceed to PR checks below
         } else {
           // getActivityState returned null — fall back to terminal output parsing
-          const runtime = registry.get<Runtime>(
-            "runtime",
-            project.runtime ?? config.defaults.runtime,
-          );
+          const runtimeName = resolveRuntimeNameForSession(session, project, config.defaults);
+          const runtime = registry.get<Runtime>("runtime", runtimeName);
           const terminalOutput = runtime ? await runtime.getOutput(session.runtimeHandle, 10) : "";
           if (terminalOutput) {
             const activity = agent.detectActivity(terminalOutput);

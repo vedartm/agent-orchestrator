@@ -13,6 +13,7 @@ const { mockExec, mockConfigRef, mockSessionManager, mockEnsureLifecycleWorker }
       kill: vi.fn(),
       cleanup: vi.fn(),
       get: vi.fn(),
+      getAttachInfo: vi.fn(),
       spawn: vi.fn(),
       spawnOrchestrator: vi.fn(),
       send: vi.fn(),
@@ -114,6 +115,8 @@ beforeEach(() => {
 
   mockSessionManager.spawn.mockReset();
   mockSessionManager.claimPR.mockReset();
+  mockSessionManager.getAttachInfo.mockReset();
+  mockSessionManager.getAttachInfo.mockResolvedValue(null);
   mockExec.mockReset();
   mockEnsureLifecycleWorker.mockReset();
   mockEnsureLifecycleWorker.mockResolvedValue({
@@ -307,6 +310,64 @@ describe("spawn command", () => {
     });
   });
 
+  it("passes docker runtime override flags through to sessionManager.spawn()", async () => {
+    const fakeSession: Session = {
+      id: "app-1",
+      projectId: "my-app",
+      status: "spawning",
+      activity: null,
+      branch: null,
+      issueId: null,
+      pr: null,
+      workspacePath: "/tmp/wt",
+      runtimeHandle: { id: "container-123", runtimeName: "docker", data: {} },
+      agentInfo: null,
+      createdAt: new Date(),
+      lastActivityAt: new Date(),
+      metadata: {},
+    };
+
+    mockSessionManager.spawn.mockResolvedValue(fakeSession);
+
+    await program.parseAsync([
+      "node",
+      "test",
+      "spawn",
+      "--runtime",
+      "docker",
+      "--runtime-image",
+      "ghcr.io/composio/ao:test",
+      "--runtime-cpus",
+      "2",
+      "--runtime-memory",
+      "4g",
+      "--runtime-read-only",
+      "--runtime-network",
+      "bridge",
+      "--runtime-cap-drop",
+      "ALL",
+      "--runtime-tmpfs",
+      "/tmp",
+    ]);
+
+    expect(mockExec).toHaveBeenCalledWith("docker", ["--version"]);
+    expect(mockExec).toHaveBeenCalledWith("docker", ["info"]);
+    expect(mockSessionManager.spawn).toHaveBeenCalledWith({
+      projectId: "my-app",
+      issueId: undefined,
+      agent: undefined,
+      runtime: "docker",
+      runtimeConfig: {
+        image: "ghcr.io/composio/ao:test",
+        limits: { cpus: "2", memory: "4g" },
+        readOnlyRoot: true,
+        network: "bridge",
+        capDrop: ["ALL"],
+        tmpfs: ["/tmp"],
+      },
+    });
+  });
+
   it("warns and exits when two positional args given (old syntax)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -323,9 +384,7 @@ describe("spawn command", () => {
   it("reports error when spawn fails", async () => {
     mockSessionManager.spawn.mockRejectedValue(new Error("worktree creation failed"));
 
-    await expect(program.parseAsync(["node", "test", "spawn"])).rejects.toThrow(
-      "process.exit(1)",
-    );
+    await expect(program.parseAsync(["node", "test", "spawn"])).rejects.toThrow("process.exit(1)");
   });
 
   it("claims a PR for the spawned session when --claim-pr is provided", async () => {
@@ -416,14 +475,7 @@ describe("spawn command", () => {
       takenOverFrom: ["app-9"],
     });
 
-    await program.parseAsync([
-      "node",
-      "test",
-      "spawn",
-      "--claim-pr",
-      "123",
-      "--assign-on-github",
-    ]);
+    await program.parseAsync(["node", "test", "spawn", "--claim-pr", "123", "--assign-on-github"]);
 
     expect(mockSessionManager.claimPR).toHaveBeenCalledWith("app-1", "123", {
       assignOnGithub: true,
@@ -482,9 +534,7 @@ describe("spawn pre-flight checks", () => {
   it("fails with clear error when tmux is not installed (default runtime)", async () => {
     mockExec.mockRejectedValue(new Error("ENOENT"));
 
-    await expect(program.parseAsync(["node", "test", "spawn"])).rejects.toThrow(
-      "process.exit(1)",
-    );
+    await expect(program.parseAsync(["node", "test", "spawn"])).rejects.toThrow("process.exit(1)");
 
     const errors = vi
       .mocked(console.error)
@@ -541,9 +591,7 @@ describe("spawn pre-flight checks", () => {
       .mockResolvedValueOnce({ stdout: "gh version 2.40", stderr: "" }) // gh --version
       .mockRejectedValueOnce(new Error("not logged in")); // gh auth status
 
-    await expect(program.parseAsync(["node", "test", "spawn"])).rejects.toThrow(
-      "process.exit(1)",
-    );
+    await expect(program.parseAsync(["node", "test", "spawn"])).rejects.toThrow("process.exit(1)");
 
     const errors = vi
       .mocked(console.error)
@@ -684,9 +732,7 @@ describe("spawn pre-flight checks", () => {
       .mockResolvedValueOnce({ stdout: "tmux 3.3a", stderr: "" }) // tmux -V
       .mockRejectedValueOnce(new Error("ENOENT")); // gh --version fails
 
-    await expect(program.parseAsync(["node", "test", "spawn"])).rejects.toThrow(
-      "process.exit(1)",
-    );
+    await expect(program.parseAsync(["node", "test", "spawn"])).rejects.toThrow("process.exit(1)");
 
     const errors = vi
       .mocked(console.error)

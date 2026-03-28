@@ -1,6 +1,6 @@
 /**
  * Direct WebSocket terminal server using node-pty.
- * Connects browser xterm.js directly to tmux sessions via WebSocket.
+ * Connects browser xterm.js directly to runtime attach commands via WebSocket.
  *
  * This bypasses ttyd and gives us control over terminal initialization,
  * allowing us to implement the XDA (Extended Device Attributes) handler
@@ -11,7 +11,7 @@ import { createServer, type Server } from "node:http";
 import { spawn } from "node:child_process";
 import { WebSocketServer, WebSocket } from "ws";
 import { homedir, userInfo } from "node:os";
-import { createCorrelationId } from "@composio/ao-core";
+import { createCorrelationId, type AttachInfo } from "@composio/ao-core";
 
 // node-pty is an optionalDependency — it requires native compilation and may
 // not be available on all platforms. Load it dynamically so the rest of the
@@ -27,7 +27,8 @@ try {
   console.warn("[DirectTerminal] node-pty not available — direct terminal will be disabled.");
   console.warn("[DirectTerminal] Install it with: npm install node-pty");
 }
-import { findTmux, resolveTmuxSession, validateSessionId } from "./tmux-utils.js";
+import { findTmux, validateSessionId } from "./tmux-utils.js";
+import { resolveAttachInfo } from "./attach-utils.js";
 import { createObserverContext, inferProjectId } from "./terminal-observability.js";
 
 interface TerminalSession {
@@ -53,6 +54,17 @@ export interface DirectTerminalServer {
   wss: WebSocketServer;
   activeSessions: Map<string, TerminalSession>;
   shutdown: () => void;
+}
+
+function buildAttachSpawnSpec(info: AttachInfo): { program: string; args: string[] } | null {
+  if (info.program) {
+    return { program: info.program, args: info.args ?? [] };
+  }
+  if (info.command) {
+    const shell = process.env.SHELL || "/bin/sh";
+    return { program: shell, args: ["-lc", info.command] };
+  }
+  return null;
 }
 
 /**
@@ -121,7 +133,7 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
     });
   };
 
-  wss.on("connection", (ws, req) => {
+  wss.on("connection", async (ws, req) => {
     if (!ptySpawn) {
       ws.close(1011, "Direct terminal unavailable — node-pty not installed");
       return;
@@ -154,11 +166,9 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
       return;
     }
 
-    // Resolve tmux session name: try exact match first, then suffix match
-    // (hash-prefixed sessions like "8474d6f29887-ao-15" are accessed by user-facing ID "ao-15")
-    const tmuxSessionId = resolveTmuxSession(sessionId, TMUX);
-    if (!tmuxSessionId) {
-      console.error("[DirectTerminal] tmux session not found:", sessionId);
+    const attachInfo = await resolveAttachInfo(sessionId).catch(() => null);
+    if (!attachInfo) {
+      console.error("[DirectTerminal] attach command not found:", sessionId);
       recordWebsocketMetric({
         metric: "websocket_error",
         outcome: "failure",
@@ -169,22 +179,33 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
       return;
     }
 
-    console.log(`[DirectTerminal] New connection for session: ${tmuxSessionId}`);
+    const spawnSpec = buildAttachSpawnSpec(attachInfo);
+    if (!spawnSpec) {
+      ws.close(1011, "Session does not expose an attach command");
+      return;
+    }
 
-    // Enable mouse mode for scrollback support
-    const mouseProc = spawn(TMUX, ["set-option", "-t", tmuxSessionId, "mouse", "on"]);
-    mouseProc.on("error", (err) => {
-      console.error(`[DirectTerminal] Failed to set mouse mode for ${tmuxSessionId}:`, err.message);
-    });
+    console.log(
+      `[DirectTerminal] New connection for session: ${attachInfo.type}:${attachInfo.target}`,
+    );
 
-    // Hide the green status bar for cleaner appearance
-    const statusProc = spawn(TMUX, ["set-option", "-t", tmuxSessionId, "status", "off"]);
-    statusProc.on("error", (err) => {
-      console.error(
-        `[DirectTerminal] Failed to hide status bar for ${tmuxSessionId}:`,
-        err.message,
-      );
-    });
+    if (attachInfo.type === "tmux") {
+      const mouseProc = spawn(TMUX, ["set-option", "-t", attachInfo.target, "mouse", "on"]);
+      mouseProc.on("error", (err) => {
+        console.error(
+          `[DirectTerminal] Failed to set mouse mode for ${attachInfo.target}:`,
+          err.message,
+        );
+      });
+
+      const statusProc = spawn(TMUX, ["set-option", "-t", attachInfo.target, "status", "off"]);
+      statusProc.on("error", (err) => {
+        console.error(
+          `[DirectTerminal] Failed to hide status bar for ${attachInfo.target}:`,
+          err.message,
+        );
+      });
+    }
 
     // Build complete environment - node-pty requires proper env setup
     const homeDir = process.env.HOME || homedir();
@@ -201,9 +222,11 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
 
     let pty: IPty;
     try {
-      console.log(`[DirectTerminal] Spawning PTY: tmux attach-session -t ${tmuxSessionId}`);
+      console.log(
+        `[DirectTerminal] Spawning PTY: ${spawnSpec.program} ${spawnSpec.args.join(" ")}`,
+      );
 
-      pty = ptySpawn(TMUX, ["attach-session", "-t", tmuxSessionId], {
+      pty = ptySpawn(spawnSpec.program, spawnSpec.args, {
         name: "xterm-256color",
         cols: 80,
         rows: 24,

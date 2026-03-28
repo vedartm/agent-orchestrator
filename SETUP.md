@@ -45,6 +45,19 @@ Comprehensive guide to installing, configuring, and troubleshooting Agent Orches
   # See: https://github.com/cli/cli/blob/trunk/docs/install_linux.md
   ```
 
+- **Docker** (for docker runtime) - Optional, but recommended for server or CI isolation
+
+  ```bash
+  docker --version
+  docker info
+
+  # macOS
+  # Install Docker Desktop: https://docs.docker.com/desktop/setup/install/mac-install/
+
+  # Linux
+  # Install Docker Engine or rootless Docker: https://docs.docker.com/engine/install/
+  ```
+
 ### Optional
 
 - **Linear API Key** - If using Linear for issue tracking
@@ -185,6 +198,43 @@ projects:
 ### Full Configuration Schema
 
 See [agent-orchestrator.yaml.example](./agent-orchestrator.yaml.example) for a fully commented example with all options.
+
+### Docker Runtime Configuration
+
+Use Docker when you want stronger session isolation, reproducible images, or resource limits on shared servers. AO still defaults to `tmux` locally.
+
+```yaml
+projects:
+  my-app:
+    repo: owner/my-app
+    path: ~/my-app
+    defaultBranch: main
+    runtime: docker
+    runtimeConfig:
+      image: ghcr.io/composio/ao:latest
+      limits:
+        cpus: 2
+        memory: 4g
+      readOnlyRoot: true
+      capDrop: [ALL]
+      network: bridge
+      tmpfs: [/tmp]
+```
+
+Supported Docker runtime keys in this branch:
+
+- `image`: container image to run
+- `limits.cpus`, `limits.memory`, `limits.gpus`: resource controls passed to `docker run`
+- `readOnlyRoot`: sets `--read-only`
+- `capDrop`: repeated `--cap-drop`
+- `network`: sets `--network`
+- `tmpfs`: repeated `--tmpfs`
+
+Notes:
+
+- Prefer rootless Docker on Linux hosts.
+- Use pinned image tags for reproducibility.
+- `ao doctor` now checks Docker availability, daemon access, configured image presence, Linux rootless hints, and GPU-runtime hints when `runtime: docker` is enabled.
 
 ### Plugin Slots
 

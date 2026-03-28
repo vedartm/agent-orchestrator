@@ -20,6 +20,7 @@ These are primarily invoked by the orchestrator agent running inside a tmux sess
 ```bash
 ao spawn [issue]                       # Spawn an agent (project auto-detected from cwd)
 ao spawn 123 --agent codex             # Override agent for this session
+ao spawn 123 --runtime docker --runtime-image ghcr.io/composio/ao:latest
 ao batch-spawn 101 102 103             # Spawn agents for multiple issues at once
 ao send <session> "Fix the tests"      # Send instructions to a running agent
 ao session ls                          # List sessions
@@ -36,6 +37,6 @@ ao update                              # Update local AO install (source install
 ao config-help                         # Show full config schema reference
 ```
 
-`ao doctor` checks PATH and launcher resolution, required binaries, tmux and GitHub CLI health, config support directories, stale AO temp files, and core build/runtime sanity.
+`ao doctor` checks PATH and launcher resolution, required binaries, tmux and GitHub CLI health, config support directories, stale AO temp files, and core build/runtime sanity. If your config enables `runtime: docker`, it also verifies Docker daemon access, checks that an image is configured, and warns about Linux rootless/GPU setup.
 
 `ao update` fast-forwards the local install on `main`, reinstalls dependencies, clean-rebuilds core packages, refreshes the launcher, and runs smoke tests. Use `ao update --skip-smoke` to stop after rebuild, or `ao update --smoke-only` to rerun just the smoke checks.

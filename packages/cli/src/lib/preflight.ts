@@ -12,6 +12,8 @@ import { resolve, dirname } from "node:path";
 import { isPortAvailable } from "./web-dir.js";
 import { exec } from "./shell.js";
 
+type RuntimeConfig = Record<string, unknown>;
+
 /**
  * Check that the dashboard port is free.
  * Throws if the port is already in use.
@@ -86,6 +88,39 @@ async function checkTmux(): Promise<void> {
   throw new Error(`tmux is not installed. Install it: ${hint}`);
 }
 
+async function checkDocker(runtimeConfig?: RuntimeConfig): Promise<void> {
+  try {
+    await exec("docker", ["--version"]);
+  } catch {
+    throw new Error("Docker is not installed. Install it: https://docs.docker.com/get-docker/");
+  }
+
+  try {
+    await exec("docker", ["info"]);
+  } catch {
+    throw new Error(
+      "Docker is installed but the daemon is unavailable. Start Docker Desktop or the Docker service.",
+    );
+  }
+
+  const image = runtimeConfig?.["image"];
+  if (typeof image !== "string" || image.trim().length === 0) {
+    throw new Error(
+      "Docker runtime requires an image. Set project.runtimeConfig.image or pass --runtime-image / --runtime-config with an image override.",
+    );
+  }
+}
+
+async function checkRuntime(runtime: string, runtimeConfig?: RuntimeConfig): Promise<void> {
+  if (runtime === "tmux") {
+    await checkTmux();
+    return;
+  }
+  if (runtime === "docker") {
+    await checkDocker(runtimeConfig);
+  }
+}
+
 /**
  * Check that the GitHub CLI is installed and authenticated.
  * Distinguishes between "not installed" and "not authenticated"
@@ -108,6 +143,8 @@ async function checkGhAuth(): Promise<void> {
 export const preflight = {
   checkPort,
   checkBuilt,
+  checkRuntime,
   checkTmux,
+  checkDocker,
   checkGhAuth,
 };

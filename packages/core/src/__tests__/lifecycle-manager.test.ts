@@ -6,6 +6,7 @@ import type {
   OrchestratorConfig,
   PluginRegistry,
   SessionManager,
+  Runtime,
   Agent,
   ActivityState,
 } from "../types.js";
@@ -150,6 +151,77 @@ describe("check (single session)", () => {
 
     await lm.check("app-1");
     expect(lm.getStates().get("app-1")).toBe("killed");
+  });
+
+  it("prefers the persisted session runtime over the current project default", async () => {
+    const tmuxRuntime: Runtime = {
+      ...plugins.runtime,
+      name: "tmux",
+      isAlive: vi.fn().mockResolvedValue(true),
+    };
+    const dockerRuntime: Runtime = {
+      ...plugins.runtime,
+      name: "docker",
+      isAlive: vi.fn().mockResolvedValue(true),
+    };
+    const registryWithMultipleRuntimes: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string, name: string) => {
+        if (slot === "runtime") {
+          if (name === "docker") return dockerRuntime;
+          if (name === "tmux") return tmuxRuntime;
+        }
+        if (slot === "agent") return plugins.agent;
+        return null;
+      }),
+    };
+    const configWithTmuxDefault: OrchestratorConfig = {
+      ...config,
+      defaults: {
+        ...config.defaults,
+        runtime: "tmux",
+      },
+      projects: {
+        ...config.projects,
+        "my-app": {
+          ...config.projects["my-app"],
+          runtime: "tmux",
+        },
+      },
+    };
+    const session = makeSession({
+      status: "working",
+      runtimeHandle: { id: "ctr-1", runtimeName: "docker", data: {} },
+      metadata: {
+        runtime: "tmux",
+        runtimeHandle: JSON.stringify({ id: "ctr-1", runtimeName: "docker", data: {} }),
+      },
+    });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(env.sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+      runtime: "tmux",
+      runtimeHandle: JSON.stringify({ id: "ctr-1", runtimeName: "docker", data: {} }),
+    });
+
+    const lm = createLifecycleManager({
+      config: configWithTmuxDefault,
+      registry: registryWithMultipleRuntimes,
+      sessionManager: mockSessionManager,
+    });
+
+    await lm.check("app-1");
+
+    expect(dockerRuntime.isAlive).toHaveBeenCalledWith({
+      id: "ctr-1",
+      runtimeName: "docker",
+      data: {},
+    });
+    expect(tmuxRuntime.isAlive).not.toHaveBeenCalled();
   });
 
   it("detects killed state when getActivityState returns exited", async () => {

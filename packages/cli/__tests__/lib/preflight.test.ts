@@ -108,6 +108,29 @@ describe("preflight.checkTmux", () => {
   });
 });
 
+describe("preflight.checkDocker", () => {
+  it("passes when docker is installed, daemon is running, and image is configured", async () => {
+    mockExec
+      .mockResolvedValueOnce({ stdout: "Docker version 27.0.0", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "Server: Docker Engine", stderr: "" });
+
+    await expect(
+      preflight.checkDocker({ image: "ghcr.io/composio/ao:test" }),
+    ).resolves.toBeUndefined();
+
+    expect(mockExec).toHaveBeenCalledWith("docker", ["--version"]);
+    expect(mockExec).toHaveBeenCalledWith("docker", ["info"]);
+  });
+
+  it("throws with override guidance when no docker image is configured", async () => {
+    mockExec
+      .mockResolvedValueOnce({ stdout: "Docker version 27.0.0", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "Server: Docker Engine", stderr: "" });
+
+    await expect(preflight.checkDocker()).rejects.toThrow("--runtime-image");
+  });
+});
+
 describe("preflight.checkGhAuth", () => {
   it("passes when gh is installed and authenticated", async () => {
     mockExec.mockResolvedValue({ stdout: "ok", stderr: "" });

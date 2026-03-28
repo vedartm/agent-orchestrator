@@ -40,6 +40,7 @@ import {
   type SCM,
   type PluginRegistry,
   type RuntimeHandle,
+  type AttachInfo,
   type Issue,
   isOrchestratorSession,
   PR_STATE,
@@ -74,6 +75,11 @@ import {
 import { sessionFromMetadata } from "./utils/session-from-metadata.js";
 import { safeJsonParse } from "./utils/validation.js";
 import { resolveAgentSelection, resolveSessionRole } from "./agent-selection.js";
+import {
+  resolveRuntimeConfigForSession as resolveStoredRuntimeConfigForSession,
+  resolveRuntimeConfigForSpawn as resolveStoredRuntimeConfigForSpawn,
+  resolveRuntimeName as resolveStoredRuntimeName,
+} from "./runtime-selection.js";
 
 const execFileAsync = promisify(execFile);
 const OPENCODE_DISCOVERY_TIMEOUT_MS = 10_000;
@@ -702,9 +708,37 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     );
   }
 
+  function resolveRuntimeName(
+    project: ProjectConfig,
+    raw?: Record<string, string>,
+    runtimeOverride?: string,
+  ): string {
+    return resolveStoredRuntimeName(project, config.defaults.runtime, {
+      raw,
+      runtimeOverride,
+    });
+  }
+
+  function resolveRuntimeConfigForSpawn(
+    project: ProjectConfig,
+    runtimeConfigOverride?: Record<string, unknown>,
+  ): Record<string, unknown> | undefined {
+    return resolveStoredRuntimeConfigForSpawn(project, runtimeConfigOverride);
+  }
+
+  function resolveRuntimeConfigForSession(
+    project: ProjectConfig,
+    raw: Record<string, string>,
+  ): Record<string, unknown> | undefined {
+    return resolveStoredRuntimeConfigForSession(project, raw);
+  }
+
   /** Resolve which plugins to use for a project. */
-  function resolvePlugins(project: ProjectConfig, agentName?: string) {
-    const runtime = registry.get<Runtime>("runtime", project.runtime ?? config.defaults.runtime);
+  function resolvePlugins(project: ProjectConfig, agentName?: string, runtimeName?: string) {
+    const runtime = registry.get<Runtime>(
+      "runtime",
+      runtimeName ?? project.runtime ?? config.defaults.runtime,
+    );
     const agent = registry.get<Agent>("agent", agentName ?? project.agent ?? config.defaults.agent);
     const workspace = registry.get<Workspace>(
       "workspace",
@@ -810,16 +844,17 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     const hasTmuxNameFromMetadata =
       typeof tmuxNameFromMetadata === "string" && tmuxNameFromMetadata.length > 0;
     const handleFromMetadata = session.runtimeHandle !== null || hasTmuxNameFromMetadata;
+    const runtimeName = resolveRuntimeName(project, session.metadata);
     if (!handleFromMetadata) {
       session.runtimeHandle = {
         id: sessionName,
-        runtimeName: project.runtime ?? config.defaults.runtime,
+        runtimeName,
         data: {},
       };
     } else if (!session.runtimeHandle && hasTmuxNameFromMetadata) {
       session.runtimeHandle = {
         id: tmuxNameFromMetadata,
-        runtimeName: project.runtime ?? config.defaults.runtime,
+        runtimeName,
         data: {},
       };
     }
@@ -909,9 +944,11 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       defaults: config.defaults,
       spawnAgentOverride: spawnConfig.agent,
     });
-    const plugins = resolvePlugins(project, selection.agentName);
+    const runtimeName = resolveRuntimeName(project, undefined, spawnConfig.runtime);
+    const runtimeConfig = resolveRuntimeConfigForSpawn(project, spawnConfig.runtimeConfig);
+    const plugins = resolvePlugins(project, selection.agentName, runtimeName);
     if (!plugins.runtime) {
-      throw new Error(`Runtime plugin '${project.runtime ?? config.defaults.runtime}' not found`);
+      throw new Error(`Runtime plugin '${runtimeName}' not found`);
     }
 
     if (!plugins.agent) {
@@ -1064,6 +1101,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         sessionId: tmuxName ?? sessionId, // Use tmux name for runtime if available
         workspacePath,
         launchCommand,
+        runtimeConfig,
         environment: {
           ...environment,
           AO_SESSION: sessionId,
@@ -1073,7 +1111,8 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           AO_CALLER_TYPE: "agent",
           AO_PROJECT_ID: spawnConfig.projectId,
           AO_CONFIG_PATH: config.configPath,
-          ...(config.port !== undefined && config.port !== null && { AO_PORT: String(config.port) }),
+          ...(config.port !== undefined &&
+            config.port !== null && { AO_PORT: String(config.port) }),
         },
       });
     } catch (err) {
@@ -1123,6 +1162,8 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         tmuxName, // Store tmux name for mapping
         issue: spawnConfig.issueId,
         project: spawnConfig.projectId,
+        runtime: runtimeName,
+        runtimeConfig: runtimeConfig ? JSON.stringify(runtimeConfig) : undefined,
         agent: selection.agentName, // Persist agent name for lifecycle manager
         createdAt: new Date().toISOString(),
         runtimeHandle: JSON.stringify(handle),
@@ -1211,9 +1252,11 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       project,
       defaults: config.defaults,
     });
-    const plugins = resolvePlugins(project, selection.agentName);
+    const runtimeName = resolveRuntimeName(project, undefined, orchestratorConfig.runtime);
+    const runtimeConfig = resolveRuntimeConfigForSpawn(project, orchestratorConfig.runtimeConfig);
+    const plugins = resolvePlugins(project, selection.agentName, runtimeName);
     if (!plugins.runtime) {
-      throw new Error(`Runtime plugin '${project.runtime ?? config.defaults.runtime}' not found`);
+      throw new Error(`Runtime plugin '${runtimeName}' not found`);
     }
     if (!plugins.agent) {
       throw new Error(`Agent plugin '${selection.agentName}' not found`);
@@ -1260,9 +1303,13 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       ? metadataToSession(sessionId, existingRaw, orchestratorConfig.projectId)
       : null;
     if (existingOrchestrator?.runtimeHandle) {
-      const existingAlive = await plugins.runtime
-        .isAlive(existingOrchestrator.runtimeHandle)
-        .catch(() => false);
+      const existingRuntimePlugin = registry.get<Runtime>(
+        "runtime",
+        resolveRuntimeName(project, existingRaw ?? undefined),
+      );
+      const existingAlive = existingRuntimePlugin
+        ? await existingRuntimePlugin.isAlive(existingOrchestrator.runtimeHandle).catch(() => false)
+        : false;
       if (existingAlive && orchestratorSessionStrategy === "reuse") {
         const persistedRaw = readMetadataRaw(sessionsDir, sessionId);
         if (persistedRaw?.["runtimeHandle"]) {
@@ -1274,11 +1321,19 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           persisted.metadata["orchestratorSessionReused"] = "true";
           return persisted;
         }
-        await plugins.runtime.destroy(existingOrchestrator.runtimeHandle).catch(() => undefined);
+        if (existingRuntimePlugin) {
+          await existingRuntimePlugin
+            .destroy(existingOrchestrator.runtimeHandle)
+            .catch(() => undefined);
+        }
         deleteMetadata(sessionsDir, sessionId, false);
       }
       if (existingAlive && orchestratorSessionStrategy !== "reuse") {
-        await plugins.runtime.destroy(existingOrchestrator.runtimeHandle).catch(() => undefined);
+        if (existingRuntimePlugin) {
+          await existingRuntimePlugin
+            .destroy(existingOrchestrator.runtimeHandle)
+            .catch(() => undefined);
+        }
         // Destroy runtime and delete metadata without archive for ignore strategy
         deleteMetadata(sessionsDir, sessionId, false);
       }
@@ -1302,9 +1357,15 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         ? metadataToSession(sessionId, concurrentRaw, orchestratorConfig.projectId)
         : null;
       if (concurrentSession?.runtimeHandle) {
-        const concurrentAlive = await plugins.runtime
-          .isAlive(concurrentSession.runtimeHandle)
-          .catch(() => false);
+        const concurrentRuntimePlugin = registry.get<Runtime>(
+          "runtime",
+          resolveRuntimeName(project, concurrentRaw ?? undefined),
+        );
+        const concurrentAlive = concurrentRuntimePlugin
+          ? await concurrentRuntimePlugin
+              .isAlive(concurrentSession.runtimeHandle)
+              .catch(() => false)
+          : false;
         if (concurrentAlive && orchestratorSessionStrategy === "reuse") {
           concurrentSession.metadata["orchestratorSessionReused"] = "true";
           return concurrentSession;
@@ -1363,6 +1424,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       sessionId: tmuxName ?? sessionId,
       workspacePath: project.path,
       launchCommand,
+      runtimeConfig,
       environment: {
         ...environment,
         AO_SESSION: sessionId,
@@ -1403,6 +1465,8 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         role: "orchestrator",
         tmuxName,
         project: orchestratorConfig.projectId,
+        runtime: runtimeName,
+        runtimeConfig: runtimeConfig ? JSON.stringify(runtimeConfig) : undefined,
         agent: selection.agentName,
         createdAt: new Date().toISOString(),
         runtimeHandle: JSON.stringify(handle),
@@ -1479,7 +1543,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       const session = metadataToSession(sessionName, raw, sessionProjectId, createdAt, modifiedAt);
       const selection = resolveSelectionForSession(project, sessionName, raw);
       const effectiveAgentName = selection.agentName;
-      const plugins = resolvePlugins(project, effectiveAgentName);
+      const plugins = resolvePlugins(project, effectiveAgentName, resolveRuntimeName(project, raw));
       const sessionListPromise =
         effectiveAgentName === "opencode"
           ? (openCodeSessionListPromise ??= fetchOpenCodeSessionList())
@@ -1542,7 +1606,11 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
       const selection = resolveSelectionForSession(project, sessionId, repaired.raw);
       const effectiveAgentName = selection.agentName;
-      const plugins = resolvePlugins(project, effectiveAgentName);
+      const plugins = resolvePlugins(
+        project,
+        effectiveAgentName,
+        resolveRuntimeName(project, repaired.raw),
+      );
       await ensureHandleAndEnrich(
         session,
         sessionId,
@@ -1570,7 +1638,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         const runtimePlugin = registry.get<Runtime>(
           "runtime",
           handle.runtimeName ??
-            (project ? (project.runtime ?? config.defaults.runtime) : config.defaults.runtime),
+            (project ? resolveRuntimeName(project, raw) : config.defaults.runtime),
         );
         if (runtimePlugin) {
           try {
@@ -1674,7 +1742,11 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           continue;
         }
 
-        const plugins = resolvePlugins(project);
+        const plugins = resolvePlugins(
+          project,
+          resolveSelectionForSession(project, session.id, session.metadata).agentName,
+          resolveRuntimeName(project, session.metadata),
+        );
         let shouldKill = false;
 
         // Check if PR is merged
@@ -1809,7 +1881,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     const parsedHandle = raw["runtimeHandle"]
       ? safeJsonParse<RuntimeHandle>(raw["runtimeHandle"])
       : null;
-    const runtimeName = parsedHandle?.runtimeName ?? project.runtime ?? config.defaults.runtime;
+    const runtimeName = parsedHandle?.runtimeName ?? resolveRuntimeName(project, raw);
     const agentName = selectedAgent;
 
     const runtimePlugin = registry.get<Runtime>("runtime", runtimeName);
@@ -2253,7 +2325,9 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     //    session (status "working", agent exited) would not be detected as terminal
     //    and isRestorable would reject it.
     const session = metadataToSession(sessionId, raw, projectId);
-    const plugins = resolvePlugins(project, selection.agentName);
+    const runtimeName = resolveRuntimeName(project, raw);
+    const runtimeConfig = resolveRuntimeConfigForSession(project, raw);
+    const plugins = resolvePlugins(project, selection.agentName, runtimeName);
     await enrichSessionWithRuntimeState(session, plugins, true);
 
     // 3. Validate restorability
@@ -2277,6 +2351,8 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           raw["prAutoDetect"] === "off" ? "off" : raw["prAutoDetect"] === "on" ? "on" : undefined,
         summary: raw["summary"],
         project: raw["project"],
+        runtime: raw["runtime"],
+        runtimeConfig: raw["runtimeConfig"],
         agent: raw["agent"],
         createdAt: raw["createdAt"],
         runtimeHandle: raw["runtimeHandle"],
@@ -2286,7 +2362,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
     // 4. Validate required plugins (plugins already resolved above for enrichment)
     if (!plugins.runtime) {
-      throw new Error(`Runtime plugin '${project.runtime ?? config.defaults.runtime}' not found`);
+      throw new Error(`Runtime plugin '${runtimeName}' not found`);
     }
     if (!plugins.agent) {
       throw new Error(`Agent plugin '${selection.agentName}' not found`);
@@ -2373,6 +2449,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       sessionId: tmuxName ?? sessionId,
       workspacePath,
       launchCommand,
+      runtimeConfig,
       environment: {
         ...environment,
         AO_SESSION: sessionId,
@@ -2390,6 +2467,8 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     const now = new Date().toISOString();
     updateMetadata(sessionsDir, sessionId, {
       status: "spawning",
+      runtime: runtimeName,
+      runtimeConfig: runtimeConfig ? JSON.stringify(runtimeConfig) : "",
       runtimeHandle: JSON.stringify(handle),
       restoredAt: now,
     });
@@ -2427,5 +2506,61 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     return restoredSession;
   }
 
-  return { spawn, spawnOrchestrator, restore, list, get, kill, cleanup, send, claimPR, remap };
+  async function getAttachInfo(sessionId: SessionId): Promise<AttachInfo | null> {
+    const { raw, project } = requireSessionRecord(sessionId);
+    const runtimeName = resolveRuntimeName(project, raw);
+    const runtimePlugin = registry.get<Runtime>("runtime", runtimeName);
+    if (!runtimePlugin) {
+      throw new Error(`No runtime plugin for session ${sessionId}`);
+    }
+
+    const parsedHandle = raw["runtimeHandle"]
+      ? safeJsonParse<RuntimeHandle>(raw["runtimeHandle"])
+      : null;
+    const tmuxName = raw["tmuxName"]?.trim();
+    const handle =
+      parsedHandle ??
+      (runtimeName === "tmux"
+        ? ({
+            id: tmuxName && tmuxName.length > 0 ? tmuxName : sessionId,
+            runtimeName,
+            data: {},
+          } satisfies RuntimeHandle)
+        : null);
+
+    if (!handle) {
+      return null;
+    }
+
+    if (runtimePlugin.getAttachInfo) {
+      return runtimePlugin.getAttachInfo(handle);
+    }
+
+    if (handle.runtimeName === "tmux") {
+      return {
+        type: "tmux",
+        target: handle.id,
+        command: `tmux attach -t ${handle.id}`,
+        program: "tmux",
+        args: ["attach", "-t", handle.id],
+        requiresPty: true,
+      };
+    }
+
+    return null;
+  }
+
+  return {
+    spawn,
+    spawnOrchestrator,
+    restore,
+    list,
+    get,
+    getAttachInfo,
+    kill,
+    cleanup,
+    send,
+    claimPR,
+    remap,
+  };
 }
