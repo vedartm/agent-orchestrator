@@ -10,10 +10,9 @@
  * Agents with native JSONL (Claude Code, Codex) don't use this — they read
  * richer data directly from their own session files.
  */
-import { appendFile, mkdir, stat } from "node:fs/promises";
+import { appendFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import type { ActivityState, ActivityLogEntry } from "./types.js";
-import { readLastJsonlEntry } from "./utils.js";
 
 /**
  * Get the path to the activity JSONL log for a session.
@@ -57,21 +56,16 @@ export async function readLastActivityEntry(
 ): Promise<{ entry: ActivityLogEntry; modifiedAt: Date } | null> {
   const logPath = getActivityLogPath(workspacePath);
 
-  const result = await readLastJsonlEntry(logPath);
-  if (!result) return null;
-
-  // readLastJsonlEntry gives us { lastType, modifiedAt }
-  // We need the full parsed entry. Read the last line ourselves.
   try {
-    const fileStat = await stat(logPath);
-    // Read only the tail — activity logs are small (one entry per 30s poll)
     const { open } = await import("node:fs/promises");
     const handle = await open(logPath, "r");
     try {
-      const { size } = fileStat;
+      const fileStat = await handle.stat();
+      if (fileStat.size === 0) return null;
+
       // Read last 1KB — more than enough for a single JSON line
-      const tailSize = Math.min(size, 1024);
-      const offset = Math.max(0, size - tailSize);
+      const tailSize = Math.min(fileStat.size, 1024);
+      const offset = Math.max(0, fileStat.size - tailSize);
       const buffer = Buffer.allocUnsafe(tailSize);
       await handle.read(buffer, 0, tailSize, offset);
       const content = buffer.toString("utf-8");
