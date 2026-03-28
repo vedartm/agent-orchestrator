@@ -221,7 +221,7 @@ async function checkPRListETag(
 
   const args = ["api", "--method", "HEAD", `repos/${owner}/${repo}/pulls?state=open&per_page=1`];
   if (currentEtag) {
-    args.push("-H", `"If-None-Match: "${currentEtag}"`);
+    args.push("-H", `If-None-Match: ${currentEtag}`);
   }
 
   try {
@@ -265,7 +265,7 @@ async function checkCommitStatusETag(pr: PRInfo, etagCache: ETagCache): Promise<
     `repos/${pr.owner}/${pr.repo}/commits/${pr.headRefOid || "HEAD"}/status`,
   ];
   if (currentEtag) {
-    args.push("-H", `"If-None-Match: "${currentEtag}"`);
+    args.push("-H", `If-None-Match: ${currentEtag}`);
   }
 
   try {
