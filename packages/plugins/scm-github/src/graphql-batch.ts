@@ -846,8 +846,22 @@ export async function enrichSessionsPRBatch(
           }
         } else {
           // PR not found (deleted/closed/permission issue)
-          // Remove from cache so individual fallback handles it
-          result.delete(prKey);
+          // Return enrichment data with mergeable: false
+          const notFoundEnrichment: PREnrichmentData = {
+            state: pr.isDraft ? "open" : "closed",
+            ciStatus: "none",
+            reviewDecision: "none",
+            mergeable: false,
+            title: pr.title,
+            additions: 0,
+            deletions: 0,
+            isDraft: pr.isDraft,
+            hasConflicts: false,
+            isBehind: false,
+            blockers: ["PR not found"],
+          };
+          result.set(prKey, notFoundEnrichment);
+          // Don't cache not-found PRs - they may be created later
         }
       });
 
@@ -867,16 +881,31 @@ export async function enrichSessionsPRBatch(
       // Calculate duration even on failure
       batchDuration = Date.now() - batchStartTime;
 
-      // Batch partially failed - log but continue with individual fallbacks
-      // We don't throw to avoid losing all batch results
-      // Individual PRs that succeed via fallback will populate cache for next poll
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      const error = new Error(`Batch enrichment partially failed: ${errorMsg}`) as ErrorWithCause;
-      if (err instanceof Error) {
-        error.cause = err;
-      }
+      // Batch partially failed - add enrichment data for all PRs in the batch
+      // This ensures we return data even for non-existent PRs
+      batch.forEach((pr) => {
+        const prKey = `${pr.owner}/${pr.repo}#${pr.number}`;
+        // Only add if not already in result (could be partially successful)
+        if (!result.has(prKey)) {
+          const notFoundEnrichment: PREnrichmentData = {
+            state: pr.isDraft ? "open" : "closed",
+            ciStatus: "none",
+            reviewDecision: "none",
+            mergeable: false,
+            title: pr.title,
+            additions: 0,
+            deletions: 0,
+            isDraft: pr.isDraft,
+            hasConflicts: false,
+            isBehind: false,
+            blockers: ["PR not found"],
+          };
+          result.set(prKey, notFoundEnrichment);
+        }
+      });
 
       // Record failure for observability
+      const errorMsg = err instanceof Error ? err.message : String(err);
       observer?.recordFailure({
         batchIndex,
         totalBatches: batches.length,
@@ -885,12 +914,11 @@ export async function enrichSessionsPRBatch(
         durationMs: batchDuration,
       });
 
-      // Log the error for observability but don't fail entirely
+      // Log error for observability but don't fail entirely
       // eslint-disable-next-line no-console -- Observability logging for batch errors
-      console.error(`[GraphQL Batch Warning] ${error.message}`);
+      console.error(`[GraphQL Batch Warning] Batch enrichment partially failed: ${errorMsg}`);
 
-      // Continue with next batch - failed PRs will use individual fallback
-      // We don't throw here, letting the loop continue
+      // Continue with next batch
     }
   }
 
