@@ -97,7 +97,7 @@ function DashboardInner({
   const hasSeededMobileExpansionRef = useRef(false);
   sessionsRef.current = sessions;
   const allProjectsView = projects.length > 1 && projectId === undefined;
-  const currentProjectOrchestrator = useMemo(
+  const _currentProjectOrchestrator = useMemo(
     () =>
       projectId
         ? activeOrchestrators.find((orchestrator) => orchestrator.projectId === projectId) ?? null

@@ -45,7 +45,7 @@ describe("Modal", () => {
       </Modal>,
     );
 
-    const firstButton = screen.getByText("First");
+    const _firstButton = screen.getByText("First");
     const closeButton = screen.getByLabelText("Close");
 
     // Focus the close button (last focusable in header)

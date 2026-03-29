@@ -54,7 +54,7 @@ function SidebarContent({
   sessions,
   activeProjectId,
   activeSessionId,
-  compact = false,
+  compact: _compact = false,
   onAddProject,
   onCloneFromUrl,
   onQuickStart,

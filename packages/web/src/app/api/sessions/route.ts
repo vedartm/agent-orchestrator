@@ -12,8 +12,7 @@ import {
 import { getCorrelationId, jsonWithCorrelation, recordApiObservation } from "@/lib/observability";
 import { resolveGlobalPause } from "@/lib/global-pause";
 import { filterProjectSessions } from "@/lib/project-utils";
-import { getAttentionLevel, getTriageRank } from "@/lib/types";
-import type { PortfolioActionItem, DashboardSession } from "@/lib/types";
+import { getAttentionLevel, getTriageRank, type PortfolioActionItem, type DashboardSession } from "@/lib/types";
 
 const METADATA_ENRICH_TIMEOUT_MS = 3_000;
 const PR_ENRICH_TIMEOUT_MS = 4_000;
@@ -35,7 +34,7 @@ async function settlesWithin(promise: Promise<unknown>, timeoutMs: number): Prom
 }
 
 /** Handle scope=portfolio: aggregate sessions across all portfolio projects */
-async function handlePortfolioScope(correlationId: string, startedAt: number) {
+async function handlePortfolioScope(correlationId: string, _startedAt: number) {
   const { portfolio } = getPortfolioServices();
   const portfolioSessions = await getCachedPortfolioSessions();
 

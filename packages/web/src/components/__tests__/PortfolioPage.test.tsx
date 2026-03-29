@@ -36,8 +36,7 @@ describe("PortfolioPage", () => {
       />,
     );
 
-    expect(screen.getByText("Agent")).toBeInTheDocument();
-    expect(screen.getByText("Orchestrator")).toBeInTheDocument();
+    expect(screen.getByText("Agent Orchestrator")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Open project/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Clone from URL/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Quick start/i })).toBeInTheDocument();

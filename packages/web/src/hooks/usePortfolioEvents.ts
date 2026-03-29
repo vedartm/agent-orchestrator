@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useReducer, useRef, useCallback } from "react";
-import type { DashboardSession, PortfolioActionItem, PortfolioProjectSummary, AttentionLevel } from "@/lib/types";
-import { getAttentionLevel, getTriageRank } from "@/lib/types";
+import { getAttentionLevel, getTriageRank, type AttentionLevel, type DashboardSession, type PortfolioActionItem, type PortfolioProjectSummary } from "@/lib/types";
 
 interface PortfolioState {
   actionItems: PortfolioActionItem[];

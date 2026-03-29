@@ -8,8 +8,7 @@
 import { isOrchestratorSession } from "@composio/ao-core";
 import { getCachedPortfolioSessions, getPortfolioServices } from "@/lib/portfolio-services";
 import { sessionToDashboard } from "@/lib/serialize";
-import { getAttentionLevel } from "@/lib/types";
-import type { AttentionLevel, PortfolioProjectSummary } from "@/lib/types";
+import { getAttentionLevel, type AttentionLevel, type PortfolioProjectSummary } from "@/lib/types";
 
 const ATTENTION_LEVELS: AttentionLevel[] = [
   "merge",

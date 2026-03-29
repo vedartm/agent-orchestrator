@@ -15,6 +15,7 @@ function cleanPreferences(projectId: string, removeProject = false) {
 
   if (removeProject) {
     if (preferences.projects) {
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete preferences.projects[projectId];
       if (Object.keys(preferences.projects).length === 0) {
         delete preferences.projects;
