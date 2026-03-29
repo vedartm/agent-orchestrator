@@ -11,6 +11,7 @@ import { getSessionTitle } from "@/lib/format";
 import { Modal } from "./Modal";
 import { ThemeToggle } from "./ThemeToggle";
 import { WorkspaceResourcesModal } from "./WorkspaceResourcesModal";
+import { ProjectAvatar } from "./ProjectAvatar";
 
 interface UnifiedSidebarProps {
   projects: PortfolioProjectSummary[];
@@ -389,9 +390,8 @@ function SidebarContent({
       {/* Workspace list */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden px-2 pb-4" aria-label="Workspace navigation">
         <div className="space-y-0.5">
-          {visibleProjects.map((project, index) => {
+          {visibleProjects.map((project) => {
             const isActive = activeProjectId === project.id;
-            const swatch = projectSwatch(project, index);
             const attentionPills = getAttentionPills(project);
 
             return (
@@ -418,12 +418,10 @@ function SidebarContent({
                       : "text-[var(--color-text-secondary)]",
                   )}
                 >
-                  <WorkspaceGlyph
+                  <ProjectAvatar
                     projectId={project.id}
-                    swatch={swatch}
-                    active={isActive}
+                    name={project.name}
                     degraded={project.degraded}
-                    label={project.name}
                   />
 
                   <div className="min-w-0 flex-1">
@@ -1024,60 +1022,6 @@ function getAttentionPills(project: PortfolioProjectSummary) {
   });
 }
 
-function WorkspaceGlyph({
-  projectId,
-  swatch,
-  active,
-  degraded,
-  label,
-}: {
-  projectId: string;
-  swatch: string;
-  active: boolean;
-  degraded?: boolean;
-  label: string;
-}) {
-  const [imageFailed, setImageFailed] = useState(false);
-
-  if (degraded) {
-    return (
-      <span className="grid h-6 w-6 shrink-0 place-items-center rounded-[var(--radius-sm)] bg-[var(--color-tint-red)] text-[var(--color-accent-red)]">
-        <span className="font-[family-name:var(--font-mono)] text-[11px] font-medium">!</span>
-      </span>
-    );
-  }
-
-  const initial = label.charAt(0).toUpperCase();
-
-  return (
-    <span
-      aria-label={`${label} icon`}
-      className={cn(
-        "grid h-6 w-6 shrink-0 place-items-center overflow-hidden rounded-[var(--radius-sm)]",
-        active ? "bg-[var(--color-accent-subtle)]" : "",
-      )}
-      style={!imageFailed ? undefined : { background: swatch }}
-    >
-      {!imageFailed ? (
-        <img
-          src={`/api/projects/${encodeURIComponent(projectId)}/favicon`}
-          alt=""
-          className="h-full w-full object-cover"
-          onError={() => setImageFailed(true)}
-        />
-      ) : active ? (
-        <span className="text-[var(--color-accent)]">
-          <CodeBracketIcon />
-        </span>
-      ) : (
-        <span className="font-[family-name:var(--font-sans)] text-[11px] font-semibold text-white/90">
-          {initial}
-        </span>
-      )}
-    </span>
-  );
-}
-
 /* ── Icons ─────────────────────────────────────────────────────────── */
 
 function ClockIcon() {
@@ -1154,15 +1098,6 @@ function CheckIcon() {
   return (
     <svg className="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
       <path d="m5 12 4.5 4.5L19 7" />
-    </svg>
-  );
-}
-
-function CodeBracketIcon() {
-  return (
-    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M8.5 7.5 4.5 12l4 4.5" />
-      <path d="M15.5 7.5l4 4.5-4 4.5" />
     </svg>
   );
 }
