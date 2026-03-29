@@ -332,14 +332,116 @@ All agent plugins (claude-code, codex, aider, opencode, etc.) must implement the
 - Use `normalizeAgentPermissionMode` from `@composio/ao-core` (not a local duplicate)
 
 **Activity detection architecture:**
-- Agents with native JSONL (Claude Code, Codex) read their own session files in `getActivityState`
-- Agents without native JSONL (Aider, OpenCode) implement `recordActivity` — the lifecycle manager calls it each poll cycle with terminal output, writing to `{workspacePath}/.ao/activity.jsonl`
-- `getActivityState` then reads from that JSONL file, enabling `waiting_input`/`blocked` detection
-- Use `appendActivityEntry()` and `readLastActivityEntry()` from `@composio/ao-core`
+
+`getActivityState` is the most critical method in the agent plugin. The dashboard, lifecycle manager, and stuck-detection all depend on it returning correct states. **Every agent plugin must produce all 6 states over its lifetime:**
+
+```
+spawning → active ↔ ready → idle → exited
+                ↘ waiting_input / blocked ↗
+```
+
+| State | Meaning | When |
+|-------|---------|------|
+| `active` | Agent is working right now | Activity within last 30s |
+| `ready` | Agent finished recently, may resume | 30s–5min since last activity |
+| `idle` | Agent has been quiet for a while | >5min since last activity |
+| `waiting_input` | Agent is blocked on user approval | Permission prompt visible |
+| `blocked` | Agent hit an error it can't recover from | Error state detected |
+| `exited` | Process is dead | `isProcessRunning` returns false |
+
+**The `getActivityState` contract — implement exactly this cascade:**
+
+```typescript
+async getActivityState(session, readyThresholdMs?): Promise<ActivityDetection | null> {
+  // 1. PROCESS CHECK — always first
+  if (!running) return { state: "exited", timestamp };
+
+  // 2. ACTIONABLE STATES — check for waiting_input/blocked
+  //    Source: native JSONL (Claude Code, Codex) OR AO activity JSONL (others)
+  //    These are the only states checkActivityLogState() surfaces.
+  //    If found, return immediately.
+
+  // 3. NATIVE SIGNAL — agent-specific API for timestamp (preferred)
+  //    Source: agent's session list API, native JSONL timestamps, etc.
+  //    Classify by age: active (<30s) / ready (30s–threshold) / idle (>threshold)
+
+  // 4. JSONL MTIME FALLBACK — always implement this
+  //    Source: readLastActivityEntry() → modifiedAt timestamp
+  //    Same age classification as step 3.
+  //    This is the SAFETY NET when the native signal is unavailable.
+  //    Without this, getActivityState returns null and the dashboard shows
+  //    no activity for the entire session lifetime.
+
+  // 5. Return null only if there is genuinely no data at all.
+}
+```
+
+**Step 4 is mandatory.** If you skip the JSONL mtime fallback, `getActivityState` will return `null` whenever the native API fails (binary not in PATH, API changed, session not found, timeout). The dashboard will show no activity state and stuck-detection breaks. This was a real bug in the OpenCode plugin — `findOpenCodeSession` returned null due to a session creation issue, and without the mtime fallback, the entire active/ready/idle flow was dead.
+
+**Two activity detection patterns exist:**
+
+| Pattern | Used by | How it works |
+|---------|---------|-------------|
+| **Native JSONL** | Claude Code, Codex | Agent writes its own JSONL with rich state (`permission_request`, `tool_call`, `error`, etc.). `getActivityState` reads the last entry and maps it to activity states. |
+| **AO Activity JSONL** | Aider, OpenCode, new agents | Agent implements `recordActivity`. Lifecycle manager calls it each poll cycle with terminal output. It calls `classifyTerminalActivity()` → `appendActivityEntry()` to write to `{workspacePath}/.ao/activity.jsonl`. `getActivityState` reads from this file. |
+
+**For agents using AO Activity JSONL (the common case for new plugins):**
+
+1. Implement `recordActivity`:
+```typescript
+async recordActivity(session: Session, terminalOutput: string): Promise<void> {
+  if (!session.workspacePath) return;
+  const { state, trigger } = classifyTerminalActivity(
+    terminalOutput,
+    (output) => this.detectActivity(output),
+  );
+  await appendActivityEntry(session.workspacePath, state, "terminal", trigger);
+}
+```
+
+2. Implement `detectActivity` with patterns specific to the agent's terminal output:
+```typescript
+detectActivity(terminalOutput: string): ActivityState {
+  // Match the ACTUAL prompts/patterns the agent emits.
+  // Test with real terminal output — don't guess patterns.
+  // Return: "idle" | "active" | "waiting_input" | "blocked"
+}
+```
+
+3. In `getActivityState`, use `checkActivityLogState()` for waiting_input/blocked, then fall back to JSONL mtime:
+```typescript
+// checkActivityLogState returns non-null ONLY for waiting_input/blocked.
+// active/idle/ready intentionally return null — use mtime for those.
+const activityResult = await readLastActivityEntry(session.workspacePath);
+const activityState = checkActivityLogState(activityResult);
+if (activityState) return activityState;
+
+// ... try native signal first ...
+
+// JSONL mtime fallback (REQUIRED — do not skip)
+if (activityResult) {
+  const ageMs = Date.now() - activityResult.modifiedAt.getTime();
+  if (ageMs <= activeWindowMs) return { state: "active", timestamp: activityResult.modifiedAt };
+  if (ageMs <= threshold) return { state: "ready", timestamp: activityResult.modifiedAt };
+  return { state: "idle", timestamp: activityResult.modifiedAt };
+}
+```
+
+**Required tests for `getActivityState` — all agent plugins must have these:**
+
+1. Returns `exited` when process is not running
+2. Returns `waiting_input` from JSONL when agent is at a permission prompt
+3. Returns `blocked` from JSONL when agent hit an error
+4. Returns `active` from native signal when agent was recently active
+5. Returns `active` from JSONL mtime fallback when native signal fails
+6. Returns `ready` from JSONL mtime fallback when native signal fails
+7. Returns `idle` from JSONL mtime fallback when native signal fails
+8. Returns `null` when both native signal and JSONL are unavailable
 
 **`isProcessRunning` must:**
 - Support tmux runtime (TTY-based `ps` lookup with process name regex)
 - Support process runtime (PID signal-0 check with EPERM handling)
+- Match BOTH the node wrapper name AND the actual binary name (some agents install as `.agentname` with a dot prefix — the regex must handle this)
 - Return `false` (not `null`) on error
 
 ## Constraints

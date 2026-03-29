@@ -90,8 +90,9 @@ process.stdin.on('data', chunk => {
     if (!trimmed) continue;
     try {
       const obj = JSON.parse(trimmed);
-      if (obj && typeof obj.session_id === 'string' && /^ses_[A-Za-z0-9_-]+$/.test(obj.session_id)) {
-        captured = obj.session_id;
+      const sid = (typeof obj.session_id === 'string' && obj.session_id) || (typeof obj.sessionID === 'string' && obj.sessionID);
+      if (sid && /^ses_[A-Za-z0-9_-]+$/.test(sid)) {
+        captured = sid;
       }
     } catch {}
   }
@@ -99,8 +100,9 @@ process.stdin.on('data', chunk => {
   if (buffer.trim()) {
     try {
       const obj = JSON.parse(buffer.trim());
-      if (obj && typeof obj.session_id === 'string' && /^ses_[A-Za-z0-9_-]+$/.test(obj.session_id)) {
-        captured = obj.session_id;
+      const sid = (typeof obj.session_id === 'string' && obj.session_id) || (typeof obj.sessionID === 'string' && obj.sessionID);
+      if (sid && /^ses_[A-Za-z0-9_-]+$/.test(sid)) {
+        captured = sid;
       }
     } catch {}
   }
@@ -244,7 +246,7 @@ function createOpenCodeAgent(): Agent {
         ];
         const captureScript = buildSessionIdCaptureScript();
         const fallbackScript = buildSessionLookupScript();
-        const runCommand = ["opencode", "run", ...runOptions, "--command", "true"].join(" ");
+        const runCommand = ["opencode", "run", ...runOptions, "--", "noop"].join(" ");
         const resumeOptions = [...(promptValue ? ["--prompt", promptValue] : []), ...sharedOptions];
         const resumeOptionsSuffix = resumeOptions.length > 0 ? ` ${resumeOptions.join(" ")}` : "";
         const missingSessionError = shellEscape(
@@ -315,8 +317,9 @@ function createOpenCodeAgent(): Agent {
 
       // 1. Check AO activity JSONL first (written by recordActivity from terminal output).
       //    This is the only source of waiting_input/blocked states for OpenCode.
+      let activityResult: Awaited<ReturnType<typeof readLastActivityEntry>> = null;
       if (session.workspacePath) {
-        const activityResult = await readLastActivityEntry(session.workspacePath);
+        activityResult = await readLastActivityEntry(session.workspacePath);
         const activityState = checkActivityLogState(activityResult);
         if (activityState) return activityState;
       }
@@ -336,8 +339,19 @@ function createOpenCodeAgent(): Agent {
           }
           return { state: "idle", timestamp: lastActivity };
         }
+      }
 
-        return null;
+      // 3. Fallback: use JSONL file mtime for active/ready/idle when session list
+      //    is unavailable (e.g. opencode session list fails or session not found).
+      if (activityResult) {
+        const ageMs = Math.max(0, Date.now() - activityResult.modifiedAt.getTime());
+        if (ageMs <= activeWindowMs) {
+          return { state: "active", timestamp: activityResult.modifiedAt };
+        }
+        if (ageMs <= threshold) {
+          return { state: "ready", timestamp: activityResult.modifiedAt };
+        }
+        return { state: "idle", timestamp: activityResult.modifiedAt };
       }
 
       return null;
