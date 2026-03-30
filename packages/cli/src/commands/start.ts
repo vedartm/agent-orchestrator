@@ -39,10 +39,8 @@ import {
   loadLocalProjectConfig,
   syncShadow,
   matchProjectByCwd,
-  findGlobalConfigPath,
   needsMigration,
   migrateToMultiProject,
-  buildEffectiveConfig,
   generateProjectId,
   type OrchestratorConfig,
   type ProjectConfig,
@@ -212,9 +210,8 @@ async function handleMultiProjectStart(
     }
   }
 
-  // 4. Build effective config
-  const globalConfigPath = findGlobalConfigPath();
-  const effectiveConfig = buildEffectiveConfig(globalConfig, globalConfigPath);
+  // 4. Build effective config (use loadConfig which applies defaults + reactions)
+  const effectiveConfig = loadConfig();
 
   return { config: effectiveConfig, projectId };
 }

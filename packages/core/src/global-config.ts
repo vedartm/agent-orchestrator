@@ -485,7 +485,7 @@ export function syncShadow(
   return { config: updated, excludedSecrets };
 }
 
-/** Recursively filter secret-like fields from an object */
+/** Recursively filter secret-like fields from an object at all nesting levels */
 function filterSecrets(
   obj: Record<string, unknown>,
   excluded: string[],
@@ -497,7 +497,11 @@ function filterSecrets(
       excluded.push(`${parentKey}.${key}`);
       continue;
     }
-    result[key] = value;
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      result[key] = filterSecrets(value as Record<string, unknown>, excluded, `${parentKey}.${key}`);
+    } else {
+      result[key] = value;
+    }
   }
   return result;
 }

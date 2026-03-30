@@ -197,43 +197,6 @@ export function expandHome(filepath: string): string {
   return filepath;
 }
 
-// =============================================================================
-// MULTI-PROJECT PATH UTILITIES (project.path-based hashing)
-// =============================================================================
-
-/**
- * Get the project base directory using project.path-based hashing.
- * Format: {dataDir}/{hash}-{projectId}
- */
-export function getProjectBaseDirByPath(dataDir: string, projectPath: string): string {
-  const hash = generateProjectPathHash(projectPath);
-  const projectId = generateProjectId(projectPath);
-  return join(dataDir, `${hash}-${projectId}`);
-}
-
-/**
- * Get the sessions directory using project.path-based hashing.
- */
-export function getSessionsDirByPath(dataDir: string, projectPath: string): string {
-  return join(getProjectBaseDirByPath(dataDir, projectPath), "sessions");
-}
-
-/**
- * Get the worktrees directory using project.path-based hashing.
- */
-export function getWorktreesDirByPath(dataDir: string, projectPath: string): string {
-  return join(getProjectBaseDirByPath(dataDir, projectPath), "worktrees");
-}
-
-/**
- * Generate tmux name using project.path-based hashing.
- * Format: {hash}-{prefix}-{num}
- */
-export function generateTmuxNameByPath(projectPath: string, prefix: string, num: number): string {
-  const hash = generateProjectPathHash(projectPath);
-  return `${hash}-${prefix}-${num}`;
-}
-
 /**
  * Validate and store the .origin file for a project.
  * Throws if a hash collision is detected (different config, same hash).
