@@ -597,6 +597,9 @@ lsof -ti:3000 | xargs kill
 # AO stores runtime data under ~/.agent-orchestrator/
 ls -la ~/.agent-orchestrator
 
+# Check the default worktree root
+ls -la ~/.worktrees
+
 # Create the base directory if missing
 mkdir -p ~/.agent-orchestrator
 
@@ -906,8 +909,9 @@ ao session ls --json | jq -r '.[] | select(.status == "merged") | .id' | xargs -
 
 Yes! Each orchestrator instance should have:
 
+- A different config file or config directory, so AO gets a different hash namespace
 - Different dashboard port (`port`) — e.g., 3000 for project A, 3001 for project B
-- Different config location or project paths
+- Different config file contents as needed
 
 AO derives runtime directories from the config location, so separate config locations already produce separate hash-scoped runtime paths under `~/.agent-orchestrator/`. Terminal WebSocket ports are auto-detected by default, so you typically only need to set `port:` differently. If you need explicit control, you can also set `terminalPort:` and `directTerminalPort:` per config.
 

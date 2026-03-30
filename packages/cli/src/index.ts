@@ -44,7 +44,6 @@ registerUpdate(program);
 registerSetup(program);
 registerPlugin(program);
 registerRuntime(program);
-registerPlugin(program);
 
 program
   .command("config-help")
