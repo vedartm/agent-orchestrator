@@ -9,6 +9,7 @@ import {
   loadPreferences,
   savePreferences,
   findConfigFile,
+  getGlobalConfigPath,
 } from "@composio/ao-core";
 
 export function registerProject_cmd(program: Command): void {
@@ -67,9 +68,10 @@ export function registerProject_cmd(program: Command): void {
     .action((path: string, opts: { key?: string }) => {
       const resolvedPath = resolve(path);
 
-      // Verify the path has a config
+      // Verify the path has a local config (not just the global registry or a parent dir's config)
       const configPath = findConfigFile(resolvedPath);
-      if (!configPath) {
+      const globalConfigPath = getGlobalConfigPath();
+      if (!configPath || configPath === globalConfigPath || !configPath.startsWith(resolvedPath)) {
         console.error(chalk.red(`No agent-orchestrator.yaml found at ${resolvedPath}`));
         process.exit(1);
       }
