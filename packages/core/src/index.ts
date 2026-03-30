@@ -113,6 +113,7 @@ export {
   readObservabilitySummary,
 } from "./observability.js";
 export type {
+  ObservabilityLevel,
   ObservabilityMetricName,
   ObservabilityHealthStatus,
   ObservabilitySummary,
