@@ -32,7 +32,8 @@ services:
       - NODE_ENV=development
       - TERMINAL_PORT=14800
       - DIRECT_TERMINAL_PORT=14801
-      # Browser port vars must match host port mappings so WebSocket connections work
+      # Browser port vars derived from host port mappings so WebSocket connections work.
+      # These MUST use the same env vars as the port mappings above to stay in sync.
       - NEXT_PUBLIC_TERMINAL_PORT=${TERMINAL_PORT:-14800}
       - NEXT_PUBLIC_DIRECT_TERMINAL_PORT=${DIRECT_TERMINAL_PORT:-14801}
     depends_on:
