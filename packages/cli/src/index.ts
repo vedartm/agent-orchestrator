@@ -16,6 +16,7 @@ import { registerDoctor } from "./commands/doctor.js";
 import { registerUpdate } from "./commands/update.js";
 import { registerSetup } from "./commands/setup.js";
 import { registerPlugin } from "./commands/plugin.js";
+import { registerRuntime } from "./commands/runtime.js";
 import { getConfigInstruction } from "./lib/config-instruction.js";
 
 const program = new Command();
@@ -41,6 +42,8 @@ registerVerify(program);
 registerDoctor(program);
 registerUpdate(program);
 registerSetup(program);
+registerPlugin(program);
+registerRuntime(program);
 registerPlugin(program);
 
 program
