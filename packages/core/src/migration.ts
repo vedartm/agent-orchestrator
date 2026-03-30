@@ -11,6 +11,7 @@
 import { readFileSync, writeFileSync, existsSync, symlinkSync, readdirSync, renameSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { homedir } from "node:os";
+import { createHash } from "node:crypto";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   type GlobalConfig,
@@ -21,7 +22,6 @@ import {
 } from "./global-config.js";
 import {
   generateConfigHash,
-  generateProjectPathHash,
   generateSessionPrefix,
   expandHome,
   generateProjectId,
@@ -132,6 +132,20 @@ export function migrateToMultiProject(configPath: string): MigrationResult {
   // Identity fields that should NOT be in local config
   const identityFields = new Set(["name", "path", "sessionPrefix"]);
 
+  // Backup the original config BEFORE writing any flat local configs.
+  // This prevents overwriting the original when configPath is inside a
+  // project directory (the common single-project case).
+  const backupPath = configPath + ".pre-multiproject.bak";
+  try {
+    if (existsSync(configPath) && !existsSync(backupPath)) {
+      renameSync(configPath, backupPath);
+    }
+  } catch {
+    warnings.push(
+      `Could not rename old config at ${configPath} — re-migration may occur on next start.`,
+    );
+  }
+
   // Track used IDs to detect collisions within this migration
   const usedIds = new Set<string>();
 
@@ -189,20 +203,27 @@ export function migrateToMultiProject(configPath: string): MigrationResult {
       warnings.push(`Project path does not exist: ${projectPath} — skipping local config rewrite`);
     }
 
-    // 4. Create symlink from old storage dir to new storage dir
-    const oldHash = generateConfigHash(configPath);
-    const oldProjectId = generateProjectId(projectPath);
-    const newHash = generateProjectPathHash(projectPath);
+    // 4. Create symlink from old storage dir to runtime storage dir.
+    // The old dir uses generateConfigHash(originalConfigPath).
+    // After migration, runtime uses generateConfigHash(globalConfigPath).
+    // We symlink old → runtime so existing session data is found.
+    const oldHash = generateConfigHash(backupPath.replace(/\.pre-multiproject\.bak$/, ""));
+    const oldProjectBasename = generateProjectId(projectPath);
+    // generateConfigHash uses dirname(resolved path of config file).
+    // The global config lives at ~/.agent-orchestrator/config.yaml,
+    // so dirname is ~/.agent-orchestrator/.
+    const globalDir = resolve(homedir(), ".agent-orchestrator");
+    const runtimeHash = createHash("sha256").update(globalDir).digest("hex").slice(0, 12);
 
-    const dataDir = resolve(homedir(), ".agent-orchestrator");
-    const oldDir = join(dataDir, `${oldHash}-${oldProjectId}`);
-    const newDir = join(dataDir, `${newHash}-${oldProjectId}`);
+    const dataDir = globalDir;
+    const oldDir = join(dataDir, `${oldHash}-${oldProjectBasename}`);
+    const runtimeDir = join(dataDir, `${runtimeHash}-${oldProjectBasename}`);
 
-    if (oldHash !== newHash && existsSync(oldDir)) {
+    if (oldHash !== runtimeHash && existsSync(oldDir)) {
       try {
-        if (!existsSync(newDir)) {
-          // Create symlink: new → old (so new hash resolves to existing data)
-          symlinkSync(oldDir, newDir);
+        if (!existsSync(runtimeDir)) {
+          // Create symlink: runtime path → old data (so runtime finds existing data)
+          symlinkSync(oldDir, runtimeDir);
         }
 
         // Count preserved sessions
@@ -232,19 +253,6 @@ export function migrateToMultiProject(configPath: string): MigrationResult {
   // Save global config
   saveGlobalConfig(globalConfig);
   const globalConfigPath = findGlobalConfigPath();
-
-  // Rename the original old-format config to prevent re-migration.
-  // The file is kept as .bak so the user can recover if needed.
-  const backupPath = configPath + ".pre-multiproject.bak";
-  try {
-    if (existsSync(configPath) && !existsSync(backupPath)) {
-      renameSync(configPath, backupPath);
-    }
-  } catch {
-    warnings.push(
-      `Could not rename old config at ${configPath} — re-migration may occur on next start.`,
-    );
-  }
 
   return {
     migrated: true,

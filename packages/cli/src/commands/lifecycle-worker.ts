@@ -35,19 +35,24 @@ export function registerLifecycleWorker(program: Command): void {
         process.exit(1);
       }
 
-      // Duplicate-run protection — use "__all__" as sentinel for poll-all mode
-      const pidKey = projectId ?? "__all__";
-      const existing = getLifecycleWorkerStatus(config, pidKey);
-      if (existing.running && existing.pid !== process.pid) {
-        observer.setHealth({
-          surface: "lifecycle.worker",
-          status: "warn",
-          projectId: pidKey,
-          correlationId: createCorrelationId("lifecycle-worker"),
-          reason: `Worker already running with pid ${existing.pid}`,
-          details: { projectId: pidKey, pid: existing.pid },
-        });
-        return;
+      // Duplicate-run protection
+      // For poll-all mode, use the first project as the PID key since the
+      // lifecycle-service helpers require a real project ID to resolve paths.
+      const projectIds = Object.keys(config.projects);
+      const pidKey = projectId ?? projectIds[0];
+      if (pidKey) {
+        const existing = getLifecycleWorkerStatus(config, pidKey);
+        if (existing.running && existing.pid !== process.pid) {
+          observer.setHealth({
+            surface: "lifecycle.worker",
+            status: "warn",
+            projectId: pidKey,
+            correlationId: createCorrelationId("lifecycle-worker"),
+            reason: `Worker already running with pid ${existing.pid}`,
+            details: { projectId: pidKey, pid: existing.pid },
+          });
+          return;
+        }
       }
 
       const lifecycle = await getLifecycleManager(config, projectId);
@@ -60,7 +65,7 @@ export function registerLifecycleWorker(program: Command): void {
         shuttingDown = true;
         if (heartbeat) clearInterval(heartbeat);
         lifecycle.stop();
-        clearLifecycleWorkerPid(config, pidKey, process.pid);
+        if (pidKey) clearLifecycleWorkerPid(config, pidKey, process.pid);
         observer.setHealth({
           surface: "lifecycle.worker",
           status: code === 0 ? "warn" : "error",
@@ -113,7 +118,7 @@ export function registerLifecycleWorker(program: Command): void {
         shutdown(1);
       });
 
-      writeLifecycleWorkerPid(config, pidKey, process.pid);
+      if (pidKey) writeLifecycleWorkerPid(config, pidKey, process.pid);
       observer.setHealth({
         surface: "lifecycle.worker",
         status: "ok",
