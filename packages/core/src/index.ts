@@ -112,6 +112,7 @@ export {
   readLastActivityEntry,
   checkActivityLogState,
   classifyTerminalActivity,
+  recordTerminalActivity,
 } from "./activity-log.js";
 
 // Agent workspace hooks — shared PATH-wrapper setup for non-Claude agents

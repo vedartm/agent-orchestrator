@@ -2,10 +2,9 @@ import {
   DEFAULT_READY_THRESHOLD_MS,
   shellEscape,
   buildAgentPath,
-  appendActivityEntry,
   readLastActivityEntry,
   checkActivityLogState,
-  classifyTerminalActivity,
+  recordTerminalActivity,
   setupPathWrapperWorkspace,
   PREFERRED_GH_PATH,
   asValidOpenCodeSessionId,
@@ -361,26 +360,9 @@ function createOpenCodeAgent(): Agent {
 
     async recordActivity(session: Session, terminalOutput: string): Promise<void> {
       if (!session.workspacePath) return;
-      const { state, trigger } = classifyTerminalActivity(
-        terminalOutput,
-        (output) => this.detectActivity(output),
+      await recordTerminalActivity(session.workspacePath, terminalOutput, (output) =>
+        this.detectActivity(output),
       );
-
-      // Deduplicate writes to avoid refreshing file mtime every poll cycle,
-      // which would prevent the JSONL mtime fallback in getActivityState from
-      // reaching "ready" or "idle". Skip the write only when:
-      // 1. The state hasn't changed from the last entry, AND
-      // 2. The last entry is recent enough (< 60s) to prove liveness.
-      // Actionable states (waiting_input/blocked) always write immediately.
-      if (state !== "waiting_input" && state !== "blocked") {
-        const lastEntry = await readLastActivityEntry(session.workspacePath);
-        if (lastEntry && lastEntry.entry.state === state) {
-          const entryAgeMs = Date.now() - lastEntry.modifiedAt.getTime();
-          if (entryAgeMs < 20_000) return;
-        }
-      }
-
-      await appendActivityEntry(session.workspacePath, state, "terminal", trigger);
     },
 
     async isProcessRunning(handle: RuntimeHandle): Promise<boolean> {

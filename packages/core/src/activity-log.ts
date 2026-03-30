@@ -148,3 +148,30 @@ export function classifyTerminalActivity(
       : undefined;
   return { state, trigger };
 }
+
+/**
+ * Shared `recordActivity` implementation for all agents.
+ *
+ * Classifies terminal output, deduplicates writes (skips when the state
+ * hasn't changed and the last entry is recent), and appends to the JSONL.
+ * Actionable states (waiting_input/blocked) always write immediately.
+ */
+export async function recordTerminalActivity(
+  workspacePath: string,
+  terminalOutput: string,
+  detectActivity: (output: string) => ActivityState,
+): Promise<void> {
+  const { state, trigger } = classifyTerminalActivity(terminalOutput, detectActivity);
+
+  // Deduplicate writes to avoid refreshing file mtime every poll cycle,
+  // which would prevent mtime-based fallbacks from reaching "ready" or "idle".
+  if (state !== "waiting_input" && state !== "blocked") {
+    const lastEntry = await readLastActivityEntry(workspacePath);
+    if (lastEntry && lastEntry.entry.state === state) {
+      const entryAgeMs = Date.now() - lastEntry.modifiedAt.getTime();
+      if (entryAgeMs < 20_000) return;
+    }
+  }
+
+  await appendActivityEntry(workspacePath, state, "terminal", trigger);
+}

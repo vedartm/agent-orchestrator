@@ -11,10 +11,12 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 });
 
 // Mock activity log utilities from core
-const { mockAppendActivityEntry, mockReadLastActivityEntry } = vi.hoisted(() => ({
-  mockAppendActivityEntry: vi.fn().mockResolvedValue(undefined),
-  mockReadLastActivityEntry: vi.fn().mockResolvedValue(null),
-}));
+const { mockAppendActivityEntry, mockReadLastActivityEntry, mockRecordTerminalActivity } =
+  vi.hoisted(() => ({
+    mockAppendActivityEntry: vi.fn().mockResolvedValue(undefined),
+    mockReadLastActivityEntry: vi.fn().mockResolvedValue(null),
+    mockRecordTerminalActivity: vi.fn().mockResolvedValue(undefined),
+  }));
 
 vi.mock("@composio/ao-core", async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
@@ -22,6 +24,7 @@ vi.mock("@composio/ao-core", async (importOriginal) => {
     ...actual,
     appendActivityEntry: mockAppendActivityEntry,
     readLastActivityEntry: mockReadLastActivityEntry,
+    recordTerminalActivity: mockRecordTerminalActivity,
   };
 });
 
@@ -428,26 +431,15 @@ describe("recordActivity", () => {
 
   it("does nothing when workspacePath is null", async () => {
     await agent.recordActivity!(makeSession({ workspacePath: null }), "some output");
-    expect(mockAppendActivityEntry).not.toHaveBeenCalled();
+    expect(mockRecordTerminalActivity).not.toHaveBeenCalled();
   });
 
-  it("appends activity entry for active state", async () => {
+  it("delegates to recordTerminalActivity", async () => {
     await agent.recordActivity!(makeSession(), "aider is processing files");
-    expect(mockAppendActivityEntry).toHaveBeenCalledWith(
+    expect(mockRecordTerminalActivity).toHaveBeenCalledWith(
       "/workspace/test",
-      "active",
-      "terminal",
-      undefined,
-    );
-  });
-
-  it("appends activity entry with trigger for waiting_input", async () => {
-    await agent.recordActivity!(makeSession(), "Allow creation of foo.ts\n(Y)es/(N)o");
-    expect(mockAppendActivityEntry).toHaveBeenCalledWith(
-      "/workspace/test",
-      "waiting_input",
-      "terminal",
-      expect.stringContaining("(Y)es/(N)o"),
+      "aider is processing files",
+      expect.any(Function),
     );
   });
 });
