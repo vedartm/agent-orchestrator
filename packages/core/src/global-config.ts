@@ -549,13 +549,17 @@ export function matchProjectByCwd(
   cwd: string,
 ): string | null {
   const resolvedCwd = resolve(cwd);
+  let bestMatch: { id: string; pathLen: number } | null = null;
   for (const [id, entry] of Object.entries(globalConfig.projects)) {
     const resolvedPath = resolve(expandHome(entry.path));
     if (resolvedCwd === resolvedPath || resolvedCwd.startsWith(resolvedPath + "/")) {
-      return id;
+      // Prefer the longest (most specific) matching path
+      if (!bestMatch || resolvedPath.length > bestMatch.pathLen) {
+        bestMatch = { id, pathLen: resolvedPath.length };
+      }
     }
   }
-  return null;
+  return bestMatch?.id ?? null;
 }
 
 /**
