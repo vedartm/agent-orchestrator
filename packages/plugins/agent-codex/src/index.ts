@@ -431,11 +431,13 @@ function createCodexAgent(): Agent {
 
           // Map Codex JSONL entry types to activity states.
           // Confirmed types: session_meta, event_msg. Others are best-effort.
+          const activeWindowMs = Math.min(DEFAULT_ACTIVE_WINDOW_MS, threshold);
           switch (entry.lastType) {
             case "user_input":
             case "tool_call":
             case "exec_command":
-              return { state: ageMs > threshold ? "idle" : "active", timestamp };
+              if (ageMs <= activeWindowMs) return { state: "active", timestamp };
+              return { state: ageMs > threshold ? "idle" : "ready", timestamp };
 
             case "assistant_message":
             case "session_meta":
@@ -449,7 +451,8 @@ function createCodexAgent(): Agent {
               return { state: "blocked", timestamp };
 
             default:
-              return { state: ageMs > threshold ? "idle" : "active", timestamp };
+              if (ageMs <= activeWindowMs) return { state: "active", timestamp };
+              return { state: ageMs > threshold ? "idle" : "ready", timestamp };
           }
         }
 
