@@ -74,10 +74,7 @@ import { detectOpenClawInstallation } from "../lib/openclaw-probe.js";
 import { applyOpenClawCredentials } from "../lib/credential-resolver.js";
 import { findProjectForDirectory } from "../lib/project-resolution.js";
 import { formatAttachCommand } from "../lib/attach.js";
-import {
-  appendStringOption,
-  resolveRuntimeOverride,
-} from "../lib/runtime-overrides.js";
+import { appendStringOption, resolveRuntimeOverride } from "../lib/runtime-overrides.js";
 
 const DEFAULT_PORT = 3000;
 const IS_TTY = Boolean(process.stdin.isTTY && process.stdout.isTTY);
@@ -208,7 +205,7 @@ function genericInstallHints(command: string): string[] {
  */
 async function promptAgentSelection(): Promise<{
   orchestratorAgent: string;
-  workerAgent: string
+  workerAgent: string;
 } | null> {
   if (canPromptForInstall()) {
     const available = await detectAvailableAgents();
@@ -398,18 +395,17 @@ async function promptInstallAgentRuntime(available: DetectedAgent[]): Promise<De
   if (available.length > 0 || !canPromptForInstall()) return available;
 
   console.log(chalk.yellow("⚠ No supported agent runtime detected."));
-  console.log(chalk.dim("  You can install one now (recommended) or continue and install later.\n"));
-  const choice = await promptSelect(
-    "Choose runtime to install:",
-    [
-      ...AGENT_INSTALL_OPTIONS.map((option) => ({
-        value: option.id,
-        label: option.label,
-        hint: [option.cmd, ...option.args].join(" "),
-      })),
-      { value: "skip", label: "Skip for now" },
-    ],
+  console.log(
+    chalk.dim("  You can install one now (recommended) or continue and install later.\n"),
   );
+  const choice = await promptSelect("Choose runtime to install:", [
+    ...AGENT_INSTALL_OPTIONS.map((option) => ({
+      value: option.id,
+      label: option.label,
+      hint: [option.cmd, ...option.args].join(" "),
+    })),
+    { value: "skip", label: "Skip for now" },
+  ]);
   if (choice === "skip") {
     return available;
   }
@@ -927,6 +923,13 @@ async function runStartup(
     runtime?: string;
     runtimeConfig?: string;
     runtimeImage?: string;
+    runtimeCpus?: string;
+    runtimeMemory?: string;
+    runtimeGpus?: string;
+    runtimeReadOnly?: boolean;
+    runtimeNetwork?: string;
+    runtimeCapDrop?: string[];
+    runtimeTmpfs?: string[];
   },
 ): Promise<number> {
   const runtimeOverride = resolveRuntimeOverride(config, project, opts ?? {});
@@ -1286,8 +1289,16 @@ export function registerStart(program: Command): void {
                 "AO is already running. What do you want to do?",
                 [
                   { value: "open", label: "Open dashboard", hint: "Keep the current instance" },
-                  { value: "new", label: "Start new orchestrator", hint: "Add a new session for this project" },
-                  { value: "restart", label: "Restart everything", hint: "Stop the current instance first" },
+                  {
+                    value: "new",
+                    label: "Start new orchestrator",
+                    hint: "Add a new session for this project",
+                  },
+                  {
+                    value: "restart",
+                    label: "Restart everything",
+                    hint: "Stop the current instance first",
+                  },
                   { value: "quit", label: "Quit" },
                 ],
                 "open",
@@ -1370,7 +1381,7 @@ export function registerStart(program: Command): void {
             proj.worker = { ...(proj.worker ?? {}), agent: workerAgent };
             writeFileSync(config.configPath, yamlStringify(rawConfig, { indent: 2 }));
             console.log(chalk.dim(`  ✓ Saved to ${config.configPath}\n`));
-            
+
             config = loadConfig(config.configPath);
             project = config.projects[projectId];
           }
@@ -1439,7 +1450,11 @@ export function registerStop(program: Command): void {
           }
 
           const config = loadConfig();
-          const { projectId: _projectId, project } = await resolveProject(config, projectArg, "stop");
+          const { projectId: _projectId, project } = await resolveProject(
+            config,
+            projectArg,
+            "stop",
+          );
           const sessionId = `${project.sessionPrefix}-orchestrator`;
           const port = config.port ?? 3000;
 
