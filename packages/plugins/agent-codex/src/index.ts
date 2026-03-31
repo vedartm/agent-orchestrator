@@ -456,14 +456,9 @@ function createCodexAgent(): Agent {
           }
         }
 
-        // Session file exists but no parseable entry — use mtime as proxy
-        try {
-          const s = await stat(sessionFile);
-          const ageMs = Date.now() - s.mtimeMs;
-          return { state: ageMs > threshold ? "idle" : "active", timestamp: s.mtime };
-        } catch {
-          // stat failed — fall through
-        }
+        // Session file exists but no parseable entry — fall through to AO JSONL
+        // checks below instead of returning early, so waiting_input/blocked
+        // from terminal parsing can still be detected.
       }
 
       // 2. Fallback: check AO activity JSONL (terminal-derived) for waiting_input/blocked
@@ -472,13 +467,25 @@ function createCodexAgent(): Agent {
       const activityState = checkActivityLogState(activityResult);
       if (activityState) return activityState;
 
-      // 3. Fallback: use JSONL file mtime for active/ready/idle when native session
-      //    file is missing (e.g. early startup before Codex writes its first entry).
       // 3. Fallback: use JSONL entry state directly when native session file
-      //    is missing. The entry already contains the detected state.
+      //    is missing or unparseable. The entry already contains the detected state.
       if (activityResult) {
         const entryTs = new Date(activityResult.entry.ts);
         return { state: activityResult.entry.state, timestamp: entryTs };
+      }
+
+      // 4. Last resort: native session file exists but nothing else — use its mtime
+      if (sessionFile) {
+        try {
+          const s = await stat(sessionFile);
+          const ageMs = Date.now() - s.mtimeMs;
+          const activeWindowMs = Math.min(DEFAULT_ACTIVE_WINDOW_MS, threshold);
+          if (ageMs <= activeWindowMs) return { state: "active", timestamp: s.mtime };
+          if (ageMs <= threshold) return { state: "ready", timestamp: s.mtime };
+          return { state: "idle", timestamp: s.mtime };
+        } catch {
+          // stat failed — no signal available
+        }
       }
 
       return null;
