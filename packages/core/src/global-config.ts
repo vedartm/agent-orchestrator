@@ -107,6 +107,8 @@ const GlobalConfigSchema = z.object({
     }),
   /** Default reaction configs */
   reactions: z.record(z.any()).default({}),
+  /** Installed external plugins */
+  plugins: z.array(z.any()).optional(),
 });
 
 export type GlobalConfig = z.infer<typeof GlobalConfigSchema>;

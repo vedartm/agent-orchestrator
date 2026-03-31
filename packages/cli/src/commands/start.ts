@@ -1345,13 +1345,27 @@ export function registerStart(program: Command): void {
                 project = config.projects[projectId];
               }
             }
+          } else if (projectArg) {
+            // ── Explicit project ID: load config and resolve ──
+            // Don't run handleMultiProjectStart which would auto-register CWD
+            let loadedConfig: OrchestratorConfig | null = null;
+            try {
+              loadedConfig = loadConfig();
+            } catch (err) {
+              if (err instanceof ConfigNotFoundError) {
+                loadedConfig = await autoCreateConfig(cwd());
+              } else {
+                throw err;
+              }
+            }
+            config = loadedConfig;
+            ({ projectId, project } = await resolveProject(config, projectArg));
           } else {
-            // ── No arg or project ID: try multi-project flow first ──
+            // ── No arg: try multi-project flow first ──
             const multiResult = await handleMultiProjectStart(cwd());
             if (multiResult) {
               config = multiResult.config;
-              // If projectArg was provided, honor it instead of the cwd-derived ID
-              ({ projectId, project } = await resolveProject(config, projectArg ?? multiResult.projectId));
+              ({ projectId, project } = await resolveProject(config, multiResult.projectId));
             } else {
               // Fall back to legacy single-file config or auto-create
               let loadedConfig: OrchestratorConfig | null = null;

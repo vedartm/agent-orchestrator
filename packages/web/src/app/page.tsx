@@ -14,6 +14,11 @@ export async function generateMetadata(props: {
   searchParams: Promise<{ project?: string }>;
 }): Promise<Metadata> {
   const searchParams = await props.searchParams;
+  const projects = getAllProjects();
+  // Show "All Projects" when portfolio page will render
+  if (!searchParams.project && projects.length !== 1) {
+    return { title: { absolute: "ao | All Projects" } };
+  }
   const projectFilter = resolveDashboardProjectFilter(searchParams.project);
   const projectName = getDashboardProjectName(projectFilter);
   return { title: { absolute: `ao | ${projectName}` } };

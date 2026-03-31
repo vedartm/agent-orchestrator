@@ -421,6 +421,7 @@ export function buildEffectiveConfig(
     notifiers: globalConfig.notifiers as Record<string, NotifierConfig>,
     notificationRouting: globalConfig.notificationRouting as Record<EventPriority, string[]>,
     reactions: globalConfig.reactions as Record<string, ReactionConfig>,
+    plugins: globalConfig.plugins as OrchestratorConfig["plugins"],
   };
 }
 
