@@ -1508,34 +1508,8 @@ describe("setupWorkspaceHooks", () => {
     expect(versionRenameCall).toBeDefined();
   });
 
-  it("appends ao section to AGENTS.md when not present", async () => {
+  it("writes ao session context to .ao/AGENTS.md", async () => {
     // Version marker matches (skip wrapper install)
-    // AGENTS.md exists without ao section
-    mockReadFile.mockImplementation((path: string) => {
-      if (typeof path === "string" && path.endsWith(".ao-version")) {
-        return Promise.resolve("0.2.0");
-      }
-      if (typeof path === "string" && path.endsWith("AGENTS.md")) {
-        return Promise.resolve("# Existing Content\n\nSome stuff here.\n");
-      }
-      return Promise.reject(new Error("ENOENT"));
-    });
-
-    await agent.setupWorkspaceHooks!("/workspace/test", {
-      dataDir: "/data",
-      sessionId: "sess-1",
-    });
-
-    const agentsMdCall = mockWriteFile.mock.calls.find(
-      (call: string[]) => typeof call[0] === "string" && call[0].endsWith("AGENTS.md"),
-    );
-    expect(agentsMdCall).toBeDefined();
-    expect(agentsMdCall![1]).toContain("Agent Orchestrator (ao) Session");
-    expect(agentsMdCall![1]).toContain("# Existing Content");
-  });
-
-  it("creates AGENTS.md if it does not exist", async () => {
-    // Version marker matches, AGENTS.md doesn't exist
     mockReadFile.mockImplementation((path: string) => {
       if (typeof path === "string" && path.endsWith(".ao-version")) {
         return Promise.resolve("0.2.0");
@@ -1549,7 +1523,7 @@ describe("setupWorkspaceHooks", () => {
     });
 
     const agentsMdCall = mockWriteFile.mock.calls.find(
-      (call: string[]) => typeof call[0] === "string" && call[0].endsWith("AGENTS.md"),
+      (call: string[]) => typeof call[0] === "string" && call[0].includes(".ao/AGENTS.md"),
     );
     expect(agentsMdCall).toBeDefined();
     expect(agentsMdCall![1]).toContain("Agent Orchestrator (ao) Session");
@@ -1582,13 +1556,10 @@ describe("setupWorkspaceHooks", () => {
     }
   });
 
-  it("does not duplicate ao section in AGENTS.md if already present", async () => {
+  it("writes .ao/AGENTS.md without modifying repo-tracked AGENTS.md", async () => {
     mockReadFile.mockImplementation((path: string) => {
       if (typeof path === "string" && path.endsWith(".ao-version")) {
         return Promise.resolve("0.2.0");
-      }
-      if (typeof path === "string" && path.endsWith("AGENTS.md")) {
-        return Promise.resolve("# Existing\n\n## Agent Orchestrator (ao) Session\n\nAlready here.\n");
       }
       return Promise.reject(new Error("ENOENT"));
     });
@@ -1598,11 +1569,12 @@ describe("setupWorkspaceHooks", () => {
       sessionId: "sess-1",
     });
 
-    const agentsMdCall = mockWriteFile.mock.calls.find(
+    // Should write to .ao/AGENTS.md, NOT to workspace root AGENTS.md
+    const allWrites = mockWriteFile.mock.calls.filter(
       (call: string[]) => typeof call[0] === "string" && call[0].endsWith("AGENTS.md"),
     );
-    // Should NOT write AGENTS.md since the section already exists
-    expect(agentsMdCall).toBeUndefined();
+    expect(allWrites).toHaveLength(1);
+    expect(allWrites[0]![0]).toContain(".ao/AGENTS.md");
   });
 });
 
