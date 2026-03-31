@@ -1295,15 +1295,11 @@ export function registerStart(program: Command): void {
                 spawn(cmd, args, { stdio: "ignore" });
                 process.exit(0);
               } else if (choice === "new") {
-                // Generate unique orchestrator: same project, new session
-                const rawYaml = readFileSync(config.configPath, "utf-8");
-                const rawConfig = yamlParse(rawYaml);
-
-                // Collect existing prefixes to avoid collisions
+                // Generate unique orchestrator: same project, new session.
+                // Use in-memory config (has full behavior) — don't read raw
+                // global config which only has identity-only entries.
                 const existingPrefixes = new Set(
-                  Object.values(rawConfig.projects as Record<string, Record<string, unknown>>).map(
-                    (p) => p.sessionPrefix as string,
-                  ).filter(Boolean),
+                  Object.values(config.projects).map((p) => p.sessionPrefix).filter(Boolean),
                 );
 
                 let newId: string;
@@ -1312,15 +1308,34 @@ export function registerStart(program: Command): void {
                   const suffix = Math.random().toString(36).slice(2, 6);
                   newId = `${projectId}-${suffix}`;
                   newPrefix = generateSessionPrefix(newId);
-                } while (rawConfig.projects[newId] || existingPrefixes.has(newPrefix));
+                } while (config.projects[newId] || existingPrefixes.has(newPrefix));
 
-                rawConfig.projects[newId] = {
-                  ...rawConfig.projects[projectId],
-                  sessionPrefix: newPrefix,
-                };
-                writeFileSync(config.configPath, yamlStringify(rawConfig, { indent: 2 }));
+                // Register in global config + create shadow from existing project
+                if (config.globalConfigPath) {
+                  const { loadGlobalConfig: reloadGlobal, registerProject: regProj, saveGlobalConfig: saveGlobal, saveShadowFile: saveShadow, loadShadowFile: loadShadow } = await import("@composio/ao-core");
+                  let gc = reloadGlobal();
+                  if (gc) {
+                    const origProject = config.projects[projectId];
+                    gc = regProj(gc, newId, { name: newId, path: origProject.path });
+                    saveGlobal(gc);
+                    // Copy shadow from original project
+                    const origShadow = loadShadow(projectId);
+                    if (origShadow) {
+                      saveShadow(newId, origShadow);
+                    }
+                  }
+                } else {
+                  // Legacy single-file mode: edit YAML directly
+                  const rawYaml = readFileSync(config.configPath, "utf-8");
+                  const rawConfig = yamlParse(rawYaml);
+                  rawConfig.projects[newId] = {
+                    ...rawConfig.projects[projectId],
+                    sessionPrefix: newPrefix,
+                  };
+                  writeFileSync(config.configPath, yamlStringify(rawConfig, { indent: 2 }));
+                }
                 console.log(chalk.green(`\n✓ New orchestrator "${newId}" added to config\n`));
-                config = loadConfig(config.configPath);
+                config = loadConfig();
                 projectId = newId;
                 project = config.projects[newId];
                 // Continue to startup below
