@@ -276,9 +276,22 @@ export default { manifest, create, detect } satisfies PluginModule<Runtime>;
 
 ```typescript
 import {
-  shellEscape,            // Safe command argument escaping
-  validateUrl,            // Webhook URL validation
-  readLastJsonlEntry,     // Efficient JSONL log tail
+  shellEscape,                  // Safe command argument escaping
+  validateUrl,                  // Webhook URL validation
+  readLastJsonlEntry,           // Efficient JSONL log tail (native agent JSONL)
+  readLastActivityEntry,        // Read last AO activity JSONL entry
+  checkActivityLogState,        // Extract waiting_input/blocked from AO JSONL (with staleness cap)
+  getActivityFallbackState,     // Last-resort fallback: entry state + age-based decay
+  recordTerminalActivity,       // Shared recordActivity impl (classify + dedup + append)
+  classifyTerminalActivity,     // Classify terminal output via detectActivity
+  appendActivityEntry,          // Low-level JSONL append
+  setupPathWrapperWorkspace,    // Install ~/.ao/bin wrappers + .ao/AGENTS.md
+  buildAgentPath,               // Prepend ~/.ao/bin to PATH
+  normalizeAgentPermissionMode, // Normalize permission mode strings
+  DEFAULT_READY_THRESHOLD_MS,   // 5 min — ready→idle threshold
+  DEFAULT_ACTIVE_WINDOW_MS,     // 30s — active→ready window
+  ACTIVITY_INPUT_STALENESS_MS,  // 5 min — waiting_input/blocked expiry
+  PREFERRED_GH_PATH,            // /usr/local/bin/gh
   CI_STATUS, ACTIVITY_STATE, SESSION_STATUS,  // Constants
   type Session, type ProjectConfig, type RuntimeHandle,
 } from "@composio/ao-core";
@@ -324,7 +337,7 @@ All agent plugins (claude-code, codex, aider, opencode, etc.) must implement the
 
 **Metadata hooks are critical.** Without `setupWorkspaceHooks`, PRs created by agents won't appear in the dashboard. Two patterns exist:
 - **Agent-native hooks** (Claude Code): PostToolUse hooks in `.claude/settings.json`
-- **PATH wrappers** (Codex, Aider, OpenCode): `~/.ao/bin/gh` and `~/.ao/bin/git` intercept commands
+- **PATH wrappers** (Codex, Aider, OpenCode): `~/.ao/bin/gh` and `~/.ao/bin/git` intercept commands. Call `setupPathWrapperWorkspace(workspacePath)` — it installs wrappers to `~/.ao/bin/` and writes session context to `.ao/AGENTS.md` (gitignored, does not modify tracked files).
 
 **Environment requirements:**
 - All agents must set `AO_SESSION_ID` and optionally `AO_ISSUE_ID`
@@ -365,9 +378,10 @@ async getActivityState(session, readyThresholdMs?): Promise<ActivityDetection | 
   //    Source: agent's session list API, native JSONL timestamps, etc.
   //    Classify by age: active (<30s) / ready (30s–threshold) / idle (>threshold)
 
-  // 4. JSONL MTIME FALLBACK — always implement this
-  //    Source: readLastActivityEntry() → modifiedAt timestamp
-  //    Same age classification as step 3.
+  // 4. JSONL ENTRY FALLBACK — always implement this
+  //    Source: getActivityFallbackState(activityResult, activeWindowMs, threshold)
+  //    Uses the entry's detected state + entry.ts for age-based decay.
+  //    Decay only demotes (active→ready→idle), never promotes.
   //    This is the SAFETY NET when the native signal is unavailable.
   //    Without this, getActivityState returns null and the dashboard shows
   //    no activity for the entire session lifetime.
@@ -376,7 +390,7 @@ async getActivityState(session, readyThresholdMs?): Promise<ActivityDetection | 
 }
 ```
 
-**Step 4 is mandatory.** If you skip the JSONL mtime fallback, `getActivityState` will return `null` whenever the native API fails (binary not in PATH, API changed, session not found, timeout). The dashboard will show no activity state and stuck-detection breaks. This was a real bug in the OpenCode plugin — `findOpenCodeSession` returned null due to a session creation issue, and without the mtime fallback, the entire active/ready/idle flow was dead.
+**Step 4 is mandatory.** If you skip the JSONL entry fallback, `getActivityState` will return `null` whenever the native API fails (binary not in PATH, API changed, session not found, timeout). The dashboard will show no activity state and stuck-detection breaks. This was a real bug in the OpenCode plugin — `findOpenCodeSession` returned null due to a session creation issue, and without the fallback, the entire active/ready/idle flow was dead. Use `getActivityFallbackState()` from core — it handles age-based decay and staleness caps correctly.
 
 **Two activity detection patterns exist:**
 
@@ -387,34 +401,17 @@ async getActivityState(session, readyThresholdMs?): Promise<ActivityDetection | 
 
 **For agents using AO Activity JSONL (the common case for new plugins):**
 
-1. Implement `recordActivity` **with deduplication** — this is critical:
+1. Implement `recordActivity` — delegate to the shared `recordTerminalActivity()`:
 ```typescript
 async recordActivity(session: Session, terminalOutput: string): Promise<void> {
   if (!session.workspacePath) return;
-  const { state, trigger } = classifyTerminalActivity(
-    terminalOutput,
-    (output) => this.detectActivity(output),
+  await recordTerminalActivity(session.workspacePath, terminalOutput, (output) =>
+    this.detectActivity(output),
   );
-
-  // CRITICAL: Deduplicate writes. The lifecycle calls recordActivity every
-  // poll cycle (~30s). Without dedup, the file mtime refreshes every cycle,
-  // so the JSONL mtime fallback in getActivityState can never reach "ready"
-  // or "idle" (mtime is always <30s old). Skip the write when the state
-  // hasn't changed AND the last entry is recent enough to prove liveness.
-  // Always write actionable states (waiting_input/blocked) immediately.
-  if (state !== "waiting_input" && state !== "blocked") {
-    const lastEntry = await readLastActivityEntry(session.workspacePath);
-    if (lastEntry && lastEntry.entry.state === state) {
-      const entryAgeMs = Date.now() - lastEntry.modifiedAt.getTime();
-      if (entryAgeMs < 20_000) return; // 20s — less than activeWindow (30s)
-    }
-  }
-
-  await appendActivityEntry(session.workspacePath, state, "terminal", trigger);
 }
 ```
 
-**Why 20 seconds?** The `activeWindow` is 30s — if mtime is <30s old, `getActivityState` returns `active`. The dedup window must be shorter so the write happens before mtime ages past 30s. At 20s dedup with ~30s poll cycles, writes happen every 20-30s, keeping the session `active` during real work. When work stops and the lifecycle gets no terminal output, writes stop, mtime ages → `ready` → `idle`.
+`recordTerminalActivity` handles classification, deduplication (20s window for non-actionable states), and appending. You don't need to implement dedup yourself.
 
 2. Implement `detectActivity` with patterns specific to the agent's terminal output:
 ```typescript
@@ -425,24 +422,23 @@ detectActivity(terminalOutput: string): ActivityState {
 }
 ```
 
-3. In `getActivityState`, use `checkActivityLogState()` for waiting_input/blocked, then fall back to JSONL mtime:
+3. In `getActivityState`, use `checkActivityLogState()` for waiting_input/blocked, then fall back to `getActivityFallbackState()`:
 ```typescript
 // checkActivityLogState returns non-null ONLY for waiting_input/blocked.
-// active/idle/ready intentionally return null — use mtime for those.
+// active/idle/ready intentionally return null — use the fallback for those.
 const activityResult = await readLastActivityEntry(session.workspacePath);
 const activityState = checkActivityLogState(activityResult);
 if (activityState) return activityState;
 
-// ... try native signal first ...
+// ... try native signal first (session list API, git commits, etc.) ...
 
-// JSONL mtime fallback (REQUIRED — do not skip)
-if (activityResult) {
-  const ageMs = Date.now() - activityResult.modifiedAt.getTime();
-  if (ageMs <= activeWindowMs) return { state: "active", timestamp: activityResult.modifiedAt };
-  if (ageMs <= threshold) return { state: "ready", timestamp: activityResult.modifiedAt };
-  return { state: "idle", timestamp: activityResult.modifiedAt };
-}
+// JSONL entry fallback (REQUIRED — do not skip)
+const activeWindowMs = Math.min(DEFAULT_ACTIVE_WINDOW_MS, threshold);
+const fallback = getActivityFallbackState(activityResult, activeWindowMs, threshold);
+if (fallback) return fallback;
 ```
+
+`getActivityFallbackState` uses the entry's detected state with age-based decay (active→ready→idle) and respects the entry state as a ceiling (never promotes idle to active). Stale waiting_input/blocked entries (>5min) decay to idle.
 
 **Required tests for `getActivityState` — all agent plugins must have these:**
 
@@ -450,10 +446,9 @@ if (activityResult) {
 2. Returns `waiting_input` from JSONL when agent is at a permission prompt
 3. Returns `blocked` from JSONL when agent hit an error
 4. Returns `active` from native signal when agent was recently active
-5. Returns `active` from JSONL mtime fallback when native signal fails
-6. Returns `ready` from JSONL mtime fallback when native signal fails
-7. Returns `idle` from JSONL mtime fallback when native signal fails
-8. Returns `null` when both native signal and JSONL are unavailable
+5. Returns `active` from JSONL entry fallback when native signal fails (fresh entry)
+6. Returns `idle` from JSONL entry fallback when native signal fails (old entry with age decay)
+7. Returns `null` when both native signal and JSONL are unavailable
 
 **`isProcessRunning` must:**
 - Support tmux runtime (TTY-based `ps` lookup with process name regex)
