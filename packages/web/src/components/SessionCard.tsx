@@ -729,10 +729,35 @@ function getAlerts(session: DashboardSession): Alert[] {
   const meta = session.metadata;
   const alerts: Alert[] = [];
 
-  if (pr.ciStatus === CI_STATUS.FAILING) {
+  // The lifecycle manager's status is the most up-to-date source of truth.
+  // PR enrichment data can be stale (5-min cache) or unavailable (rate limit/timeout).
+  // Use lifecycle status as fallback when PR data hasn't caught up yet.
+  const lifecycleStatus = meta["status"];
+
+  const ciIsFailing = pr.ciStatus === CI_STATUS.FAILING || lifecycleStatus === "ci_failed";
+  const hasChangesRequested =
+    pr.reviewDecision === "changes_requested" || lifecycleStatus === "changes_requested";
+  const hasConflicts =
+    !pr.mergeability.noConflicts || meta["lastMergeConflictDispatched"] === "true";
+
+  if (ciIsFailing) {
     const failedCheck = pr.ciChecks.find((c) => c.status === "failed");
     const failCount = pr.ciChecks.filter((c) => c.status === "failed").length;
-    if (failCount === 0) {
+    if (failCount === 0 && pr.ciStatus !== CI_STATUS.FAILING) {
+      // Lifecycle says ci_failed but PR enrichment hasn't caught up — show generic alert
+      alerts.push({
+        key: "ci-fail",
+        label: "CI failing",
+        className: "",
+        color: "var(--color-alert-ci)",
+        borderColor: "var(--color-alert-ci)",
+        url: pr.url + "/checks",
+        notified: Boolean(meta["lastCIFailureDispatchHash"]),
+        actionLabel: "ask to fix",
+        actionMessage: `Please fix the failing CI checks on ${pr.url}`,
+        actionClassName: "bg-[var(--color-alert-ci-bg)] text-white hover:brightness-110",
+      });
+    } else if (failCount === 0) {
       alerts.push({
         key: "ci-unknown",
         label: "CI unknown",
@@ -756,7 +781,7 @@ function getAlerts(session: DashboardSession): Alert[] {
     }
   }
 
-  if (pr.reviewDecision === "changes_requested") {
+  if (hasChangesRequested) {
     alerts.push({
       key: "changes",
       label: "changes requested",
@@ -781,7 +806,7 @@ function getAlerts(session: DashboardSession): Alert[] {
     });
   }
 
-  if (!pr.mergeability.noConflicts) {
+  if (hasConflicts) {
     alerts.push({
       key: "conflict",
       label: "merge conflict",

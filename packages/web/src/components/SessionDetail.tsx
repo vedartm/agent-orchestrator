@@ -668,7 +668,18 @@ function IssuesList({ pr, metadata }: { pr: DashboardPR; metadata: Record<string
   const conflictNotified = metadata["lastMergeConflictDispatched"] === "true";
   const reviewNotified = Boolean(metadata["lastPendingReviewDispatchHash"]);
 
-  if (pr.ciStatus === CI_STATUS.FAILING) {
+  // The lifecycle manager's status is the most up-to-date source of truth.
+  // PR enrichment data can be stale (5-min cache) or unavailable (rate limit/timeout).
+  // Use lifecycle status as fallback when PR data hasn't caught up yet.
+  const lifecycleStatus = metadata["status"];
+
+  const ciIsFailing = pr.ciStatus === CI_STATUS.FAILING || lifecycleStatus === "ci_failed";
+  const hasChangesRequested =
+    pr.reviewDecision === "changes_requested" || lifecycleStatus === "changes_requested";
+  const hasConflicts =
+    (pr.state !== "merged" && !pr.mergeability.noConflicts) || conflictNotified;
+
+  if (ciIsFailing) {
     const failCount = pr.ciChecks.filter((c) => c.status === "failed").length;
     issues.push({
       icon: "✗",
@@ -683,7 +694,7 @@ function IssuesList({ pr, metadata }: { pr: DashboardPR; metadata: Record<string
     issues.push({ icon: "●", color: "var(--color-status-attention)", text: "CI pending" });
   }
 
-  if (pr.reviewDecision === "changes_requested") {
+  if (hasChangesRequested) {
     issues.push({
       icon: "✗",
       color: "var(--color-status-error)",
@@ -698,7 +709,7 @@ function IssuesList({ pr, metadata }: { pr: DashboardPR; metadata: Record<string
     });
   }
 
-  if (pr.state !== "merged" && !pr.mergeability.noConflicts) {
+  if (hasConflicts) {
     issues.push({
       icon: "✗",
       color: "var(--color-status-error)",
