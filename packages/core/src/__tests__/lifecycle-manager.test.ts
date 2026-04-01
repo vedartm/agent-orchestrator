@@ -961,6 +961,165 @@ describe("reactions", () => {
     expect(metadata?.["lastCIFailureDispatchHash"]).toBeFalsy();
   });
 
+  it("clears CI failure tracking when CI recovers to passing", async () => {
+    config.reactions = {
+      "ci-failed": {
+        auto: true,
+        action: "send-to-agent",
+        message: "CI is failing.",
+      },
+    };
+
+    const getCISummaryMock = vi.fn().mockResolvedValue("failing");
+    const mockSCM = createMockSCM({
+      getCISummary: getCISummaryMock,
+      getCIChecks: vi.fn().mockResolvedValue([
+        { name: "lint", status: "failed", conclusion: "FAILURE" },
+      ]),
+    });
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: mockSCM,
+    });
+
+    vi.mocked(mockSessionManager.send).mockResolvedValue(undefined);
+
+    // Pre-set metadata to simulate previous CI failure dispatch
+    writeMetadata(env.sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "feat/test",
+      status: "ci_failed",
+      project: "my-app",
+      lastCIFailureFingerprint: "old-fingerprint",
+      lastCIFailureDispatchHash: "old-hash",
+    });
+
+    vi.mocked(mockSessionManager.get).mockResolvedValue(
+      makeSession({ status: "ci_failed", pr: makePR() }),
+    );
+
+    const lm = createLifecycleManager({
+      config,
+      registry,
+      sessionManager: mockSessionManager,
+    });
+
+    // CI recovers
+    getCISummaryMock.mockResolvedValue("passing");
+    await lm.check("app-1");
+
+    const metadata = readMetadataRaw(env.sessionsDir, "app-1");
+    expect(metadata?.["lastCIFailureFingerprint"]).toBeFalsy();
+    expect(metadata?.["lastCIFailureDispatchHash"]).toBeFalsy();
+  });
+
+  it("uses notify action for CI failure details when configured", async () => {
+    const notifier = createMockNotifier();
+
+    const configWithNotify = {
+      ...config,
+      reactions: {
+        "ci-failed": {
+          auto: true,
+          action: "notify" as const,
+          retries: 3,
+          escalateAfter: 3,
+        },
+      },
+      notificationRouting: {
+        ...config.notificationRouting,
+        warning: ["desktop"],
+        info: ["desktop"],
+      },
+    };
+
+    const mockSCM = createMockSCM({
+      getCISummary: vi.fn().mockResolvedValue("failing"),
+      getCIChecks: vi.fn().mockResolvedValue([
+        { name: "lint", status: "failed", conclusion: "FAILURE" },
+      ]),
+    });
+
+    const registry: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string, name: string) => {
+        if (slot === "runtime") return plugins.runtime;
+        if (slot === "agent") return plugins.agent;
+        if (slot === "scm") return mockSCM;
+        if (slot === "notifier" && name === "desktop") return notifier;
+        return null;
+      }),
+    };
+
+    const lm = setupCheck("app-1", {
+      session: makeSession({ status: "pr_open", pr: makePR() }),
+      registry,
+      configOverride: configWithNotify,
+    });
+
+    // First check: transition — notifier called for reaction
+    await lm.check("app-1");
+    expect(notifier.notify).toHaveBeenCalled();
+
+    vi.mocked(notifier.notify).mockClear();
+
+    // Second check: CI detail dispatch via notify action
+    await lm.check("app-1");
+    expect(notifier.notify).toHaveBeenCalled();
+    expect(mockSessionManager.send).not.toHaveBeenCalled();
+  });
+
+  it("uses notify action for merge conflicts when configured", async () => {
+    const notifier = createMockNotifier();
+
+    const configWithNotify = {
+      ...config,
+      reactions: {
+        "merge-conflicts": {
+          auto: true,
+          action: "notify" as const,
+        },
+      },
+      notificationRouting: {
+        ...config.notificationRouting,
+        warning: ["desktop"],
+        info: ["desktop"],
+      },
+    };
+
+    const mockSCM = createMockSCM({
+      getMergeability: vi.fn().mockResolvedValue({
+        mergeable: false,
+        ciPassing: true,
+        approved: false,
+        noConflicts: false,
+        blockers: ["Merge conflicts"],
+      }),
+    });
+
+    const registry: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string, name: string) => {
+        if (slot === "runtime") return plugins.runtime;
+        if (slot === "agent") return plugins.agent;
+        if (slot === "scm") return mockSCM;
+        if (slot === "notifier" && name === "desktop") return notifier;
+        return null;
+      }),
+    };
+
+    const lm = setupCheck("app-1", {
+      session: makeSession({ status: "pr_open", pr: makePR() }),
+      registry,
+      configOverride: configWithNotify,
+    });
+
+    await lm.check("app-1");
+    expect(notifier.notify).toHaveBeenCalled();
+    expect(mockSessionManager.send).not.toHaveBeenCalled();
+  });
+
   it("dispatches merge conflict notification when PR has conflicts", async () => {
     config.reactions = {
       "merge-conflicts": {
