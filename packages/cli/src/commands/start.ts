@@ -1430,20 +1430,19 @@ export function registerStart(program: Command): void {
                   saveGlobalConfig(updated);
                   // Copy shadow from original project — try shadow file first,
                   // fall back to in-memory config for hybrid projects without shadow
-                  const existingShadow = loadShadowFile(projectId);
-                  const shadowToCopy: Record<string, unknown> = existingShadow ?? (() => {
+                  let shadowToCopy = loadShadowFile(projectId);
+                  if (!shadowToCopy) {
                     // Build shadow from in-memory effective config, filtering secrets
-                    const p = origProject;
                     const raw: Record<string, unknown> = {
-                      repo: p.repo,
-                      defaultBranch: p.defaultBranch,
-                      ...(p.agent ? { agent: p.agent } : {}),
-                      ...(p.runtime ? { runtime: p.runtime } : {}),
-                      ...(p.workspace ? { workspace: p.workspace } : {}),
-                      ...(p.agentConfig ? { agentConfig: p.agentConfig } : {}),
+                      repo: origProject.repo,
+                      defaultBranch: origProject.defaultBranch,
+                      ...(origProject.agent ? { agent: origProject.agent } : {}),
+                      ...(origProject.runtime ? { runtime: origProject.runtime } : {}),
+                      ...(origProject.workspace ? { workspace: origProject.workspace } : {}),
+                      ...(origProject.agentConfig ? { agentConfig: origProject.agentConfig } : {}),
                     };
-                    return filterSecrets(raw, [], "project");
-                  })();
+                    shadowToCopy = filterSecrets(raw, [], "project");
+                  }
                   saveShadowFile(newId, shadowToCopy);
                 } else {
                   // Legacy single-file mode: edit YAML directly
