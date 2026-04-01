@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import {
   getPortfolio,
   loadPreferences,
-  savePreferences,
+  updatePreferences,
   unregisterProject,
 } from "@composio/ao-core";
 import { UpdateProjectPrefsSchema } from "@/lib/api-schemas";
@@ -10,29 +10,28 @@ import { invalidateProjectCaches } from "@/lib/project-registration";
 
 export const dynamic = "force-dynamic";
 
-function cleanPreferences(projectId: string, removeProject = false) {
-  const preferences = loadPreferences();
-
-  if (removeProject) {
-    if (preferences.projects) {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
-      delete preferences.projects[projectId];
-      if (Object.keys(preferences.projects).length === 0) {
-        delete preferences.projects;
-      }
-    }
-    if (preferences.projectOrder) {
-      preferences.projectOrder = preferences.projectOrder.filter((id) => id !== projectId);
-      if (preferences.projectOrder.length === 0) {
-        delete preferences.projectOrder;
-      }
-    }
-    if (preferences.defaultProjectId === projectId) {
-      delete preferences.defaultProjectId;
-    }
+function removeProjectFromPreferences(
+  preferences: {
+    projects?: Record<string, { pinned?: boolean; enabled?: boolean; displayName?: string }>;
+    projectOrder?: string[];
+    defaultProjectId?: string;
+  },
+  projectId: string,
+) {
+  if (preferences.projects?.[projectId]) {
+    const { [projectId]: _removedProject, ...remainingProjects } = preferences.projects;
+    preferences.projects =
+      Object.keys(remainingProjects).length > 0 ? remainingProjects : undefined;
   }
 
-  return preferences;
+  if (preferences.projectOrder) {
+    const nextProjectOrder = preferences.projectOrder.filter((id) => id !== projectId);
+    preferences.projectOrder = nextProjectOrder.length > 0 ? nextProjectOrder : undefined;
+  }
+
+  if (preferences.defaultProjectId === projectId) {
+    preferences.defaultProjectId = undefined;
+  }
 }
 
 export async function PUT(
@@ -57,23 +56,23 @@ export async function PUT(
       );
     }
 
-    const preferences = loadPreferences();
-    preferences.projects ??= {};
-    preferences.projects[id] = {
-      ...preferences.projects[id],
-      ...(parsed.data.pinned !== undefined ? { pinned: parsed.data.pinned } : {}),
-      ...(parsed.data.enabled !== undefined ? { enabled: parsed.data.enabled } : {}),
-      ...(parsed.data.displayName !== undefined ? { displayName: parsed.data.displayName } : {}),
-    };
-
-    savePreferences(preferences);
+    updatePreferences((preferences) => {
+      preferences.projects ??= {};
+      preferences.projects[id] = {
+        ...preferences.projects[id],
+        ...(parsed.data.pinned !== undefined ? { pinned: parsed.data.pinned } : {}),
+        ...(parsed.data.enabled !== undefined ? { enabled: parsed.data.enabled } : {}),
+        ...(parsed.data.displayName !== undefined ? { displayName: parsed.data.displayName } : {}),
+      };
+    });
     invalidateProjectCaches();
 
+    const updatedPrefs = loadPreferences();
     return NextResponse.json({
       ok: true,
       project: {
         id,
-        ...preferences.projects[id],
+        ...updatedPrefs.projects?.[id],
       },
     });
   } catch (err) {
@@ -98,8 +97,9 @@ export async function DELETE(
     }
 
     unregisterProject(id);
-    const preferences = cleanPreferences(id, true);
-    savePreferences(preferences);
+    updatePreferences((preferences) => {
+      removeProjectFromPreferences(preferences, id);
+    });
 
     invalidateProjectCaches();
     return NextResponse.json({ ok: true });

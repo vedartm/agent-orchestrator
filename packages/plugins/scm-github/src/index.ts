@@ -515,7 +515,7 @@ function createGitHubSCM(): SCM {
     },
 
     async detectPR(session: Session, project: ProjectConfig): Promise<PRInfo | null> {
-      if (!session.branch) return null;
+      if (!session.branch || !project.repo) return null;
       parseProjectRepo(project.repo);
       try {
         const raw = await gh([

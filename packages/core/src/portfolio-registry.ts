@@ -75,6 +75,17 @@ export function savePreferences(prefs: PortfolioPreferences): void {
   atomicWriteFileSync(getPreferencesPath(), JSON.stringify(prefs, null, 2));
 }
 
+/**
+ * Atomically update preferences: reads the current state, applies the updater,
+ * and writes back in a single synchronous block. This prevents lost updates
+ * from concurrent async handlers that might interleave between read and write.
+ */
+export function updatePreferences(updater: (prefs: PortfolioPreferences) => void): void {
+  const prefs = loadPreferences();
+  updater(prefs);
+  savePreferences(prefs);
+}
+
 function applyPreferences(
   projects: PortfolioProject[],
   preferences: PortfolioPreferences,

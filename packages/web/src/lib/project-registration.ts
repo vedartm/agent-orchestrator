@@ -1,9 +1,8 @@
 import { resolve } from "node:path";
 import {
   getPortfolio,
-  loadPreferences,
   registerProject,
-  savePreferences,
+  updatePreferences,
 } from "@composio/ao-core";
 import { invalidateServicesCache } from "./services";
 
@@ -45,13 +44,13 @@ export function registerAndResolveProject(
   }
 
   if (options?.displayName && options.displayName !== project.name) {
-    const preferences = loadPreferences();
-    preferences.projects ??= {};
-    preferences.projects[project.id] = {
-      ...preferences.projects[project.id],
-      displayName: options.displayName,
-    };
-    savePreferences(preferences);
+    updatePreferences((preferences) => {
+      preferences.projects ??= {};
+      preferences.projects[project.id] = {
+        ...preferences.projects[project.id],
+        displayName: options.displayName,
+      };
+    });
     invalidateProjectCaches();
     return {
       ...project,

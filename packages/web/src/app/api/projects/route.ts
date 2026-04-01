@@ -16,6 +16,7 @@ import {
 import { getAllProjects } from "@/lib/project-name";
 import { RegisterProjectSchema } from "@/lib/api-schemas";
 import { getPortfolioServices } from "@/lib/portfolio-services";
+import { assertWorkspacePathAllowed } from "@/lib/filesystem-access";
 import { migrateLegacyConfigForPortfolioRegistration } from "@/lib/legacy-config-migration";
 import { registerAndResolveProject } from "@/lib/project-registration";
 import { getServices } from "@/lib/services";
@@ -124,7 +125,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const dirPath = resolve(parsed.data.path);
+    const dirPath = assertWorkspacePathAllowed(parsed.data.path, "Project path");
     let configProjectKey = parsed.data.configProjectKey;
 
     // 1. Check for config directly in the project path (no upward walk)

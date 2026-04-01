@@ -1,7 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import type { DragEvent, ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -774,7 +782,7 @@ function SidebarContent({
   );
 }
 
-function Tooltip({ label, children }: { label: string; children: React.ReactNode }) {
+function Tooltip({ label, children }: { label: string; children: ReactNode }) {
   const triggerRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
@@ -811,7 +819,7 @@ function SidebarIconButton({
   label,
   onClick,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   label: string;
   onClick?: () => void;
 }) {
@@ -1044,7 +1052,7 @@ function PopoverField({
   onToggle: () => void;
   isOpen: boolean;
   onClose: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   const fieldRef = useRef<HTMLDivElement>(null);
 
@@ -1124,7 +1132,7 @@ function SidebarMenuButton({
   label,
   onClick,
 }: {
-  icon?: React.ReactNode;
+  icon?: ReactNode;
   label: string;
   onClick: () => void;
 }) {

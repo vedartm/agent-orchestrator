@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { assertWorkspacePathAllowed } from "@/lib/filesystem-access";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ const HIDDEN_NAMES = new Set(["node_modules", "__pycache__", ".git"]);
 export async function GET(request: NextRequest) {
   try {
     const rawPath = request.nextUrl.searchParams.get("path");
-    const dirPath = resolve(rawPath || homedir());
+    const dirPath = assertWorkspacePathAllowed(rawPath || homedir(), "Directory");
 
     const dirStat = await stat(dirPath).catch(() => null);
     if (!dirStat?.isDirectory()) {

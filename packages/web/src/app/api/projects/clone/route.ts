@@ -12,6 +12,7 @@ import {
   sanitizeProjectId,
 } from "@composio/ao-core";
 import { CloneProjectSchema } from "@/lib/api-schemas";
+import { assertWorkspacePathAllowed } from "@/lib/filesystem-access";
 import { registerAndResolveProject } from "@/lib/project-registration";
 
 const execFileAsync = promisify(execFile);
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
     }
 
     const repo = parseRepoUrl(parsed.data.url);
-    const cloneRoot = resolve(parsed.data.location);
+    const cloneRoot = assertWorkspacePathAllowed(parsed.data.location, "Clone location");
     const targetDir = resolve(cloneRoot, repo.repo);
     let projectKey = sanitizeProjectId(repo.repo);
 

@@ -216,6 +216,7 @@ export {
   loadRegistered,
   loadPreferences,
   savePreferences,
+  updatePreferences,
   saveRegistered,
   getPortfolio,
   registerProject,
