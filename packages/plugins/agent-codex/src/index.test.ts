@@ -1471,19 +1471,13 @@ describe("setupWorkspaceHooks", () => {
       sessionId: "sess-1",
     });
 
-    // Should still write the metadata helper (always written)
-    const helperWriteCall = mockWriteFile.mock.calls.find(
+    // Should NOT write any wrappers when version matches (helper, gh, git all skipped)
+    const wrapperWrites = mockWriteFile.mock.calls.filter(
       (call: [string, string, object]) =>
-        typeof call[0] === "string" && call[0].includes("ao-metadata-helper.sh.tmp."),
+        typeof call[0] === "string" &&
+        (call[0].includes("ao-metadata-helper.sh.tmp.") || call[0].includes("/gh.tmp.") || call[0].includes("/git.tmp.")),
     );
-    expect(helperWriteCall).toBeDefined();
-
-    // But should NOT write gh/git wrappers (version matches)
-    const ghWriteCall = mockWriteFile.mock.calls.find(
-      (call: [string, string, object]) =>
-        typeof call[0] === "string" && call[0].includes("/gh.tmp."),
-    );
-    expect(ghWriteCall).toBeUndefined();
+    expect(wrapperWrites).toHaveLength(0);
   });
 
   it("writes version marker after installing wrappers", async () => {
