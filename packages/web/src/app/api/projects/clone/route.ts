@@ -13,6 +13,7 @@ import {
 } from "@composio/ao-core";
 import { CloneProjectSchema } from "@/lib/api-schemas";
 import { extractFlatLocalConfig } from "@/lib/local-project-config";
+import { assertPathWithinHome } from "@/lib/path-security";
 import { registerAndResolveProject } from "@/lib/project-registration";
 
 const execFileAsync = promisify(execFile);
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
     }
 
     const repo = parseRepoUrl(parsed.data.url);
-    const cloneRoot = resolve(parsed.data.location);
+    const cloneRoot = await assertPathWithinHome(parsed.data.location);
     const targetDir = resolve(cloneRoot, repo.repo);
     let projectKey = sanitizeProjectId(repo.repo);
 

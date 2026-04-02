@@ -1,31 +1,19 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { readdir, realpath, stat } from "node:fs/promises";
-import { homedir } from "node:os";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { readdir, stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { resolveHomeScopedPath, isWithinDirectory } from "@/lib/path-security";
 
 export const dynamic = "force-dynamic";
 
 /** Maximum number of entries returned per request. */
 const MAX_ENTRIES = 200;
 
-/** Directories to hide from the browser (dot-prefixed are already excluded). */
 const HIDDEN_NAMES = new Set(["node_modules", "__pycache__", ".git"]);
-
-function isWithinDirectory(parentPath: string, childPath: string): boolean {
-  const rel = relative(parentPath, childPath);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-}
 
 export async function GET(request: NextRequest) {
   try {
     const rawPath = request.nextUrl.searchParams.get("path");
-    const homePath = await realpath(homedir()).catch(() => resolve(homedir()));
-    const requestedPath = rawPath
-      ? isAbsolute(rawPath)
-        ? rawPath
-        : join(homePath, rawPath)
-      : homePath;
-    const dirPath = await realpath(resolve(requestedPath)).catch(() => resolve(requestedPath));
+    const { homePath, resolvedPath: dirPath } = await resolveHomeScopedPath(rawPath);
 
     if (!isWithinDirectory(homePath, dirPath)) {
       return NextResponse.json(

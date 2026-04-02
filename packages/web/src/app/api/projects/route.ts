@@ -18,6 +18,7 @@ import { RegisterProjectSchema } from "@/lib/api-schemas";
 import { getPortfolioServices } from "@/lib/portfolio-services";
 import { migrateLegacyConfigForPortfolioRegistration } from "@/lib/legacy-config-migration";
 import { buildFlatLocalConfig, extractFlatLocalConfig } from "@/lib/local-project-config";
+import { assertPathWithinHome } from "@/lib/path-security";
 import { registerAndResolveProject } from "@/lib/project-registration";
 import { getServices } from "@/lib/services";
 
@@ -96,7 +97,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const dirPath = resolve(parsed.data.path);
+    const dirPath = await assertPathWithinHome(parsed.data.path);
     let configProjectKey = parsed.data.configProjectKey;
 
     // 1. Check for config directly in the project path (no upward walk)
