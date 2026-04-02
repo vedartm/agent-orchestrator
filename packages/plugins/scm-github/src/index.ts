@@ -123,7 +123,11 @@ function prInfoFromView(
 
 function isUnsupportedPrChecksJsonError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
-  return /pr checks/i.test(err.message) && /unknown json field/i.test(err.message);
+  if (!/pr checks/i.test(err.message)) return false;
+  // Older gh versions (< 2.49) don't support --json for `pr checks` and return
+  // "unknown flag: --json" instead of "unknown json field". Both patterns indicate
+  // that we should fall back to the statusCheckRollup API.
+  return /unknown json field/i.test(err.message) || /unknown flag/i.test(err.message);
 }
 
 function mapRawCheckStateToStatus(rawState: string | undefined): CICheck["status"] {

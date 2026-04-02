@@ -634,6 +634,30 @@ describe("scm-github plugin", () => {
       expect(checks).toHaveLength(1);
       expect(checks[0]).toMatchObject({ name: "build", status: "passed" });
     });
+
+    it("falls back to statusCheckRollup when older gh returns unknown flag: --json", async () => {
+      mockGhError("gh pr checks 814 failed: Command failed: gh pr checks 814 --repo owner/repo --json name,state\nunknown flag: --json\n");
+      mockGh({
+        statusCheckRollup: [
+          {
+            name: "Diff Coverage (80% on changed code)",
+            conclusion: "FAILURE",
+            detailsUrl: "https://github.com/org/repo/actions/runs/123/job/456",
+            startedAt: "2025-01-01T00:00:00Z",
+            completedAt: "2025-01-01T00:02:00Z",
+            status: "COMPLETED",
+          },
+        ],
+      });
+
+      const checks = await scm.getCIChecks(pr);
+      expect(checks).toHaveLength(1);
+      expect(checks[0]).toMatchObject({
+        name: "Diff Coverage (80% on changed code)",
+        status: "failed",
+        conclusion: "FAILURE",
+      });
+    });
   });
 
   // ---- getCISummary ------------------------------------------------------
