@@ -21,6 +21,10 @@ describe("Config Loading", () => {
 
     // Change to test directory
     process.chdir(testDir);
+
+    process.env["HOME"] = testDir;
+    delete process.env["AO_GLOBAL_CONFIG"];
+    delete process.env["AO_CONFIG_PATH"];
   });
 
   afterEach(() => {
@@ -62,6 +66,19 @@ describe("Config Loading", () => {
 
       const found = findConfigFile();
       expect(found).toBe(customConfig);
+    });
+
+    it("should ignore AO_CONFIG_PATH when it points to a flat local config", () => {
+      const flatConfig = join(testDir, "flat-config.yaml");
+      const wrappedConfig = join(testDir, "agent-orchestrator.yaml");
+
+      writeFileSync(flatConfig, "repo: test/repo\nagent: claude-code\nruntime: tmux\n");
+      writeFileSync(wrappedConfig, "projects: {}");
+
+      process.env["AO_CONFIG_PATH"] = flatConfig;
+
+      const found = findConfigFile();
+      expect(realpathSync(found!)).toBe(realpathSync(wrappedConfig));
     });
 
     it("should return null if no config found", () => {

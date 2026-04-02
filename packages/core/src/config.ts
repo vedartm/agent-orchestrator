@@ -393,10 +393,24 @@ function applyDefaultReactions(config: OrchestratorConfig): OrchestratorConfig {
  * 4. Home directory locations
  */
 export function findConfigFile(startDir?: string): string | null {
+  const hasProjectsWrapper = (configPath: string): boolean => {
+    try {
+      const raw = readFileSync(configPath, "utf-8");
+      const parsed = parseYaml(raw);
+      return Boolean(
+        parsed &&
+          typeof parsed === "object" &&
+          "projects" in (parsed as Record<string, unknown>),
+      );
+    } catch {
+      return false;
+    }
+  };
+
   // 1. Check environment variable override
   if (process.env["AO_CONFIG_PATH"]) {
     const envPath = resolve(process.env["AO_CONFIG_PATH"]);
-    if (existsSync(envPath)) {
+    if (existsSync(envPath) && hasProjectsWrapper(envPath)) {
       return envPath;
     }
   }
@@ -414,19 +428,8 @@ export function findConfigFile(startDir?: string): string | null {
       if (!existsSync(configPath)) continue;
 
       // Peek at file: skip flat local configs (no top-level `projects:` key)
-      try {
-        const raw = readFileSync(configPath, "utf-8");
-        const parsed = parseYaml(raw);
-        if (
-          !parsed ||
-          typeof parsed !== "object" ||
-          !("projects" in (parsed as Record<string, unknown>))
-        ) {
-          // Flat local config — skip, keep searching upward
-          continue;
-        }
-      } catch {
-        // Unreadable or malformed — skip, keep searching
+      if (!hasProjectsWrapper(configPath)) {
+        // Flat local config — skip, keep searching upward
         continue;
       }
 
@@ -457,17 +460,7 @@ export function findConfigFile(startDir?: string): string | null {
       const path = resolve(startDir, filename);
       if (!existsSync(path)) continue;
 
-      try {
-        const raw = readFileSync(path, "utf-8");
-        const parsed = parseYaml(raw);
-        if (
-          !parsed ||
-          typeof parsed !== "object" ||
-          !("projects" in (parsed as Record<string, unknown>))
-        ) {
-          continue;
-        }
-      } catch {
+      if (!hasProjectsWrapper(path)) {
         continue;
       }
 
