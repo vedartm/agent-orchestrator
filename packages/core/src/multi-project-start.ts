@@ -22,6 +22,7 @@ import {
 } from "./global-config.js";
 import { buildEffectiveConfig } from "./migration.js";
 import { generateSessionPrefix, generateProjectId, expandHome } from "./paths.js";
+import { expandPaths, applyProjectDefaults, applyDefaultReactions, validateProjectUniqueness } from "./config.js";
 
 export interface MultiProjectStartResult {
   config: OrchestratorConfig;
@@ -128,9 +129,13 @@ export function resolveMultiProjectStart(
     }
   }
 
-  // 4. Build effective config
+  // 4. Build effective config (same pipeline as loadFromGlobalConfig in config.ts)
   const globalPath = findGlobalConfigPath();
-  const effectiveConfig = buildEffectiveConfig(globalConfig, globalPath);
+  const built = buildEffectiveConfig(globalConfig, globalPath);
+  let effectiveConfig = expandPaths(built);
+  effectiveConfig = applyProjectDefaults(effectiveConfig);
+  effectiveConfig = applyDefaultReactions(effectiveConfig);
+  validateProjectUniqueness(effectiveConfig);
 
   return { config: effectiveConfig, projectId, messages };
 }

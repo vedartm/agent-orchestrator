@@ -241,7 +241,7 @@ function expandHome(filepath: string): string {
 }
 
 /** Expand all path fields in the config */
-function expandPaths(config: OrchestratorConfig): OrchestratorConfig {
+export function expandPaths(config: OrchestratorConfig): OrchestratorConfig {
   for (const project of Object.values(config.projects)) {
     project.path = expandHome(project.path);
   }
@@ -256,7 +256,7 @@ function expandPaths(config: OrchestratorConfig): OrchestratorConfig {
 }
 
 /** Apply defaults to project configs */
-function applyProjectDefaults(config: OrchestratorConfig): OrchestratorConfig {
+export function applyProjectDefaults(config: OrchestratorConfig): OrchestratorConfig {
   for (const [id, project] of Object.entries(config.projects)) {
     // Derive name from project ID if not set
     if (!project.name) {
@@ -286,7 +286,7 @@ function applyProjectDefaults(config: OrchestratorConfig): OrchestratorConfig {
 }
 
 /** Validate project uniqueness and session prefix collisions */
-function validateProjectUniqueness(config: OrchestratorConfig): void {
+export function validateProjectUniqueness(config: OrchestratorConfig): void {
   // Check for duplicate project IDs (basenames)
   const projectIds = new Set<string>();
   const projectIdToPaths: Record<string, string[]> = {};
@@ -343,7 +343,7 @@ function validateProjectUniqueness(config: OrchestratorConfig): void {
 }
 
 /** Apply default reactions */
-function applyDefaultReactions(config: OrchestratorConfig): OrchestratorConfig {
+export function applyDefaultReactions(config: OrchestratorConfig): OrchestratorConfig {
   const defaults: Record<string, (typeof config.reactions)[string]> = {
     "ci-failed": {
       auto: true,
@@ -570,7 +570,7 @@ export function loadConfigWithPath(configPath?: string): {
   // Try global config (multi-project mode)
   if (!configPath) {
     const effective = loadFromGlobalConfig();
-    if (effective) {
+    if (effective && Object.keys(effective.projects).length > 0) {
       return { config: effective, path: findGlobalConfigPath() };
     }
   }
