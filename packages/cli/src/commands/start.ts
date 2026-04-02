@@ -1308,12 +1308,12 @@ export function registerStart(program: Command): void {
                       ...rawConfig.projects[projectId],
                       sessionPrefix: generateSessionPrefix(newId),
                     };
+                    writeFileSync(config.configPath, yamlStringify(rawConfig, { indent: 2 }));
+                    console.log(chalk.green(`\n✓ New orchestrator "${newId}" added to config\n`));
+                    config = loadConfig();
+                    projectId = newId;
+                    project = config.projects[newId];
                   }
-                  writeFileSync(config.configPath, yamlStringify(rawConfig, { indent: 2 }));
-                  console.log(chalk.green(`\n✓ New orchestrator "${newId}" added to config\n`));
-                  config = loadConfig();
-                  projectId = newId;
-                  project = config.projects[newId];
                 }
               } else if (choice === "restart") {
                 try { process.kill(running.pid, "SIGTERM"); } catch { /* already dead */ }

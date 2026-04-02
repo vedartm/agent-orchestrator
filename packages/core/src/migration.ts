@@ -68,9 +68,12 @@ export function buildEffectiveConfig(
       behaviorFields = loadShadowOrEmpty(projectId);
     }
 
-    // The project ID (map key) is already the session prefix — do not
-    // re-apply generateSessionPrefix, which would double-abbreviate it.
-    const sessionPrefix = projectId;
+    // Honor an explicit sessionPrefix from the behavior fields (e.g. set via
+    // migration from an old config or a custom shadow file value). Fall back
+    // to the project ID, which was itself derived as
+    // generateSessionPrefix(generateProjectId(path)) when the project was
+    // registered, so it is already the correct abbreviated prefix.
+    const sessionPrefix = (behaviorFields["sessionPrefix"] as string | undefined) ?? projectId;
     const repo = String(behaviorFields["repo"] ?? "");
 
     // Don't infer scm/tracker here — leave them for applyProjectDefaults

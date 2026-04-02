@@ -43,6 +43,18 @@ registerSetup(program);
 registerPlugin(program);
 registerRemoveProject(program);
 
+// Kept for backward compatibility — the lifecycle worker now runs in-process
+// inside `ao start` and no longer needs a separate command. Any processes
+// spawned by older versions of this command are safe to ignore; they will
+// exit on their own or can be cleaned up with `pkill -f "ao lifecycle-worker"`.
+program
+  .command("lifecycle-worker [project]")
+  .description("(Deprecated) Lifecycle worker now runs in-process inside `ao start`")
+  .action(() => {
+    console.log("The lifecycle worker now runs in-process inside `ao start`.");
+    console.log("This command is no longer needed and has no effect.");
+  });
+
 program
   .command("config-help")
   .description("Show config schema and guide for creating agent-orchestrator.yaml")
