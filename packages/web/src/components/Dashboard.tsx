@@ -424,8 +424,8 @@ function DashboardInner({
     }
   };
 
-  const hasDisplaySessions = displaySessions.length > 0;
-  const showProjectBoard = hasDisplaySessions;
+  const hasBoardSessions = KANBAN_LEVELS.some((level) => grouped[level].length > 0);
+  const showProjectBoard = hasBoardSessions;
 
   const anyRateLimited = useMemo(
     () => sessions.some((session) => session.pr && isPRRateLimited(session.pr)),
