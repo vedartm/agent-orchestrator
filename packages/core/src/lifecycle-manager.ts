@@ -225,10 +225,52 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         if (!scm?.enrichSessionsPRBatch) return;
 
         try {
-          const prs = projectSessions
-            .map((session) => session.pr)
-            .filter((pr): pr is NonNullable<Session["pr"]> => pr !== null);
-          const enrichment = await scm.enrichSessionsPRBatch(prs);
+          const uniquePRs = new Map<string, NonNullable<Session["pr"]>>();
+          for (const session of projectSessions) {
+            const key = getPRKey(session.pr);
+            if (!key || !session.pr) continue;
+            uniquePRs.set(key, session.pr);
+          }
+
+          const batchCorrelationId = createCorrelationId("graphql-batch");
+          const enrichment = await scm.enrichSessionsPRBatch([...uniquePRs.values()], {
+            recordSuccess: ({ batchIndex, totalBatches, prCount, durationMs }) => {
+              observer.recordOperation({
+                metric: "graphql_batch",
+                operation: "scm.enrichSessionsPRBatch",
+                outcome: "success",
+                correlationId: batchCorrelationId,
+                projectId,
+                durationMs,
+                data: { batchIndex, totalBatches, prCount },
+                level: "info",
+              });
+            },
+            recordFailure: ({ batchIndex, totalBatches, prCount, error, durationMs }) => {
+              observer.recordOperation({
+                metric: "graphql_batch",
+                operation: "scm.enrichSessionsPRBatch",
+                outcome: "failure",
+                correlationId: batchCorrelationId,
+                projectId,
+                reason: error,
+                durationMs,
+                data: { batchIndex, totalBatches, prCount },
+                level: "warn",
+              });
+            },
+            log: (level, message) => {
+              observer.recordOperation({
+                metric: "graphql_batch",
+                operation: "scm.enrichSessionsPRBatch.log",
+                outcome: "success",
+                correlationId: batchCorrelationId,
+                projectId,
+                data: { message },
+                level,
+              });
+            },
+          });
           for (const session of projectSessions) {
             const key = getPRKey(session.pr);
             if (!key) continue;
