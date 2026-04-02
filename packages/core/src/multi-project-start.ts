@@ -6,7 +6,7 @@
  * The CLI command wraps these with user-facing output.
  */
 
-import { resolve, basename, dirname } from "node:path";
+import { resolve, basename } from "node:path";
 import type { OrchestratorConfig } from "./types.js";
 import {
   type GlobalProjectEntry,
@@ -15,6 +15,7 @@ import {
   registerProject,
   detectConfigMode,
   findLocalConfigPath,
+  findLocalConfigUpwards,
   loadLocalProjectConfig,
   syncShadow,
   matchProjectByCwd,
@@ -53,15 +54,9 @@ export function resolveMultiProjectStart(
   let projectId = matchProjectByCwd(globalConfig, resolvedDir);
 
   if (!projectId) {
-    // Walk up from CWD to find a local config
-    let searchDir = resolvedDir;
-    let localPath: string | null = null;
-    while (searchDir !== dirname(searchDir)) {
-      localPath = findLocalConfigPath(searchDir);
-      if (localPath) break;
-      searchDir = dirname(searchDir);
-    }
-    const projectRoot = localPath ? searchDir : resolvedDir;
+    const found = findLocalConfigUpwards(resolvedDir);
+    const localPath = found?.configPath ?? null;
+    const projectRoot = found?.projectRoot ?? resolvedDir;
 
     if (localPath) {
       // Auto-register in hybrid mode

@@ -15,7 +15,7 @@ import { registerDoctor } from "./commands/doctor.js";
 import { registerUpdate } from "./commands/update.js";
 import { registerSetup } from "./commands/setup.js";
 import { registerPlugin } from "./commands/plugin.js";
-import { registerRemoveProject } from "./commands/remove-project.js";
+import { registerProjectCommand } from "./commands/project.js";
 import { getConfigInstruction } from "./lib/config-instruction.js";
 
 const program = new Command();
@@ -41,7 +41,7 @@ registerDoctor(program);
 registerUpdate(program);
 registerSetup(program);
 registerPlugin(program);
-registerRemoveProject(program);
+registerProjectCommand(program);
 
 // Kept for backward compatibility — the lifecycle worker now runs in-process
 // inside `ao start` and no longer needs a separate command. Any processes

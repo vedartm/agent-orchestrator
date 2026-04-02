@@ -31,6 +31,7 @@ export {
   unregisterProject,
   detectConfigMode,
   findLocalConfigPath,
+  findLocalConfigUpwards,
   loadLocalProjectConfig,
   syncShadow,
   getShadowDir,

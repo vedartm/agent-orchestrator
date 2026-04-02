@@ -242,47 +242,31 @@ function expandHome(filepath: string): string {
 
 /** Expand all path fields in the config */
 export function expandPaths(config: OrchestratorConfig): OrchestratorConfig {
-  for (const project of Object.values(config.projects)) {
-    project.path = expandHome(project.path);
+  const projects: typeof config.projects = {};
+  for (const [id, project] of Object.entries(config.projects)) {
+    projects[id] = { ...project, path: expandHome(project.path) };
   }
 
-  for (const plugin of config.plugins ?? []) {
-    if (plugin.path) {
-      plugin.path = expandHome(plugin.path);
-    }
-  }
+  const plugins = config.plugins?.map((plugin) =>
+    plugin.path ? { ...plugin, path: expandHome(plugin.path) } : plugin,
+  );
 
-  return config;
+  return { ...config, projects, ...(plugins !== undefined ? { plugins } : {}) };
 }
 
 /** Apply defaults to project configs */
 export function applyProjectDefaults(config: OrchestratorConfig): OrchestratorConfig {
+  const projects: typeof config.projects = {};
   for (const [id, project] of Object.entries(config.projects)) {
-    // Derive name from project ID if not set
-    if (!project.name) {
-      project.name = id;
-    }
-
-    // Derive session prefix from project path basename if not set
-    if (!project.sessionPrefix) {
-      const projectId = basename(project.path);
-      project.sessionPrefix = generateSessionPrefix(projectId);
-    }
-
+    const name = project.name ?? id;
+    const sessionPrefix = project.sessionPrefix ?? generateSessionPrefix(basename(project.path));
     const inferredPlugin = inferScmPlugin(project);
-
-    // Infer SCM from repo if not set
-    if (!project.scm && project.repo.includes("/")) {
-      project.scm = { plugin: inferredPlugin };
-    }
-
-    // Infer tracker from repo if not set (default to github issues)
-    if (!project.tracker) {
-      project.tracker = { plugin: inferredPlugin };
-    }
+    const scm = project.scm ?? (project.repo.includes("/") ? { plugin: inferredPlugin } : project.scm);
+    const tracker = project.tracker ?? { plugin: inferredPlugin };
+    projects[id] = { ...project, name, sessionPrefix, tracker, ...(scm !== undefined ? { scm } : {}) };
   }
 
-  return config;
+  return { ...config, projects };
 }
 
 /** Validate project uniqueness and session prefix collisions */
@@ -411,9 +395,7 @@ export function applyDefaultReactions(config: OrchestratorConfig): OrchestratorC
   };
 
   // Merge defaults with user-specified reactions (user wins)
-  config.reactions = { ...defaults, ...config.reactions };
-
-  return config;
+  return { ...config, reactions: { ...defaults, ...config.reactions } };
 }
 
 /**

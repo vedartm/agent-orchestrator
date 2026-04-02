@@ -485,6 +485,23 @@ export function findLocalConfigPath(projectPath: string): string | null {
 }
 
 /**
+ * Walk up the directory tree from startDir to find a local project config.
+ * Returns the config path and the directory it was found in (the project root),
+ * or null if no config is found up to the filesystem root.
+ */
+export function findLocalConfigUpwards(
+  startDir: string,
+): { configPath: string; projectRoot: string } | null {
+  let dir = resolve(startDir);
+  while (dir !== dirname(dir)) {
+    const configPath = findLocalConfigPath(dir);
+    if (configPath) return { configPath, projectRoot: dir };
+    dir = dirname(dir);
+  }
+  return null;
+}
+
+/**
  * Load a flat local project config from a file path.
  */
 export function loadLocalProjectConfig(configPath: string): LocalProjectConfig {

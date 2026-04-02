@@ -96,6 +96,11 @@ function handleMultiProjectStart(
     }
   }
 
+  const wasRegistered = result.messages.some((m) => m.text.includes("Registered"));
+  if (wasRegistered) {
+    console.log(chalk.dim(`  Run \`ao project list\` to see all registered projects.`));
+  }
+
   return { config: result.config, projectId: result.projectId };
 }
 

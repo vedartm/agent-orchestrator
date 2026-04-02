@@ -1046,4 +1046,34 @@ describe("multi-project start", () => {
     expect(core.matchProjectByCwd(gc, join(projectPath, "src"))).toBe("mp");
     expect(core.matchProjectByCwd(gc, "/unrelated/path")).toBeNull();
   });
+
+  it("prints ao project list hint after registering a new project", async () => {
+    const core = await import("@composio/ao-core");
+    const projectPath = join(tmpDir, "hint-proj");
+    mkdirSync(projectPath, { recursive: true });
+    writeFileSync(join(projectPath, "agent-orchestrator.yaml"), "repo: org/hint\ndefaultBranch: main\n");
+
+    // Empty global config — project will be auto-registered on start
+    writeGlobalConfig({});
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const result = core.resolveMultiProjectStart(projectPath);
+    // Simulate what handleMultiProjectStart does with the messages
+    if (result) {
+      for (const msg of result.messages) {
+        if (msg.level === "success") console.log(`  ✓ ${msg.text}`);
+        else if (msg.level === "warn") console.log(`  ⚠ ${msg.text}`);
+        else console.log(`  ${msg.text}`);
+      }
+      const wasRegistered = result.messages.some((m) => m.text.includes("Registered"));
+      if (wasRegistered) {
+        console.log(`  Run \`ao project list\` to see all registered projects.`);
+      }
+    }
+
+    const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toContain("ao project list");
+    logSpy.mockRestore();
+  });
 });

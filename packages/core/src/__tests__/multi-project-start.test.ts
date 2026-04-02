@@ -127,16 +127,13 @@ describe("resolveMultiProjectStart", () => {
     mkdirSync(dir2, { recursive: true });
     writeFileSync(join(dir2, "agent-orchestrator.yaml"), stringifyYaml({ repo: "org/other-app", defaultBranch: "main" }));
 
-    // Register first project with the ID that dir2 would derive
+    // Register first project with the abbreviated ID that dir2 would derive.
     // basename of dir2 is "other-app" → generateSessionPrefix → "oa"
-    // "oa" is already taken by dir1 registration
+    // "oa" is pre-occupied by dir1 (different path), so dir2 should get "oa2".
     setupGlobalConfig({ oa: { name: "First", path: dir1 } });
 
-    // dir2 basename "other-app" → generateSessionPrefix("other-app") → "oa"
-    // "oa" is taken by dir1, so should get "oa2"
     const result = resolveMultiProjectStart(dir2);
     expect(result).not.toBeNull();
-    // Should have auto-resolved the collision
     expect(result!.projectId).not.toBe("oa");
     expect(result!.messages.some((m) => m.text.includes("taken"))).toBe(true);
   });
