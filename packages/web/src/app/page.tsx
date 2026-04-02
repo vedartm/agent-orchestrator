@@ -11,11 +11,12 @@ export const metadata: Metadata = {
 };
 
 export default async function Home() {
-  const { projectSummaries } = await loadPortfolioPageData();
+  const { projectSummaries, sessions } = await loadPortfolioPageData();
 
   return (
     <DashboardShell
       projects={projectSummaries}
+      sessions={sessions}
       defaultLocation={getDefaultCloneLocation()}
     >
       <PortfolioPage projectSummaries={projectSummaries} />

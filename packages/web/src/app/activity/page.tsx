@@ -12,13 +12,17 @@ export const metadata: Metadata = {
 };
 
 export default async function ActivityPage() {
-  const [{ projectSummaries }, { activityItems }] = await Promise.all([
+  const [{ projectSummaries, sessions }, { activityItems }] = await Promise.all([
     loadPortfolioPageData(),
     loadHomeActivityData(),
   ]);
 
   return (
-    <DashboardShell projects={projectSummaries} defaultLocation={getDefaultCloneLocation()}>
+    <DashboardShell
+      projects={projectSummaries}
+      sessions={sessions}
+      defaultLocation={getDefaultCloneLocation()}
+    >
       <ActivityFeedPage projectSummaries={projectSummaries} activityItems={activityItems} />
     </DashboardShell>
   );

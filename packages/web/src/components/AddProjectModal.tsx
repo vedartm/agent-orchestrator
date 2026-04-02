@@ -87,6 +87,10 @@ function normalizePathForBrowse(rawPath: string, homePath: string): string | nul
     : null;
 }
 
+function isSelectableProjectPath(path: string, homePath: string): boolean {
+  return Boolean(path) && path !== homePath;
+}
+
 export function AddProjectModal({ open, onClose, onProjectAdded }: AddProjectModalProps) {
   const router = useRouter();
   const [selectedPath, setSelectedPath] = useState("");
@@ -128,8 +132,12 @@ export function AddProjectModal({ open, onClose, onProjectAdded }: AddProjectMod
       if (!res.ok) throw new Error(data.error || "Failed to browse");
       setBrowseResult(data as BrowseResult);
       setPathInput(data.path);
-      if (options?.selectCurrent ?? Boolean(dirPath)) {
+      const shouldSelectCurrent = options?.selectCurrent ?? Boolean(dirPath);
+      const nextHomePath = currentHomePath || data.path;
+      if (shouldSelectCurrent && isSelectableProjectPath(data.path, nextHomePath)) {
         setSelectedPath(data.path);
+      } else if (!isSelectableProjectPath(data.path, nextHomePath)) {
+        setSelectedPath("");
       }
       if (!currentHomePath) {
         setHomePath(data.path);
@@ -179,6 +187,10 @@ export function AddProjectModal({ open, onClose, onProjectAdded }: AddProjectMod
     const path = homePath ? normalizePathForBrowse(selectedPath, homePath) : selectedPath.trim();
     if (!path) {
       setError(homePath ? `Path must stay within ${homePath}` : "Select a directory first");
+      return;
+    }
+    if (homePath && !isSelectableProjectPath(path, homePath)) {
+      setError("Choose a repository folder inside your home directory");
       return;
     }
 
@@ -482,6 +494,12 @@ export function AddProjectModal({ open, onClose, onProjectAdded }: AddProjectMod
             />
           </div>
         )}
+
+        {browseResult && homePath && browseResult.path === homePath ? (
+          <p className="text-[11px] text-[var(--color-text-tertiary)]">
+            Choose a repository folder inside your home directory to continue.
+          </p>
+        ) : null}
       </div>
     </Modal>
   );
