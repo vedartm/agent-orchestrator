@@ -52,14 +52,12 @@ function SidebarContent({
   sessions,
   activeProjectId,
   activeSessionId,
-  compact: _compact = false,
   onAddProject,
 }: {
   projects: PortfolioProjectSummary[];
   sessions?: DashboardSession[];
   activeProjectId?: string;
   activeSessionId?: string;
-  compact?: boolean;
   onAddProject?: () => void;
 }) {
   const router = useRouter();
@@ -887,7 +885,7 @@ export function UnifiedSidebar({
                 <CloseIcon />
               </button>
             </div>
-            <SidebarContent {...contentProps} compact />
+            <SidebarContent {...contentProps} />
           </div>
         </div>
       ) : null}

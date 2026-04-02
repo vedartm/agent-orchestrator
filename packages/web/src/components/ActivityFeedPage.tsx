@@ -192,10 +192,7 @@ function getGroupKey(date: Date, referenceDate: Date): string {
   if (diffDays < 7) return `days:${diffDays}`;
   const weeks = Math.floor(diffDays / 7);
   if (weeks < 5) return `weeks:${weeks}`;
-  const months =
-    (referenceDate.getFullYear() - date.getFullYear()) * 12 +
-    (referenceDate.getMonth() - date.getMonth());
-  return `months:${Math.max(1, months)}`;
+  return `months:${getMonthBucket(date, referenceDate)}`;
 }
 
 function getGroupLabel(date: Date, referenceDate: Date): string {
@@ -206,10 +203,15 @@ function getGroupLabel(date: Date, referenceDate: Date): string {
   const weeks = Math.floor(diffDays / 7);
   if (weeks === 1) return "1 week ago";
   if (weeks < 5) return `${weeks} weeks ago`;
+  const months = getMonthBucket(date, referenceDate);
+  return months === 1 ? "1 month ago" : `${months} months ago`;
+}
+
+function getMonthBucket(date: Date, referenceDate: Date): number {
   const months =
     (referenceDate.getFullYear() - date.getFullYear()) * 12 +
     (referenceDate.getMonth() - date.getMonth());
-  return months <= 1 ? "1 month ago" : `${months} months ago`;
+  return Math.max(1, months);
 }
 
 function formatAbsoluteDate(dateString: string): string {

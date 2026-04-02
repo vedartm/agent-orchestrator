@@ -56,9 +56,41 @@ function parseMigrationError(error: string): ParsedMigrationError | null {
   };
 }
 
+function normalizePathForBrowse(rawPath: string, homePath: string): string | null {
+  const trimmed = rawPath.trim();
+  if (!trimmed) return null;
+
+  const expanded =
+    trimmed === "~"
+      ? homePath
+      : trimmed.startsWith("~/")
+        ? `${homePath}/${trimmed.slice(2)}`
+        : trimmed.startsWith("/")
+          ? trimmed
+          : `${homePath}/${trimmed}`;
+
+  const segments = expanded.split("/");
+  const normalizedSegments: string[] = [];
+
+  for (const segment of segments) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      normalizedSegments.pop();
+      continue;
+    }
+    normalizedSegments.push(segment);
+  }
+
+  const normalizedPath = `/${normalizedSegments.join("/")}`;
+  return normalizedPath === homePath || normalizedPath.startsWith(`${homePath}/`)
+    ? normalizedPath
+    : null;
+}
+
 export function AddProjectModal({ open, onClose, onProjectAdded }: AddProjectModalProps) {
   const router = useRouter();
   const [selectedPath, setSelectedPath] = useState("");
+  const [homePath, setHomePath] = useState("");
   const [name, setName] = useState("");
   const [nameManuallySet, setNameManuallySet] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,13 +107,25 @@ export function AddProjectModal({ open, onClose, onProjectAdded }: AddProjectMod
     setBrowsing(true);
     setBrowseError(null);
     try {
-      const params = dirPath ? `?path=${encodeURIComponent(dirPath)}` : "";
+      if (dirPath && !homePath) {
+        throw new Error("Loading your home directory. Try again in a moment.");
+      }
+      const normalizedPath =
+        dirPath && homePath ? normalizePathForBrowse(dirPath, homePath) : dirPath;
+      if (dirPath && homePath && !normalizedPath) {
+        throw new Error(`Path must stay within ${homePath}`);
+      }
+
+      const params = normalizedPath ? `?path=${encodeURIComponent(normalizedPath)}` : "";
       const res = await fetch(`/api/browse-directory${params}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to browse");
       setBrowseResult(data as BrowseResult);
       setPathInput(data.path);
       setSelectedPath(data.path);
+      if (!homePath) {
+        setHomePath(data.path);
+      }
       setError(null);
       // Scroll to top when navigating
       scrollRef.current?.scrollTo(0, 0);
@@ -112,6 +156,7 @@ export function AddProjectModal({ open, onClose, onProjectAdded }: AddProjectMod
   useEffect(() => {
     if (!open) {
       setSelectedPath("");
+      setHomePath("");
       setName("");
       setNameManuallySet(false);
       setError(null);
@@ -123,9 +168,9 @@ export function AddProjectModal({ open, onClose, onProjectAdded }: AddProjectMod
   }, [open]);
 
   const handleSubmit = useCallback(async () => {
-    const path = selectedPath.trim();
+    const path = homePath ? normalizePathForBrowse(selectedPath, homePath) : selectedPath.trim();
     if (!path) {
-      setError("Select a directory first");
+      setError(homePath ? `Path must stay within ${homePath}` : "Select a directory first");
       return;
     }
 
@@ -162,7 +207,7 @@ export function AddProjectModal({ open, onClose, onProjectAdded }: AddProjectMod
     } finally {
       setSubmitting(false);
     }
-  }, [selectedPath, name, onProjectAdded, onClose, router]);
+  }, [selectedPath, homePath, name, onProjectAdded, onClose, router]);
 
   const parsedError = error ? parseMigrationError(error) : null;
 
