@@ -973,6 +973,9 @@ export interface OrchestratorConfig {
   /** Default plugin selections */
   defaults: DefaultPlugins;
 
+  /** Installer-managed external plugin descriptors */
+  plugins?: InstalledPluginConfig[];
+
   /** Project configurations */
   projects: Record<string, ProjectConfig>;
 
@@ -997,6 +1000,28 @@ export interface DefaultPlugins {
   worker?: {
     agent?: string;
   };
+}
+
+export type InstalledPluginSource = "registry" | "npm" | "local";
+
+export interface InstalledPluginConfig {
+  /** Stable logical plugin name used in config and CLI UX */
+  name: string;
+
+  /** Where the plugin should be resolved from */
+  source: InstalledPluginSource;
+
+  /** Package name for registry/npm-managed plugins */
+  package?: string;
+
+  /** Requested version/range for installer-managed plugins */
+  version?: string;
+
+  /** Filesystem path for local plugins */
+  path?: string;
+
+  /** Installer-managed enable flag (defaults to true) */
+  enabled?: boolean;
 }
 
 export interface RoleAgentConfig {

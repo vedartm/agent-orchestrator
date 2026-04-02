@@ -23,6 +23,7 @@ import { banner } from "../lib/format.js";
 import { getSessionManager } from "../lib/create-session-manager.js";
 import { ensureLifecycleWorker } from "../lib/lifecycle-service.js";
 import { preflight } from "../lib/preflight.js";
+import { findProjectForDirectory } from "../lib/project-resolution.js";
 
 /**
  * Build an OrchestratorConfig for a specific project using the global registry.
@@ -97,10 +98,9 @@ function autoDetectProject(config: OrchestratorConfig): string {
 
   // Try matching cwd to a project path
   const cwd = resolve(process.cwd());
-  for (const [id, project] of Object.entries(config.projects)) {
-    if (project.path && resolve(expandHome(project.path)) === cwd) {
-      return id;
-    }
+  const matchedProjectId = findProjectForDirectory(config.projects, cwd);
+  if (matchedProjectId) {
+    return matchedProjectId;
   }
 
   throw new Error(

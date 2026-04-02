@@ -48,6 +48,7 @@ import {
   findWebDir,
   buildDashboardEnv,
   waitForPortAndOpen,
+  openUrl,
   isPortAvailable,
   findFreePort,
   MAX_PORT_SCAN,
@@ -64,6 +65,10 @@ import {
   generateRulesFromTemplates,
   formatProjectTypeForDisplay,
 } from "../lib/project-detection.js";
+import { formatCommandError } from "../lib/cli-errors.js";
+import { detectOpenClawInstallation } from "../lib/openclaw-probe.js";
+import { applyOpenClawCredentials } from "../lib/credential-resolver.js";
+import { findProjectForDirectory } from "../lib/project-resolution.js";
 
 const DEFAULT_PORT = 3000;
 const IS_TTY = Boolean(process.stdin.isTTY && process.stdout.isTTY);
@@ -108,10 +113,9 @@ async function resolveProject(
   // Multiple projects — try matching cwd to a project path
   // Note: loadConfig() already expands ~ in project paths via expandPaths()
   const currentDir = resolve(cwd());
-  for (const [id, proj] of Object.entries(config.projects)) {
-    if (resolve(proj.path) === currentDir) {
-      return { projectId: id, project: proj };
-    }
+  const matchedProjectId = findProjectForDirectory(config.projects, currentDir);
+  if (matchedProjectId) {
+    return { projectId: matchedProjectId, project: config.projects[matchedProjectId] };
   }
 
   // No match — prompt if interactive, otherwise error
@@ -177,6 +181,25 @@ function canPromptForInstall(): boolean {
   return isHumanCaller() && IS_TTY;
 }
 
+function genericInstallHints(command: string): string[] {
+  switch (command) {
+    case "node":
+    case "npm":
+      return ["Install Node.js/npm from https://nodejs.org/"];
+    case "pnpm":
+      return [
+        "corepack enable && corepack prepare pnpm@latest --activate",
+        "npm install -g pnpm",
+      ];
+    case "pipx":
+      return [
+        "python3 -m pip install --user pipx",
+        "python3 -m pipx ensurepath",
+      ];
+    default:
+      return [];
+  }
+}
 async function askYesNo(
   question: string,
   defaultYes = true,
@@ -253,7 +276,16 @@ function ghInstallAttempts(): InstallAttempt[] {
 async function runInteractiveCommand(cmd: string, args: string[]): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: "inherit" });
-    child.once("error", reject);
+    child.once("error", (err) => {
+      reject(
+        formatCommandError(err, {
+          cmd,
+          args,
+          action: "run an interactive installer",
+          installHints: genericInstallHints(cmd),
+        }),
+      );
+    });
     child.once("close", (code) => {
       if (code === 0) {
         resolve();
@@ -749,7 +781,15 @@ async function startDashboard(
   }
 
   child.on("error", (err) => {
-    console.error(chalk.red("Dashboard failed to start:"), err.message);
+    const cmd = isDevMode ? "pnpm" : "node";
+    const args = isDevMode ? ["run", "dev"] : [resolve(webDir, "dist-server", "start-all.js")];
+    const formatted = formatCommandError(err, {
+      cmd,
+      args,
+      action: "start the AO dashboard",
+      installHints: genericInstallHints(cmd),
+    });
+    console.error(chalk.red("Dashboard failed to start:"), formatted.message);
     // Emit synthetic exit so callers listening on "exit" can clean up
     child.emit("exit", 1, null);
   });
@@ -813,6 +853,43 @@ async function ensureTmux(): Promise<void> {
   process.exit(1);
 }
 
+async function warnAboutOpenClawStatus(config: OrchestratorConfig): Promise<void> {
+  const openclawConfig = config.notifiers?.["openclaw"];
+  const openclawConfigured =
+    openclawConfig !== null && openclawConfig !== undefined &&
+    typeof openclawConfig === "object" &&
+    openclawConfig.plugin === "openclaw";
+  const configuredUrl =
+    openclawConfigured && typeof openclawConfig.url === "string" ? openclawConfig.url : undefined;
+
+  try {
+    const installation = configuredUrl
+      ? await detectOpenClawInstallation(configuredUrl)
+      : await detectOpenClawInstallation();
+
+    if (openclawConfigured) {
+      if (installation.state !== "running") {
+        console.log(
+          chalk.yellow(
+            `⚠ OpenClaw is configured but the gateway is not reachable at ${installation.gatewayUrl}. Notifications may fail until it is running.`,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (installation.state === "running") {
+      console.log(
+        chalk.yellow(
+          `⚠ OpenClaw is running at ${installation.gatewayUrl} but AO is not configured to use it. Run \`ao setup openclaw\` if you want OpenClaw notifications.`,
+        ),
+      );
+    }
+  } catch {
+    // OpenClaw probing is advisory for `ao start`; never block startup on it.
+  }
+}
+
 /**
  * Shared startup logic: launch dashboard + orchestrator session, print summary.
  * Used by both normal and URL-based start flows.
@@ -828,6 +905,21 @@ async function runStartup(
   const runtime = config.defaults?.runtime ?? "tmux";
   if (runtime === "tmux") {
     await ensureTmux();
+  }
+  await warnAboutOpenClawStatus(config);
+
+  // Only inject OpenClaw credentials when the project actually uses OpenClaw.
+  // This avoids exposing API keys to projects/plugins that don't need them.
+  const openclawNotifier = config.notifiers?.["openclaw"];
+  const hasOpenClaw =
+    openclawNotifier !== null && openclawNotifier !== undefined &&
+    typeof openclawNotifier === "object" && openclawNotifier.plugin === "openclaw";
+  if (hasOpenClaw) {
+    const injectedKeys = applyOpenClawCredentials();
+    if (injectedKeys.length > 0) {
+      const names = injectedKeys.map((k) => k.key).join(", ");
+      console.log(chalk.dim(`  Resolved from OpenClaw config: ${names}`));
+    }
   }
 
   const sessionId = `${project.sessionPrefix}-orchestrator`;
@@ -1223,11 +1315,7 @@ export function registerStart(program: Command): void {
 
               if (choice.trim() === "1") {
                 const url = `http://localhost:${running.port}`;
-                const [cmd, args]: [string, string[]] =
-                  process.platform === "win32"
-                    ? ["cmd.exe", ["/c", "start", "", url]]
-                    : [process.platform === "linux" ? "xdg-open" : "open", [url]];
-                spawn(cmd, args, { stdio: "ignore" });
+                openUrl(url);
                 process.exit(0);
               } else if (choice.trim() === "2") {
                 // Generate unique orchestrator: same project, new session
