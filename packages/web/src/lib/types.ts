@@ -292,9 +292,9 @@ export interface PortfolioProjectSummary {
 
 /** Triage ranking for portfolio attention center — lower = more urgent */
 const TRIAGE_RANK: Record<AttentionLevel, number> = {
-  respond: 0,
-  review: 1,
-  merge: 2,
+  merge: 0,
+  respond: 1,
+  review: 2,
   pending: 3,
   working: 4,
   done: 5,
