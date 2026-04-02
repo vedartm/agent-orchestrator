@@ -50,8 +50,8 @@
   /* Text */
   --color-text-primary: #1b1b1f;
   --color-text-secondary: #5e5e66;
-  --color-text-tertiary: #8b8b93;
-  --color-text-muted: #8b8b93;
+  --color-text-tertiary: #737380;
+  --color-text-muted: #737380;
   --color-text-inverse: #ffffff;
 
   /* Interactive accent */
@@ -1815,18 +1815,6 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 12%, transparent);
 }
 
-.project-sidebar__avatar {
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1;
-  color: var(--color-text-secondary);
-  user-select: none;
-}
-
-.project-sidebar__collapsed-project--active .project-sidebar__avatar {
-  color: var(--color-accent);
-}
-
 .project-sidebar__health-indicator {
   position: absolute;
   top: -2px;
@@ -3369,4 +3357,16 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
 @keyframes connection-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

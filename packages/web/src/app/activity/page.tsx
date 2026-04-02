@@ -1,17 +1,21 @@
 import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
 
+import { ActivityFeedPage } from "@/components/ActivityFeedPage";
 import { DashboardShell } from "@/components/DashboardShell";
-import { PortfolioPage } from "@/components/PortfolioPage";
 import { getDefaultCloneLocation } from "@/lib/default-location";
+import { loadHomeActivityData } from "@/lib/home-activity-data";
 import { loadPortfolioPageData } from "@/lib/portfolio-page-data";
 
 export const metadata: Metadata = {
-  title: { absolute: "ao | Agent Orchestrator" },
+  title: { absolute: "ao | Activity" },
 };
 
-export default async function Home() {
-  const { projectSummaries, sessions } = await loadPortfolioPageData();
+export default async function ActivityPage() {
+  const [{ projectSummaries, sessions }, { activityItems }] = await Promise.all([
+    loadPortfolioPageData(),
+    loadHomeActivityData(),
+  ]);
 
   return (
     <DashboardShell
@@ -19,7 +23,7 @@ export default async function Home() {
       sessions={sessions}
       defaultLocation={getDefaultCloneLocation()}
     >
-      <PortfolioPage projectSummaries={projectSummaries} />
+      <ActivityFeedPage projectSummaries={projectSummaries} activityItems={activityItems} />
     </DashboardShell>
   );
 }

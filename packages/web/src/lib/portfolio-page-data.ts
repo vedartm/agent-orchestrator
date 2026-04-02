@@ -8,7 +8,12 @@
 import { isOrchestratorSession } from "@composio/ao-core";
 import { getCachedPortfolioSessions, getPortfolioServices } from "@/lib/portfolio-services";
 import { sessionToDashboard } from "@/lib/serialize";
-import { getAttentionLevel, type AttentionLevel, type PortfolioProjectSummary } from "@/lib/types";
+import {
+  getAttentionLevel,
+  type AttentionLevel,
+  type DashboardSession,
+  type PortfolioProjectSummary,
+} from "@/lib/types";
 
 const ATTENTION_LEVELS: AttentionLevel[] = [
   "merge",
@@ -32,10 +37,12 @@ function emptyAttentionCounts(): Record<AttentionLevel, number> {
 
 export async function loadPortfolioPageData(): Promise<{
   projectSummaries: PortfolioProjectSummary[];
+  sessions: DashboardSession[];
 }> {
   const { portfolio } = getPortfolioServices();
   const portfolioSessions = await getCachedPortfolioSessions().catch(() => []);
   const summaries = new Map<string, PortfolioProjectSummary>();
+  const sessions: DashboardSession[] = [];
 
   for (const project of portfolio) {
     if (project.enabled === false) continue;
@@ -58,6 +65,7 @@ export async function loadPortfolioPageData(): Promise<{
     if (!summary) continue;
 
     const dashboardSession = sessionToDashboard(item.session);
+    sessions.push(dashboardSession);
     const attentionLevel = getAttentionLevel(dashboardSession);
     summary.sessionCount += 1;
     if (attentionLevel !== "done") {
@@ -76,5 +84,5 @@ export async function loadPortfolioPageData(): Promise<{
     }
   }
 
-  return { projectSummaries };
+  return { projectSummaries, sessions };
 }

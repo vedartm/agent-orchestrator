@@ -1,22 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { getRelativeTime } from "@/lib/relative-time";
 import { getAttentionLevel, type DashboardSession } from "@/lib/types";
 import { getSessionTitle } from "@/lib/format";
-
-function getRelativeTime(dateStr: string): string {
-  const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const diffMs = now - then;
-  const diffSec = Math.floor(diffMs / 1000);
-  if (diffSec < 60) return `${diffSec}s ago`;
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.floor(diffHr / 24);
-  return `${diffDay}d ago`;
-}
+import { getProjectSessionHref } from "@/lib/project-utils";
 
 function formatTagLabel(value: string): string {
   return value.replaceAll("_", " ");
@@ -205,7 +193,7 @@ export function BottomSheet({
           ) : (
             <>
               <a
-                href={`/sessions/${encodeURIComponent(session.id)}`}
+                href={getProjectSessionHref(session.projectId, session.id)}
                 className="bottom-sheet__btn bottom-sheet__btn--primary"
               >
                 Open session
