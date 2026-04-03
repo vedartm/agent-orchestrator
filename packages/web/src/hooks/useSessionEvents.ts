@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useReducer, useRef } from "react";
-import type {
-  AttentionLevel,
-  DashboardSession,
-  GlobalPauseState,
-  SSESnapshotEvent,
+import {
+  getAttentionLevel,
+  type AttentionLevel,
+  type DashboardSession,
+  type GlobalPauseState,
+  type SSESnapshotEvent,
 } from "@/lib/types";
-import { getAttentionLevel } from "@/lib/types";
 
 /** Debounce before fetching full session list after membership change. */
 const MEMBERSHIP_REFRESH_DELAY_MS = 120;
