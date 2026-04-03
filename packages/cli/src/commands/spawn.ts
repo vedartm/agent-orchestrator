@@ -10,7 +10,6 @@ import {
   getSiblings,
   formatPlanTree,
   TERMINAL_STATUSES,
-  expandHome,
   loadGlobalConfig,
   buildEffectiveProjectConfig,
   getGlobalConfigPath,

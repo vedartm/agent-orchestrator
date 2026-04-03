@@ -23,9 +23,9 @@ export function PortfolioPage({
   const openProject = onOpenProject ?? controls?.openAddProject ?? (() => {});
   const cloneFromUrl = onCloneFromUrl ?? controls?.openCloneFromUrl ?? (() => {});
 
-  const hasProjects = projectSummaries.length > 0;
+  const hasSessions = projectSummaries.some((p) => p.sessionCount > 0);
 
-  if (hasProjects) {
+  if (hasSessions) {
     return <AttentionHome projectSummaries={projectSummaries} />;
   }
 
