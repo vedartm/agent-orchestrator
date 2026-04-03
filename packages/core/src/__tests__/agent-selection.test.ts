@@ -33,7 +33,7 @@ function buildProject(): ProjectConfig {
 }
 
 describe("resolveAgentSelection", () => {
-  it("applies spawnAgentOverride for orchestrators", () => {
+  it("does not apply spawnAgentOverride for orchestrators", () => {
     const selection = resolveAgentSelection({
       role: "orchestrator",
       project: buildProject(),
@@ -41,7 +41,7 @@ describe("resolveAgentSelection", () => {
       spawnAgentOverride: "codex",
     });
 
-    expect(selection.agentName).toBe("codex");
+    expect(selection.agentName).toBe("claude-code");
   });
 
   it("applies spawnAgentOverride for workers", () => {

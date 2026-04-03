@@ -10,6 +10,8 @@ import {
   type ActivityState,
   type Tracker,
   type ProjectConfig,
+  getPortfolio,
+  getPortfolioSessionCounts,
   isOrchestratorSession,
   loadConfig,
   loadGlobalConfig,
@@ -266,10 +268,8 @@ export function registerStatus(program: Command): void {
           maybeClearScreen();
         }
 
-        let config: ReturnType<typeof loadConfig>;
-        try {
-          if (opts.portfolio) {
-            const { getPortfolio, getPortfolioSessionCounts } = await import("@composio/ao-core");
+        if (opts.portfolio) {
+          try {
             const portfolio = getPortfolio();
 
             if (portfolio.length === 0) {
@@ -319,8 +319,18 @@ export function registerStatus(program: Command): void {
             );
             console.log();
             return;
+          } catch (err) {
+            console.error(
+              chalk.red(
+                `Portfolio status failed: ${err instanceof Error ? err.message : String(err)}`,
+              ),
+            );
+            return;
           }
+        }
 
+        let config: ReturnType<typeof loadConfig>;
+        try {
           config = loadConfig();
         } catch {
           console.log(chalk.yellow("No config found. Run `ao init` first."));

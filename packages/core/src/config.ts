@@ -444,7 +444,7 @@ export function findConfigFile(startDir?: string): string | null {
   // 1. Check environment variable override
   if (process.env["AO_CONFIG_PATH"]) {
     const envPath = resolve(process.env["AO_CONFIG_PATH"]);
-    if (existsSync(envPath) && hasProjectsWrapper(envPath)) {
+    if (existsSync(envPath)) {
       return envPath;
     }
   }
@@ -538,7 +538,7 @@ export function findConfig(startDir?: string): string | null {
 /** Load and validate config from a YAML file */
 export function loadConfig(configPath?: string): OrchestratorConfig {
   // Priority: 1. Explicit param, 2. Search (including AO_CONFIG_PATH env var)
-  // findConfigFile handles AO_CONFIG_PATH validation, so delegate to it
+  // findConfigFile treats AO_CONFIG_PATH as authoritative when present.
   const path = configPath ?? findConfigFile();
 
   if (!path) {
