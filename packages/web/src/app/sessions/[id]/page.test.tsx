@@ -1,23 +1,37 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 
 // sessions/[id]/page.tsx is now a redirect-only server component.
 // It redirects to /projects/:projectId/sessions/:id based on portfolio lookup.
 
-const mockRedirect = vi.fn((url: string) => {
-  throw new Error(`REDIRECT:${url}`);
-});
+const { mockRedirect, mockGetPortfolioServices, mockGetCachedPortfolioSessions } = vi.hoisted(
+  () => ({
+    mockRedirect: vi.fn((url: string) => {
+      throw new Error(`REDIRECT:${url}`);
+    }),
+    mockGetPortfolioServices: vi.fn(),
+    mockGetCachedPortfolioSessions: vi.fn(),
+  }),
+);
 
 vi.mock("next/navigation", () => ({
   redirect: (url: string) => mockRedirect(url),
 }));
 
-const mockGetPortfolioServices = vi.fn();
-const mockGetCachedPortfolioSessions = vi.fn();
-
 vi.mock("@/lib/portfolio-services", () => ({
   getPortfolioServices: () => mockGetPortfolioServices(),
   getCachedPortfolioSessions: () => mockGetCachedPortfolioSessions(),
 }));
+
+beforeEach(() => {
+  vi.resetModules();
+  mockRedirect.mockClear();
+  mockGetPortfolioServices.mockReset();
+  mockGetCachedPortfolioSessions.mockReset();
+  // Restore the redirect throw behavior after clear
+  mockRedirect.mockImplementation((url: string) => {
+    throw new Error(`REDIRECT:${url}`);
+  });
+});
 
 describe("LegacySessionPage redirects", () => {
   it("redirects to /projects/:projectId/sessions/:id when session is found in portfolio", async () => {
