@@ -94,6 +94,7 @@ export function readMetadata(dataDir: string, sessionId: SessionId): SessionMeta
       : undefined,
     opencodeSessionId: raw["opencodeSessionId"],
     pinnedSummary: raw["pinnedSummary"],
+    resumedFrom: raw["resumedFrom"],
   };
 }
 
@@ -144,6 +145,7 @@ export function writeMetadata(
     data["directTerminalWsPort"] = String(metadata.directTerminalWsPort);
   if (metadata.opencodeSessionId) data["opencodeSessionId"] = metadata.opencodeSessionId;
   if (metadata.pinnedSummary) data["pinnedSummary"] = metadata.pinnedSummary;
+  if (metadata.resumedFrom) data["resumedFrom"] = metadata.resumedFrom;
 
   atomicWriteFileSync(path, serializeMetadata(data));
 }

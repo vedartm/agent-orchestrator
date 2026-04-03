@@ -1087,3 +1087,55 @@ describe("External Plugin Name Generation", () => {
     expect(config.projects.proj1.scm?.plugin).toBe("azure-devops");
   });
 });
+
+describe("Config Validation - workerRespawnStrategy", () => {
+  it('accepts "resume"', () => {
+    const config = validateConfig({
+      projects: {
+        proj1: { path: "/repos/test", repo: "org/test", workerRespawnStrategy: "resume" },
+      },
+    });
+    expect(config.projects.proj1.workerRespawnStrategy).toBe("resume");
+  });
+
+  it('accepts "context-inject"', () => {
+    const config = validateConfig({
+      projects: {
+        proj1: { path: "/repos/test", repo: "org/test", workerRespawnStrategy: "context-inject" },
+      },
+    });
+    expect(config.projects.proj1.workerRespawnStrategy).toBe("context-inject");
+  });
+
+  it('accepts "fresh"', () => {
+    const config = validateConfig({
+      projects: {
+        proj1: { path: "/repos/test", repo: "org/test", workerRespawnStrategy: "fresh" },
+      },
+    });
+    expect(config.projects.proj1.workerRespawnStrategy).toBe("fresh");
+  });
+
+  it("defaults to undefined when omitted", () => {
+    const config = validateConfig({
+      projects: {
+        proj1: { path: "/repos/test", repo: "org/test" },
+      },
+    });
+    expect(config.projects.proj1.workerRespawnStrategy).toBeUndefined();
+  });
+
+  it("rejects invalid values", () => {
+    expect(() =>
+      validateConfig({
+        projects: {
+          proj1: {
+            path: "/repos/test",
+            repo: "org/test",
+            workerRespawnStrategy: "invalid" as "resume",
+          },
+        },
+      }),
+    ).toThrow();
+  });
+});
