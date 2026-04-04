@@ -111,9 +111,9 @@ export function resolveMultiProjectStart(
       if (localPath) {
         try {
           const localConfig = loadLocalProjectConfig(localPath);
-          const { config: synced, excludedSecrets } = syncShadow(globalConfig, projectId, localConfig);
-          globalConfig = synced;
-          saveGlobalConfig(globalConfig);
+          // syncShadow writes to the shadow file and returns globalConfig unchanged.
+          // No need to saveGlobalConfig — the global registry entry is unmodified.
+          const { excludedSecrets } = syncShadow(globalConfig, projectId, localConfig);
           if (excludedSecrets.length > 0) {
             messages.push({ level: "warn", text: `Excluded secret-like fields: ${excludedSecrets.join(", ")}` });
           }

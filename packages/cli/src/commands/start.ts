@@ -1287,13 +1287,18 @@ export function registerStart(program: Command): void {
                   project = { ...project, orchestratorSessionStrategy: "ignore-new" };
                   console.log(chalk.green(`\n✓ Starting new orchestrator for "${projectId}"\n`));
                 } else {
-                  // Legacy single-file mode: add a new project entry with different prefix
+                  // Legacy single-file mode: add a new project entry with different prefix.
+                  // Check both ID and session prefix collisions to avoid a
+                  // "Duplicate session prefix" error when config is reloaded.
                   const existingIds = new Set(Object.keys(config.projects));
+                  const existingPrefixes = new Set(
+                    Object.values(config.projects).map((p) => p.sessionPrefix || generateSessionPrefix(basename(p.path))),
+                  );
                   let newId: string;
                   do {
                     const rnd = Math.random().toString(36).slice(2, 6);
                     newId = `${projectId}-${rnd}`;
-                  } while (existingIds.has(newId));
+                  } while (existingIds.has(newId) || existingPrefixes.has(generateSessionPrefix(newId)));
 
                   const rawYaml = readFileSync(config.configPath, "utf-8");
                   const rawConfig = yamlParse(rawYaml);
