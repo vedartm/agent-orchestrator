@@ -180,7 +180,16 @@ function synthesizePrViewJsonFromRest(
   const want = new Set(jsonFields);
 
   if (want.has("state")) {
-    out.state = rest.state;
+    // REST API returns state:"closed" with merged:true for merged PRs.
+    // GraphQL gh pr view returns state:"MERGED". Normalise so callers
+    // (getPRState, getMergeability) see the same shape regardless of path.
+    if (rest.state === "closed" && rest.merged === true) {
+      out.state = "MERGED";
+    } else if (typeof rest.state === "string") {
+      out.state = rest.state.toUpperCase();
+    } else {
+      out.state = rest.state;
+    }
     if (rest.merged !== undefined) out.merged = rest.merged;
   }
   if (want.has("title") && rest.title !== undefined) out.title = rest.title;
