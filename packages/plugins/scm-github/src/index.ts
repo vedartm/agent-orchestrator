@@ -286,9 +286,15 @@ async function fetchPrViewFallbackAsJson(
   if (conv.jsonFields.includes("statusCheckRollup")) {
     const headObj = restObj.head as Record<string, unknown> | undefined;
     const sha = typeof headObj?.sha === "string" ? headObj.sha : undefined;
-    if (sha) {
-      statusCheckRollup = await fetchCheckRunsViaRest(conv.repo, sha, cwd);
+    if (!sha) {
+      // Throw so the caller (ghWithRetry) re-throws lastError (the original
+      // rate-limit error), keeping fail-closed behavior consistent with
+      // getCIChecksFromStatusRollupViaRest which also throws when SHA is missing.
+      throw new Error(
+        `fetchPrViewFallbackAsJson: could not determine head SHA for ${conv.repo}#${conv.prNumber}`,
+      );
     }
+    statusCheckRollup = await fetchCheckRunsViaRest(conv.repo, sha, cwd);
   }
 
   return JSON.stringify(
