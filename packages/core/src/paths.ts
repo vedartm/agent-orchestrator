@@ -9,7 +9,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { dirname, basename, join } from "node:path";
+import { dirname, basename, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { realpathSync, existsSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
 
@@ -21,7 +21,16 @@ import { realpathSync, existsSync, writeFileSync, readFileSync, mkdirSync } from
  * This function is kept for backwards compatibility with existing storage directories.
  */
 export function generateConfigHash(configPath: string): string {
-  const resolved = realpathSync(configPath);
+  let resolved: string;
+  try {
+    resolved = realpathSync(configPath);
+  } catch {
+    // Path doesn't exist (e.g. synthetic path used for global-only projects in
+    // multi-project mode: {projectDir}/agent-orchestrator.yaml).
+    // Fall back to resolve() which expands relative segments without requiring
+    // the file to exist on disk.
+    resolved = resolve(configPath);
+  }
   const configDir = dirname(resolved);
   const hash = createHash("sha256").update(configDir).digest("hex");
   return hash.slice(0, 12);

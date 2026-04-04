@@ -24,6 +24,7 @@ import {
   findLocalConfigPath,
   loadLocalProjectConfig,
 } from "./global-config.js";
+import { join } from "node:path";
 import { expandHome } from "./paths.js";
 
 // ---------------------------------------------------------------------------
@@ -100,7 +101,13 @@ export function buildEffectiveConfig(
         behaviorFields = loadShadowOrEmpty(projectId);
       }
     } else {
-      // Global-only mode: shadow file IS the config
+      // Global-only mode: shadow file IS the config.
+      // Set effectiveConfigPath to a synthetic path inside the project directory
+      // so generateConfigHash produces a hash unique to this project's directory
+      // (not shared across all global-only projects via the global config path).
+      // The file need not exist on disk — generateConfigHash falls back to
+      // resolve() when realpathSync throws, giving dirname = expandedPath.
+      effectiveConfigPath = join(expandedPath, "agent-orchestrator.yaml");
       behaviorFields = loadShadowOrEmpty(projectId);
     }
 
