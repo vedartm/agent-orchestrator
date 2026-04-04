@@ -74,7 +74,7 @@ export function buildEffectiveConfig(
     // projectId is the abbreviated form ("ao") or the full basename
     // ("agent-orchestrator") registered by newer versions.
     const sessionPrefix = (behaviorFields["sessionPrefix"] as string | undefined)
-      ?? generateSessionPrefix(generateProjectId(projectPath));
+      || generateSessionPrefix(generateProjectId(projectPath));
     const repo = String(behaviorFields["repo"] ?? "");
 
     // Don't infer scm/tracker here — leave them for applyProjectDefaults
