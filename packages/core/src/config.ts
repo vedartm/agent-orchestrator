@@ -276,7 +276,7 @@ function expandHome(filepath: string): string {
 }
 
 /** Expand all path fields in the config */
-export function expandPaths(config: OrchestratorConfig): OrchestratorConfig {
+function expandPaths(config: OrchestratorConfig): OrchestratorConfig {
   const projects: typeof config.projects = {};
   for (const [id, project] of Object.entries(config.projects)) {
     projects[id] = { ...project, path: expandHome(project.path) };
@@ -514,7 +514,7 @@ export function mergeExternalPlugins(
 }
 
 /** Apply defaults to project configs */
-export function applyProjectDefaults(config: OrchestratorConfig): OrchestratorConfig {
+function applyProjectDefaults(config: OrchestratorConfig): OrchestratorConfig {
   const projects: typeof config.projects = {};
   for (const [id, project] of Object.entries(config.projects)) {
     const name = project.name ?? id;
@@ -529,7 +529,7 @@ export function applyProjectDefaults(config: OrchestratorConfig): OrchestratorCo
 }
 
 /** Validate project uniqueness and session prefix collisions */
-export function validateProjectUniqueness(config: OrchestratorConfig): void {
+function validateProjectUniqueness(config: OrchestratorConfig): void {
   // Project IDs (config map keys) are inherently unique — no need to check them.
   // Basename uniqueness is NOT enforced: two projects can legitimately share the
   // same directory name (e.g. /client1/app and /client2/app).
@@ -565,7 +565,7 @@ export function validateProjectUniqueness(config: OrchestratorConfig): void {
 }
 
 /** Apply default reactions */
-export function applyDefaultReactions(config: OrchestratorConfig): OrchestratorConfig {
+function applyDefaultReactions(config: OrchestratorConfig): OrchestratorConfig {
   const defaults: Record<string, (typeof config.reactions)[string]> = {
     "ci-failed": {
       auto: true,

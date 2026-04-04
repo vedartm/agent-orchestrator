@@ -1264,6 +1264,9 @@ export function registerStart(program: Command): void {
           }
 
           // ── Already-running detection (Step 9) ──
+          // Set to true when user picks "Start new orchestrator" in multi-project mode:
+          // the existing instance owns the dashboard and running.json — we only add a session.
+          let attachToRunning = false;
           const running = skipAlreadyRunningCheck ? null : await isAlreadyRunning();
           if (running) {
             if (isHumanCaller()) {
@@ -1292,7 +1295,10 @@ export function registerStart(program: Command): void {
                   // Multi-project mode: override the session strategy so runStartup
                   // forces reserveNextOrchestratorIdentity to assign a new numbered
                   // identity ({prefix}-orchestrator-N) instead of reusing the existing one.
+                  // Mark attachToRunning so we skip the dashboard start and running.json
+                  // re-registration — the existing process already owns both.
                   project = { ...project, orchestratorSessionStrategy: "ignore-new" };
+                  attachToRunning = true;
                   console.log(chalk.green(`\n✓ Starting new orchestrator for "${projectId}"\n`));
                 } else {
                   // Legacy single-file mode: add a new project entry with different prefix.
@@ -1425,21 +1431,33 @@ export function registerStart(program: Command): void {
             const strategyOverride = project.orchestratorSessionStrategy;
             config = config.globalConfigPath ? loadConfig() : loadConfig(config.configPath);
             project = config.projects[projectId];
+            if (!project) {
+              throw new Error(`Project "${projectId}" not found in config after reload. It may have been removed concurrently.`);
+            }
             if (strategyOverride !== project.orchestratorSessionStrategy) {
               project = { ...project, orchestratorSessionStrategy: strategyOverride };
             }
           }
 
-          const actualPort = await runStartup(config, projectId, project, opts);
+          const actualPort = await runStartup(
+            config,
+            projectId,
+            project,
+            attachToRunning ? { ...opts, dashboard: false } : opts,
+          );
 
           // ── Register in running.json (Step 11) ──
-          await register({
-            pid: process.pid,
-            configPath: config.configPath,
-            port: actualPort,
-            startedAt: new Date().toISOString(),
-            projects: Object.keys(config.projects),
-          });
+          // Skip when attaching to an already-running instance: the existing process
+          // owns running.json and re-writing it would overwrite its PID/port.
+          if (!attachToRunning) {
+            await register({
+              pid: process.pid,
+              configPath: config.configPath,
+              port: actualPort,
+              startedAt: new Date().toISOString(),
+              projects: Object.keys(config.projects),
+            });
+          }
         } catch (err) {
           if (err instanceof Error) {
             console.error(chalk.red("\nError:"), err.message);
