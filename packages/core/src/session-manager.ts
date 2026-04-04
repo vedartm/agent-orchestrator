@@ -1203,14 +1203,13 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       }
 
       // Step 4: Context injection fallback
-      // Re-search with broader status set — native resume only matched resumable statuses
-      // (killed/errored/terminated), but a newer "done" session may have richer context (PR URL, summary).
+      // When native resume was attempted (resumableOnly search), re-search with the broader
+      // status set — a newer "done" session may have richer context (PR URL, summary).
+      // Skip re-search when archived was already found with the broad set (context-inject strategy).
       if (!launchCommand) {
-        const contextArchived = findArchivedSessionForIssue(
-          sessionsDir,
-          spawnConfig.issueId!,
-          selection.agentName,
-        ) ?? archived;
+        const contextArchived = attemptNativeResume
+          ? (findArchivedSessionForIssue(sessionsDir, spawnConfig.issueId!, selection.agentName) ?? archived)
+          : archived;
         const context = await buildPreviousSessionContext(
           contextArchived.raw,
           workspacePath,
