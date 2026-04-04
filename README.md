@@ -188,6 +188,15 @@ Your Docker image must include the basics AO expects to drive an interactive age
 
 AO bind-mounts the project workspace into the container at the same absolute host path. That keeps agent tooling and terminal attach behavior consistent, but it also means Docker must be able to access that host path.
 
+When present on the host, AO also mounts common local auth/config state into `/home/ao` inside the container:
+
+- `~/.codex`
+- `~/.gitconfig`
+- `~/.git-credentials`
+- `~/.config/gh`
+
+That is enough for real Codex, Git, and GitHub-backed sessions to reuse local login state in typical setups, as long as the image also includes the corresponding CLIs.
+
 CLI attach, `ao open`, and the web dashboard terminal are runtime-aware. For Docker sessions they attach with `docker exec ... tmux attach`, not host tmux.
 
 Recommended for servers:
@@ -196,6 +205,7 @@ Recommended for servers:
 - Use a pinned image instead of `latest` for reproducibility
 - Add `readOnlyRoot`, `capDrop`, and explicit CPU/memory limits for multi-tenant hosts
 - Keep `tmpfs: [/tmp]` when using `readOnlyRoot`; many agent CLIs and shells still expect a writable `/tmp`
+- Expect a one-time Codex workspace trust prompt the first time a brand-new worktree path is opened in-container
 - Use `ao doctor` after changing Docker runtime config; it now checks Docker daemon access and warns about missing image/rootless/GPU setup
 
 ## Plugin Architecture

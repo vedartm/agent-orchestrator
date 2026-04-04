@@ -252,10 +252,12 @@ Notes:
 - Your image must include `/bin/sh` (or the configured `shell`), `tmux`, `git`, and the agent CLI you want AO to launch.
 - Any credentials your agent CLI needs must be available inside the container, typically through environment variables.
 - AO bind-mounts the workspace into the container at the same absolute path from the host.
+- When present on the host, AO also mounts `~/.codex`, `~/.gitconfig`, `~/.git-credentials`, and `~/.config/gh` into `/home/ao` so Codex/Git/GitHub auth can work in-container without baking secrets into the image.
 - CLI attach, `ao open`, and the web dashboard terminal attach to Docker sessions with `docker exec ... tmux attach`.
 - Prefer rootless Docker on Linux hosts.
 - Use pinned image tags for reproducibility.
 - Keep `tmpfs: [/tmp]` when using `readOnlyRoot`; many shells and agent CLIs still expect a writable `/tmp`.
+- A fresh Codex worktree path may still prompt for trust the first time it opens inside the container.
 - `readOnlyRoot` only affects the container root filesystem. The bind-mounted workspace remains writable unless you mount it read-only yourself.
 - `ao doctor` now checks Docker availability, daemon access, configured image presence, Linux rootless hints, and GPU-runtime hints when `runtime: docker` is enabled.
 

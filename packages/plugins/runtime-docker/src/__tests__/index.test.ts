@@ -13,6 +13,10 @@ vi.mock("node:crypto", () => ({
   randomUUID: vi.fn(() => "test-uuid-1234"),
 }));
 
+vi.mock("node:os", () => ({
+  homedir: vi.fn(() => "/host/home"),
+}));
+
 vi.mock("node:fs", () => ({
   existsSync: vi.fn(),
   lstatSync: vi.fn(),
@@ -271,6 +275,10 @@ describe("runtime.create()", () => {
       { path: "/host/.ao/bin", kind: "dir" },
       { path: "/host/.ao/bin/ao-metadata-helper.sh", kind: "file", content: "#!/bin/sh\n" },
       { path: "/host/.agent/sessions", kind: "dir" },
+      { path: "/host/home/.codex", kind: "dir" },
+      { path: "/host/home/.gitconfig", kind: "file", content: "[user]\n\tname = Test\n" },
+      { path: "/host/home/.git-credentials", kind: "file", content: "https://token@example.com\n" },
+      { path: "/host/home/.config/gh", kind: "dir" },
     ]);
 
     mockDockerSuccess("container-id");
@@ -308,6 +316,14 @@ describe("runtime.create()", () => {
         "/host/.ao/bin:/tmp/ao/bin:ro",
         "--volume",
         "/host/.agent/sessions:/tmp/ao/data",
+        "--volume",
+        "/host/home/.codex:/home/ao/.codex",
+        "--volume",
+        "/host/home/.gitconfig:/home/ao/.gitconfig:ro",
+        "--volume",
+        "/host/home/.git-credentials:/home/ao/.git-credentials:ro",
+        "--volume",
+        "/host/home/.config/gh:/home/ao/.config/gh",
         "ao-fake-codex:latest",
       ]),
     );
@@ -329,6 +345,8 @@ describe("runtime.create()", () => {
       "PATH=/tmp/ao/bin:/usr/local/bin:/usr/bin:/bin",
       "-e",
       "AO_DATA_DIR=/tmp/ao/data",
+      "-e",
+      "HOME=/home/ao",
     ]);
   });
 

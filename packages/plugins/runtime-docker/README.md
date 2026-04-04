@@ -61,6 +61,15 @@ Your image needs the tools AO expects to drive an interactive session:
 
 AO bind-mounts the project workspace into the container at the same absolute path from the host, so the Docker daemon must be able to access that host path.
 
+When present on the host, the runtime also mounts common local auth/config state into `/home/ao` inside the container:
+
+- `~/.codex`
+- `~/.gitconfig`
+- `~/.git-credentials`
+- `~/.config/gh`
+
+That lets Codex, Git, and GitHub CLI reuse host login state in common developer setups without baking credentials into the image.
+
 Minimal image pattern:
 
 ```dockerfile
@@ -95,4 +104,5 @@ ao spawn 123 --runtime docker --runtime-memory 4g --runtime-cpus 2 --runtime-rea
 - CLI attach, `ao open`, and the web dashboard terminal attach to Docker sessions with `docker exec ... tmux attach`.
 - Keep `tmpfs: [/tmp]` when using `readOnlyRoot`; many shells and agent CLIs still expect a writable `/tmp`.
 - `readOnlyRoot` hardens the container root filesystem, but the bind-mounted workspace remains writable unless you mount it read-only yourself.
+- A fresh Codex worktree path may still show its trust prompt the first time it opens inside the container.
 - Run `ao doctor` after changing Docker runtime config; it now validates Docker daemon access and required image configuration when `runtime: docker` is enabled.

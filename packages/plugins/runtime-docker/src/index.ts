@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
@@ -19,6 +20,7 @@ const SAFE_SESSION_ID = /^[a-zA-Z0-9_-]+$/;
 const LONG_MESSAGE_THRESHOLD = 200;
 const CONTAINER_AO_BIN_DIR = "/tmp/ao/bin";
 const CONTAINER_AO_DATA_DIR = "/tmp/ao/data";
+const CONTAINER_HOME_DIR = "/home/ao";
 const AO_METADATA_HELPER = "ao-metadata-helper.sh";
 
 export const manifest = {
@@ -183,6 +185,52 @@ function prepareContainerEnvironment(environment: Record<string, string>): {
   if (aoDataDir && pathIsDirectory(aoDataDir)) {
     mounts.push({ hostPath: aoDataDir, containerPath: CONTAINER_AO_DATA_DIR });
     prepared["AO_DATA_DIR"] = CONTAINER_AO_DATA_DIR;
+  }
+
+  const hostHome = homedir();
+  const containerHome = prepared["HOME"] || CONTAINER_HOME_DIR;
+  let usingContainerHome = false;
+
+  const hostCodexDir = join(hostHome, ".codex");
+  if (pathIsDirectory(hostCodexDir)) {
+    mounts.push({
+      hostPath: hostCodexDir,
+      containerPath: join(containerHome, ".codex"),
+    });
+    usingContainerHome = true;
+  }
+
+  const hostGitConfig = join(hostHome, ".gitconfig");
+  if (pathIsFile(hostGitConfig)) {
+    mounts.push({
+      hostPath: hostGitConfig,
+      containerPath: join(containerHome, ".gitconfig"),
+      readOnly: true,
+    });
+    usingContainerHome = true;
+  }
+
+  const hostGitCredentials = join(hostHome, ".git-credentials");
+  if (pathIsFile(hostGitCredentials)) {
+    mounts.push({
+      hostPath: hostGitCredentials,
+      containerPath: join(containerHome, ".git-credentials"),
+      readOnly: true,
+    });
+    usingContainerHome = true;
+  }
+
+  const hostGhConfigDir = join(hostHome, ".config", "gh");
+  if (pathIsDirectory(hostGhConfigDir)) {
+    mounts.push({
+      hostPath: hostGhConfigDir,
+      containerPath: join(containerHome, ".config", "gh"),
+    });
+    usingContainerHome = true;
+  }
+
+  if (usingContainerHome) {
+    prepared["HOME"] = containerHome;
   }
 
   // GH_PATH is host-resolved by the agent plugin and often invalid in-container.
