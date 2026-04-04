@@ -20,6 +20,7 @@ import {
   syncShadow,
   loadShadowFile,
   saveShadowFile,
+  deleteShadowFile,
   matchProjectByCwd,
   findGlobalConfigPath,
 } from "./global-config.js";
@@ -148,7 +149,18 @@ export function resolveMultiProjectStart(
   for (const w of buildWarnings) {
     messages.push({ level: "warn", text: w });
   }
-  const effectiveConfig = applyGlobalConfigPipeline(built);
+  let effectiveConfig: ReturnType<typeof applyGlobalConfigPipeline>;
+  try {
+    effectiveConfig = applyGlobalConfigPipeline(built);
+  } catch (validationErr) {
+    // Validation failed (e.g. session prefix collision) — clean up any shadow
+    // file written during this registration so it doesn't remain as an orphan.
+    // The global config was never saved, so the project is unregistered.
+    if (isNewRegistration) {
+      deleteShadowFile(projectId);
+    }
+    throw validationErr;
+  }
 
   // 5. Persist only after validation passes (new registrations only — already-registered
   //    projects don't modify globalConfig so nothing to save).
