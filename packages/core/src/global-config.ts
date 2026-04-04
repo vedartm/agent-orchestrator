@@ -476,11 +476,15 @@ export function findLocalConfigUpwards(
   startDir: string,
 ): { configPath: string; projectRoot: string } | null {
   let dir = resolve(startDir);
+  // Loop processes every directory except the root (where dir === dirname(dir)).
   while (dir !== dirname(dir)) {
     const configPath = findLocalConfigPath(dir);
     if (configPath) return { configPath, projectRoot: dir };
     dir = dirname(dir);
   }
+  // Check the root directory (the loop exits before inspecting it).
+  const rootConfigPath = findLocalConfigPath(dir);
+  if (rootConfigPath) return { configPath: rootConfigPath, projectRoot: dir };
   return null;
 }
 
