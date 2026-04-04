@@ -726,8 +726,8 @@ export function loadConfig(configPath?: string): OrchestratorConfig {
       if (!(err instanceof z.ZodError)) throw err;
 
       const effective = loadFromGlobalConfig();
-      if (effective) return effective;
-      // No global config — re-throw the original validation error
+      if (effective && Object.keys(effective.projects).length > 0) return effective;
+      // No global config (or empty registry) — re-throw the original validation error
       throw err;
     }
   }
