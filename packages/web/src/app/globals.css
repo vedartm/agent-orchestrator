@@ -957,16 +957,8 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
   z-index: 1;
 }
 
-.session-detail-status-pill--active {
-  animation: session-status-active-breathe 2.8s ease-in-out infinite;
-}
-
 .session-detail-status-pill--active .session-detail-status-pill__dot {
   animation: session-status-dot-pulse 1.8s ease-in-out infinite;
-}
-
-.session-detail-status-pill--ready {
-  animation: session-status-ready-breathe 3.2s ease-in-out infinite;
 }
 
 .session-detail-status-pill--ready .session-detail-status-pill__dot {
@@ -977,8 +969,8 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
   opacity: 0.92;
 }
 
-.session-detail-status-pill--waiting {
-  animation: session-status-waiting-breathe 3s ease-in-out infinite;
+.session-detail-status-pill--waiting .session-detail-status-pill__dot {
+  animation: session-status-dot-pulse 2s ease-in-out infinite;
 }
 
 @keyframes session-status-dot-pulse {
@@ -992,38 +984,6 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
   }
 }
 
-@keyframes session-status-active-breathe {
-  0%, 100% {
-    transform: translateY(0);
-    opacity: 0.96;
-  }
-  50% {
-    transform: translateY(-1px);
-    opacity: 1;
-  }
-}
-
-@keyframes session-status-ready-breathe {
-  0%, 100% {
-    transform: translateY(0);
-    opacity: 0.96;
-  }
-  50% {
-    transform: translateY(-1px);
-    opacity: 1;
-  }
-}
-
-@keyframes session-status-waiting-breathe {
-  0%, 100% {
-    transform: translateY(0);
-    opacity: 0.95;
-  }
-  50% {
-    transform: translateY(-1px);
-    opacity: 1;
-  }
-}
 
 .dark .detail-card {
   --color-text-secondary: #9898a0;
