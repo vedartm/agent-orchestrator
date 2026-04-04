@@ -24,7 +24,7 @@ import {
   findLocalConfigPath,
   loadLocalProjectConfig,
 } from "./global-config.js";
-import { expandHome, generateSessionPrefix, generateProjectId } from "./paths.js";
+import { expandHome } from "./paths.js";
 
 /**
  * Build an OrchestratorConfig from global config + local/shadow configs.
@@ -68,13 +68,10 @@ export function buildEffectiveConfig(
       behaviorFields = loadShadowOrEmpty(projectId);
     }
 
-    // Honor an explicit sessionPrefix from the behavior fields (e.g. set via
-    // migration from an old config or a custom shadow file value). Fall back
-    // to deriving the prefix from the project path — this is correct whether
-    // projectId is the abbreviated form ("ao") or the full basename
-    // ("agent-orchestrator") registered by newer versions.
-    const sessionPrefix = (behaviorFields["sessionPrefix"] as string | undefined)
-      || generateSessionPrefix(generateProjectId(projectPath));
+    // Use the explicit sessionPrefix from the behavior/shadow fields if present.
+    // Leave it empty otherwise — applyProjectDefaults (via applyGlobalConfigPipeline)
+    // is the single source of truth for deriving the prefix from the project path.
+    const sessionPrefix = (behaviorFields["sessionPrefix"] as string | undefined) ?? "";
     const repo = String(behaviorFields["repo"] ?? "");
 
     // Don't infer scm/tracker here — leave them for applyProjectDefaults
