@@ -206,7 +206,14 @@ export function expandHome(filepath: string): string {
  */
 export function validateAndStoreOrigin(configPath: string, projectPath: string): void {
   const originPath = getOriginFilePath(configPath, projectPath);
-  const resolvedConfigPath = realpathSync(configPath);
+  // Use the same fallback as generateConfigHash: for global-only projects the
+  // configPath is a synthetic non-existent path, so realpathSync would throw.
+  let resolvedConfigPath: string;
+  try {
+    resolvedConfigPath = realpathSync(configPath);
+  } catch {
+    resolvedConfigPath = resolve(configPath);
+  }
 
   if (existsSync(originPath)) {
     const stored = readFileSync(originPath, "utf-8").trim();
