@@ -419,7 +419,7 @@ export function collectExternalPluginConfigs(config: OrchestratorConfig): Extern
  * Generate InstalledPluginConfig entries from external plugin entries.
  * Merges with existing plugins, avoiding duplicates by package/path.
  */
-function mergeExternalPlugins(
+export function mergeExternalPlugins(
   existingPlugins: OrchestratorConfig["plugins"],
   externalEntries: ExternalPluginEntryRef[],
 ): OrchestratorConfig["plugins"] {
@@ -701,6 +701,11 @@ function loadFromGlobalConfig(): OrchestratorConfig | null {
   let effective = expandPaths(config);
   effective = applyProjectDefaults(effective);
   effective = applyDefaultReactions(effective);
+  const externalPluginEntries = collectExternalPluginConfigs(effective);
+  if (externalPluginEntries.length > 0) {
+    effective.plugins = mergeExternalPlugins(effective.plugins, externalPluginEntries);
+    effective._externalPluginEntries = externalPluginEntries;
+  }
   validateProjectUniqueness(effective);
   return effective;
 }

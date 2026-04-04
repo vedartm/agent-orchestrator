@@ -23,7 +23,7 @@ import {
 } from "./global-config.js";
 import { buildEffectiveConfig } from "./migration.js";
 import { generateSessionPrefix, generateProjectId, expandHome } from "./paths.js";
-import { expandPaths, applyProjectDefaults, applyDefaultReactions, validateProjectUniqueness } from "./config.js";
+import { expandPaths, applyProjectDefaults, applyDefaultReactions, validateProjectUniqueness, collectExternalPluginConfigs, mergeExternalPlugins } from "./config.js";
 
 export interface MultiProjectStartResult {
   config: OrchestratorConfig;
@@ -130,6 +130,11 @@ export function resolveMultiProjectStart(
   let effectiveConfig = expandPaths(built);
   effectiveConfig = applyProjectDefaults(effectiveConfig);
   effectiveConfig = applyDefaultReactions(effectiveConfig);
+  const externalPluginEntries = collectExternalPluginConfigs(effectiveConfig);
+  if (externalPluginEntries.length > 0) {
+    effectiveConfig.plugins = mergeExternalPlugins(effectiveConfig.plugins, externalPluginEntries);
+    effectiveConfig._externalPluginEntries = externalPluginEntries;
+  }
   validateProjectUniqueness(effectiveConfig);
 
   return { config: effectiveConfig, projectId, messages };
