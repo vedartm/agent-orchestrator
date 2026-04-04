@@ -97,6 +97,7 @@ export function registerProjectCommand(program: Command): void {
 
         // Derive ID
         let projectId = opts.id ?? generateSessionPrefix(generateProjectId(projectPath));
+        const originalProjectId = projectId;
 
         // Handle ID collision
         if (globalConfig.projects[projectId]) {
@@ -147,6 +148,16 @@ export function registerProjectCommand(program: Command): void {
           if (!loadShadowFile(projectId)) {
             saveShadowFile(projectId, { repo: "", defaultBranch: "main" });
           }
+        }
+
+        // If the ID was auto-suffixed to resolve a collision (e.g. "ma" → "ma2"),
+        // applyProjectDefaults would still re-derive the prefix from basename(path),
+        // producing the same prefix as the original project and causing
+        // validateProjectUniqueness to throw. Write the suffixed prefix explicitly
+        // to the shadow so applyProjectDefaults uses it instead.
+        if (projectId !== originalProjectId) {
+          const currentShadow = loadShadowFile(projectId) ?? {};
+          saveShadowFile(projectId, { ...currentShadow, sessionPrefix: generateSessionPrefix(projectId) });
         }
 
         // Validate before persisting — catches session prefix collisions between
