@@ -397,9 +397,7 @@ describe("runtime.sendMessage()", () => {
     );
   });
 
-  it("uses docker cp and tmux buffers for multiline messages", async () => {
-    mockDockerSuccess();
-    mockDockerSuccess();
+  it("uses workspace-backed tmux buffers for multiline messages", async () => {
     mockDockerSuccess();
     mockDockerSuccess();
     mockDockerSuccess();
@@ -410,22 +408,12 @@ describe("runtime.sendMessage()", () => {
     await create().sendMessage(makeHandle(), message);
 
     expect(fs.writeFileSync).toHaveBeenCalledWith(
-      expect.stringContaining("ao-docker-test-uuid-1234.txt"),
+      "/tmp/workspace/.ao-tmux-buffer-test-uuid-1234.txt",
       message,
-      { encoding: "utf-8", mode: 0o644 },
+      { encoding: "utf-8", mode: 0o600 },
     );
     expect(mockExecFileCustom).toHaveBeenNthCalledWith(
       2,
-      "docker",
-      [
-        "cp",
-        expect.stringContaining("ao-docker-test-uuid-1234.txt"),
-        "container-1:/tmp/ao-test-uuid-1234.txt",
-      ],
-      expectedDockerOptions,
-    );
-    expect(mockExecFileCustom).toHaveBeenNthCalledWith(
-      3,
       "docker",
       [
         "exec",
@@ -434,12 +422,12 @@ describe("runtime.sendMessage()", () => {
         "load-buffer",
         "-b",
         "ao-test-uuid-1234",
-        "/tmp/ao-test-uuid-1234.txt",
+        "/tmp/workspace/.ao-tmux-buffer-test-uuid-1234.txt",
       ],
       expectedDockerOptions,
     );
     expect(mockExecFileCustom).toHaveBeenNthCalledWith(
-      4,
+      3,
       "docker",
       [
         "exec",
@@ -454,8 +442,21 @@ describe("runtime.sendMessage()", () => {
       ],
       expectedDockerOptions,
     );
+    expect(mockExecFileCustom).toHaveBeenNthCalledWith(
+      4,
+      "docker",
+      [
+        "exec",
+        "container-1",
+        "tmux",
+        "delete-buffer",
+        "-b",
+        "ao-test-uuid-1234",
+      ],
+      expectedDockerOptions,
+    );
     expect(fs.unlinkSync).toHaveBeenCalledWith(
-      expect.stringContaining("ao-docker-test-uuid-1234.txt"),
+      "/tmp/workspace/.ao-tmux-buffer-test-uuid-1234.txt",
     );
   });
 });

@@ -194,7 +194,7 @@ Recommended for servers:
 - Prefer rootless Docker on Linux
 - Use a pinned image instead of `latest` for reproducibility
 - Add `readOnlyRoot`, `capDrop`, and explicit CPU/memory limits for multi-tenant hosts
-- Keep `tmpfs: [/tmp]` when using `readOnlyRoot`; AO uses `/tmp` inside the container to deliver long or multiline prompts safely
+- Keep `tmpfs: [/tmp]` when using `readOnlyRoot`; many agent CLIs and shells still expect a writable `/tmp`
 - Use `ao doctor` after changing Docker runtime config; it now checks Docker daemon access and warns about missing image/rootless/GPU setup
 
 ## Plugin Architecture

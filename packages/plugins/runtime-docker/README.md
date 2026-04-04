@@ -93,6 +93,6 @@ ao spawn 123 --runtime docker --runtime-memory 4g --runtime-cpus 2 --runtime-rea
 - Prefer rootless Docker on Linux servers.
 - Use pinned image tags for reproducibility.
 - CLI attach, `ao open`, and the web dashboard terminal attach to Docker sessions with `docker exec ... tmux attach`.
-- Keep `tmpfs: [/tmp]` when using `readOnlyRoot`; AO uses `/tmp` inside the container for long or multiline prompt delivery.
+- Keep `tmpfs: [/tmp]` when using `readOnlyRoot`; many shells and agent CLIs still expect a writable `/tmp`.
 - `readOnlyRoot` hardens the container root filesystem, but the bind-mounted workspace remains writable unless you mount it read-only yourself.
 - Run `ao doctor` after changing Docker runtime config; it now validates Docker daemon access and required image configuration when `runtime: docker` is enabled.

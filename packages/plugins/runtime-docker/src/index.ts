@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
@@ -295,6 +294,7 @@ async function removeContainer(containerName: string): Promise<void> {
 async function sendTextToTmux(
   containerName: string,
   tmuxSessionName: string,
+  workspacePath: string,
   text: string,
   clearInput = true,
 ): Promise<void> {
@@ -305,14 +305,10 @@ async function sendTextToTmux(
 
   if (text.includes("\n") || text.length > LONG_MESSAGE_THRESHOLD) {
     const bufferName = `ao-${randomUUID()}`;
-    const tmpName = `/tmp/ao-${randomUUID()}.txt`;
-    const hostTmpPath = join(tmpdir(), `ao-docker-${randomUUID()}.txt`);
-    // docker cp preserves file mode; keep the staging file readable so the
-    // container's configured runtime user can load it into tmux.
-    writeFileSync(hostTmpPath, text, { encoding: "utf-8", mode: 0o644 });
+    const hostTmpPath = join(workspacePath, `.ao-tmux-buffer-${randomUUID()}.txt`);
+    writeFileSync(hostTmpPath, text, { encoding: "utf-8", mode: 0o600 });
     try {
-      await docker(["cp", hostTmpPath, `${containerName}:${tmpName}`]);
-      await dockerTmux(containerName, ["load-buffer", "-b", bufferName, tmpName]);
+      await dockerTmux(containerName, ["load-buffer", "-b", bufferName, hostTmpPath]);
       await dockerTmux(containerName, [
         "paste-buffer",
         "-b",
@@ -327,7 +323,6 @@ async function sendTextToTmux(
       } catch {
         // ignore cleanup failure
       }
-      await dockerExec(containerName, ["rm", "-f", tmpName]).catch(() => undefined);
       await dockerTmux(containerName, ["delete-buffer", "-b", bufferName]).catch(() => undefined);
     }
   } else {
@@ -413,7 +408,13 @@ export function create(): Runtime {
           config.workspacePath,
           ...envArgs,
         ]);
-        await sendTextToTmux(containerName, tmuxSessionName, config.launchCommand, false);
+        await sendTextToTmux(
+          containerName,
+          tmuxSessionName,
+          config.workspacePath,
+          config.launchCommand,
+          false,
+        );
       } catch (err) {
         await removeContainer(containerName);
         const msg = err instanceof Error ? err.message : String(err);
@@ -442,7 +443,13 @@ export function create(): Runtime {
     },
 
     async sendMessage(handle: RuntimeHandle, message: string): Promise<void> {
-      await sendTextToTmux(getContainerName(handle), getTmuxSessionName(handle), message, true);
+      await sendTextToTmux(
+        getContainerName(handle),
+        getTmuxSessionName(handle),
+        handle.data["workspacePath"] as string,
+        message,
+        true,
+      );
     },
 
     async getOutput(handle: RuntimeHandle, lines = 50): Promise<string> {
