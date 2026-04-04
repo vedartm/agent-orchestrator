@@ -1290,13 +1290,16 @@ describe("extractPREnrichment ciChecks", () => {
 
     const build = ciChecks?.find((c) => c.name === "ci/build");
     expect(build?.status).toBe("failed");
+    expect(build?.conclusion).toBe("FAILURE"); // matches REST getCIChecksFromStatusRollup format
     expect(build?.url).toBe("https://ci.example.com/build/1");
 
     const test = ciChecks?.find((c) => c.name === "ci/test");
     expect(test?.status).toBe("passed");
+    expect(test?.conclusion).toBe("SUCCESS");
 
     const deploy = ciChecks?.find((c) => c.name === "ci/deploy");
     expect(deploy?.status).toBe("pending");
+    expect(deploy?.conclusion).toBe("PENDING");
     expect(deploy?.url).toBeUndefined();
   });
 

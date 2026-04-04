@@ -650,9 +650,13 @@ function parseCheckContexts(contexts: unknown): CICheck[] {
         status = "pending";
       }
 
+      // Set conclusion to match the REST getCIChecksFromStatusRollup format
+      // (which sets conclusion = rawState.toUpperCase()) so fingerprints are
+      // consistent regardless of which data source is used.
       checks.push({
         name: n["context"] as string,
         status,
+        conclusion: rawState,
         url: typeof n["targetUrl"] === "string" ? (n["targetUrl"] as string) : undefined,
       });
     }

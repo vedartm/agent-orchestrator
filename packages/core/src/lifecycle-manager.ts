@@ -761,9 +761,21 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     // Throttle review backlog API calls to at most once per 2 minutes.
     // Comments don't change faster than this in practice, and the SCM calls
     // (getPendingComments + getAutomatedComments) consume API quota on every poll.
-    const lastCheckAt = lastReviewBacklogCheckAt.get(session.id) ?? 0;
-    if (Date.now() - lastCheckAt < REVIEW_BACKLOG_THROTTLE_MS) {
-      return;
+    //
+    // Exception: bypass throttle when a transition reaction just fired for a
+    // review reaction key. The transitionReaction branch records
+    // lastPendingReviewDispatchHash, which requires the current fingerprint from
+    // the API. If we throttle here, that metadata never gets written and the
+    // next unthrottled poll sees a "new" fingerprint, clears the reaction tracker,
+    // and fires a duplicate dispatch.
+    const hasRelevantTransition =
+      transitionReaction?.key === humanReactionKey ||
+      transitionReaction?.key === automatedReactionKey;
+    if (!hasRelevantTransition) {
+      const lastCheckAt = lastReviewBacklogCheckAt.get(session.id) ?? 0;
+      if (Date.now() - lastCheckAt < REVIEW_BACKLOG_THROTTLE_MS) {
+        return;
+      }
     }
     lastReviewBacklogCheckAt.set(session.id, Date.now());
 
