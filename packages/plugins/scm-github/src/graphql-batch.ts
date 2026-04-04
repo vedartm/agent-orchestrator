@@ -9,6 +9,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type {
   BatchObserver,
+  CICheck,
   CIStatus,
   PREnrichmentData,
   PRInfo,
@@ -466,6 +467,21 @@ const PR_FIELDS = `
       commit {
         statusCheckRollup {
           state
+          contexts(first: 20) {
+            nodes {
+              ... on CheckRun {
+                name
+                status
+                conclusion
+                detailsUrl
+              }
+              ... on StatusContext {
+                context
+                state
+                targetUrl
+              }
+            }
+          }
         }
       }
     }
@@ -575,11 +591,78 @@ async function executeBatchQuery(
 }
 
 /**
+ * Parse individual CI check contexts from statusCheckRollup.contexts.nodes.
+ * Handles both CheckRun (GitHub Actions) and StatusContext (legacy status checks).
+ */
+function parseCheckContexts(contexts: unknown): CICheck[] {
+  if (!contexts || typeof contexts !== "object") return [];
+
+  const nodes = (contexts as Record<string, unknown>)["nodes"];
+  if (!Array.isArray(nodes)) return [];
+
+  const checks: CICheck[] = [];
+  for (const node of nodes) {
+    if (!node || typeof node !== "object") continue;
+    const n = node as Record<string, unknown>;
+
+    // CheckRun node (GitHub Actions)
+    if (typeof n["name"] === "string" && typeof n["status"] === "string") {
+      const rawStatus = (n["status"] as string).toUpperCase();
+      const rawConclusion =
+        typeof n["conclusion"] === "string" ? (n["conclusion"] as string).toUpperCase() : null;
+
+      let status: CICheck["status"];
+      if (rawStatus === "COMPLETED") {
+        if (!rawConclusion || rawConclusion === "SUCCESS" || rawConclusion === "NEUTRAL") {
+          status = "passed";
+        } else if (rawConclusion === "SKIPPED") {
+          status = "skipped";
+        } else {
+          status = "failed";
+        }
+      } else if (rawStatus === "IN_PROGRESS" || rawStatus === "QUEUED" || rawStatus === "WAITING") {
+        status = "running";
+      } else {
+        status = "pending";
+      }
+
+      checks.push({
+        name: n["name"] as string,
+        status,
+        conclusion: typeof n["conclusion"] === "string" ? (n["conclusion"] as string) : undefined,
+        url: typeof n["detailsUrl"] === "string" ? (n["detailsUrl"] as string) : undefined,
+      });
+      continue;
+    }
+
+    // StatusContext node (legacy commit statuses)
+    if (typeof n["context"] === "string" && typeof n["state"] === "string") {
+      const rawState = (n["state"] as string).toUpperCase();
+      let status: CICheck["status"];
+      if (rawState === "SUCCESS") {
+        status = "passed";
+      } else if (rawState === "FAILURE" || rawState === "ERROR") {
+        status = "failed";
+      } else {
+        status = "pending";
+      }
+
+      checks.push({
+        name: n["context"] as string,
+        status,
+        url: typeof n["targetUrl"] === "string" ? (n["targetUrl"] as string) : undefined,
+      });
+    }
+  }
+
+  return checks;
+}
+
+/**
  * Parse raw CI state from status check rollup.
  *
- * Uses only the top-level aggregate state, which is much cheaper
- * than fetching individual check contexts. The top-level state
- * provides the same semantic information (passing/failing/pending).
+ * Uses only the top-level aggregate state to determine overall CI status.
+ * Individual check details are parsed separately via parseCheckContexts().
  */
 function parseCIState(
   statusCheckRollup: unknown,
@@ -679,13 +762,15 @@ function extractPREnrichment(
   // Extract review decision
   const reviewDecision = parseReviewDecision(pr["reviewDecision"]);
 
-  // Extract CI status from commits
+  // Extract CI status and individual checks from commits
   const commits = pr["commits"] as
-    | { nodes?: Array<{ commit?: { statusCheckRollup?: unknown } }> }
+    | { nodes?: Array<{ commit?: { statusCheckRollup?: Record<string, unknown> } }> }
     | undefined;
-  const ciStatus = commits?.nodes?.[0]?.commit?.statusCheckRollup
-    ? parseCIState(commits.nodes[0].commit.statusCheckRollup)
-    : "none";
+  const statusCheckRollup = commits?.nodes?.[0]?.commit?.statusCheckRollup;
+  const ciStatus = statusCheckRollup ? parseCIState(statusCheckRollup) : "none";
+  const ciChecks = statusCheckRollup?.["contexts"]
+    ? parseCheckContexts(statusCheckRollup["contexts"])
+    : undefined;
 
   // Build blockers list
   const blockers: string[] = [];
@@ -722,6 +807,7 @@ function extractPREnrichment(
     hasConflicts,
     isBehind,
     blockers,
+    ...(ciChecks !== undefined ? { ciChecks } : {}),
   };
 
   return { data, headSha };

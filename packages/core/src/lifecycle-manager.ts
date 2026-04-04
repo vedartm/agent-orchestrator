@@ -209,6 +209,16 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
   const prEnrichmentCache = new Map<string, PREnrichmentData>();
 
   /**
+   * Per-session timestamp of last review backlog API check.
+   * Used to throttle getPendingComments/getAutomatedComments to at most once per 2 minutes.
+   * In-memory only — resets on restart (acceptable since it's a rate-limit hint, not state).
+   */
+  const lastReviewBacklogCheckAt = new Map<SessionId, number>();
+
+  /** Throttle interval for review backlog API calls (2 minutes). */
+  const REVIEW_BACKLOG_THROTTLE_MS = 2 * 60 * 1000;
+
+  /**
    * Populate the PR enrichment cache using batch GraphQL queries.
    * This is called once per poll cycle to fetch data for all PRs efficiently.
    */
@@ -736,6 +746,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     if (TERMINAL_STATUSES.has(newStatus)) {
       clearReactionTracker(session.id, humanReactionKey);
       clearReactionTracker(session.id, automatedReactionKey);
+      lastReviewBacklogCheckAt.delete(session.id);
       updateSessionMetadata(session, {
         lastPendingReviewFingerprint: "",
         lastPendingReviewDispatchHash: "",
@@ -746,6 +757,15 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       });
       return;
     }
+
+    // Throttle review backlog API calls to at most once per 2 minutes.
+    // Comments don't change faster than this in practice, and the SCM calls
+    // (getPendingComments + getAutomatedComments) consume API quota on every poll.
+    const lastCheckAt = lastReviewBacklogCheckAt.get(session.id) ?? 0;
+    if (Date.now() - lastCheckAt < REVIEW_BACKLOG_THROTTLE_MS) {
+      return;
+    }
+    lastReviewBacklogCheckAt.set(session.id, Date.now());
 
     const [pendingResult, automatedResult] = await Promise.allSettled([
       scm.getPendingComments(session.pr),
@@ -935,13 +955,22 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       return;
     }
 
-    // Fetch individual CI checks for failure details
+    // Fetch individual CI checks for failure details.
+    // Use batch enrichment data when available to avoid an extra REST call;
+    // fall back to getCIChecks() when the batch didn't run this cycle.
+    const prKey = `${session.pr.owner}/${session.pr.repo}#${session.pr.number}`;
+    const cachedEnrichment = prEnrichmentCache.get(prKey);
+
     let checks: CICheck[];
-    try {
-      checks = await scm.getCIChecks(session.pr);
-    } catch {
-      // Failed to fetch checks — skip this cycle
-      return;
+    if (cachedEnrichment?.ciChecks !== undefined) {
+      checks = cachedEnrichment.ciChecks;
+    } else {
+      try {
+        checks = await scm.getCIChecks(session.pr);
+      } catch {
+        // Failed to fetch checks — skip this cycle
+        return;
+      }
     }
 
     const failedChecks = checks.filter(
@@ -1052,14 +1081,19 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       return;
     }
 
-    // Check for conflicts using cached enrichment data or fallback to individual call
+    // Check for conflicts using cached enrichment data or fallback to individual call.
+    // When batch enrichment ran (cachedData is present), use its hasConflicts value
+    // to avoid 3 redundant REST calls from getMergeability() — the batch already
+    // fetched the mergeable/mergeStateStatus fields via GraphQL.
     const prKey = `${session.pr.owner}/${session.pr.repo}#${session.pr.number}`;
     const cachedData = prEnrichmentCache.get(prKey);
 
     let hasConflicts: boolean;
-    if (cachedData && cachedData.hasConflicts !== undefined) {
-      hasConflicts = cachedData.hasConflicts;
+    if (cachedData) {
+      // Batch ran — trust its data (undefined means CONFLICTING wasn't set → no conflicts)
+      hasConflicts = cachedData.hasConflicts ?? false;
     } else {
+      // Batch didn't run this cycle — fall back to individual API call
       try {
         const mergeReadiness = await scm.getMergeability(session.pr);
         hasConflicts = !mergeReadiness.noConflicts;

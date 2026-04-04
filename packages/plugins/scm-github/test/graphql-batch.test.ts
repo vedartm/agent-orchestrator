@@ -1172,3 +1172,228 @@ describe("shouldRefreshPREnrichment - ETag Guard Strategy", () => {
     });
   });
 });
+
+describe("extractPREnrichment ciChecks", () => {
+  it("parses CheckRun contexts into ciChecks", () => {
+    const pullRequest = {
+      title: "Fix CI",
+      state: "OPEN",
+      additions: 10,
+      deletions: 5,
+      isDraft: false,
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+      reviewDecision: "NONE",
+      reviews: { nodes: [] },
+      commits: {
+        nodes: [
+          {
+            commit: {
+              statusCheckRollup: {
+                state: "FAILURE",
+                contexts: {
+                  nodes: [
+                    {
+                      name: "lint",
+                      status: "COMPLETED",
+                      conclusion: "FAILURE",
+                      detailsUrl: "https://github.com/org/repo/actions/runs/123",
+                    },
+                    {
+                      name: "test",
+                      status: "COMPLETED",
+                      conclusion: "SUCCESS",
+                      detailsUrl: "https://github.com/org/repo/actions/runs/124",
+                    },
+                    {
+                      name: "typecheck",
+                      status: "IN_PROGRESS",
+                      conclusion: null,
+                      detailsUrl: "https://github.com/org/repo/actions/runs/125",
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      },
+    };
+
+    const extracted = extractPREnrichment(pullRequest);
+    const ciChecks = extracted?.data.ciChecks;
+
+    expect(ciChecks).toBeDefined();
+    expect(ciChecks).toHaveLength(3);
+
+    const lint = ciChecks?.find((c) => c.name === "lint");
+    expect(lint?.status).toBe("failed");
+    expect(lint?.conclusion).toBe("FAILURE");
+    expect(lint?.url).toBe("https://github.com/org/repo/actions/runs/123");
+
+    const test = ciChecks?.find((c) => c.name === "test");
+    expect(test?.status).toBe("passed");
+    expect(test?.conclusion).toBe("SUCCESS");
+
+    const typecheck = ciChecks?.find((c) => c.name === "typecheck");
+    expect(typecheck?.status).toBe("running");
+  });
+
+  it("parses StatusContext nodes into ciChecks", () => {
+    const pullRequest = {
+      title: "Legacy CI",
+      state: "OPEN",
+      additions: 5,
+      deletions: 2,
+      isDraft: false,
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+      reviewDecision: "NONE",
+      reviews: { nodes: [] },
+      commits: {
+        nodes: [
+          {
+            commit: {
+              statusCheckRollup: {
+                state: "FAILURE",
+                contexts: {
+                  nodes: [
+                    {
+                      context: "ci/build",
+                      state: "FAILURE",
+                      targetUrl: "https://ci.example.com/build/1",
+                    },
+                    {
+                      context: "ci/test",
+                      state: "SUCCESS",
+                      targetUrl: "https://ci.example.com/test/1",
+                    },
+                    {
+                      context: "ci/deploy",
+                      state: "PENDING",
+                      targetUrl: null,
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      },
+    };
+
+    const extracted = extractPREnrichment(pullRequest);
+    const ciChecks = extracted?.data.ciChecks;
+
+    expect(ciChecks).toBeDefined();
+    expect(ciChecks).toHaveLength(3);
+
+    const build = ciChecks?.find((c) => c.name === "ci/build");
+    expect(build?.status).toBe("failed");
+    expect(build?.url).toBe("https://ci.example.com/build/1");
+
+    const test = ciChecks?.find((c) => c.name === "ci/test");
+    expect(test?.status).toBe("passed");
+
+    const deploy = ciChecks?.find((c) => c.name === "ci/deploy");
+    expect(deploy?.status).toBe("pending");
+    expect(deploy?.url).toBeUndefined();
+  });
+
+  it("returns empty array when contexts nodes is empty", () => {
+    const pullRequest = {
+      title: "Clean PR",
+      state: "OPEN",
+      additions: 5,
+      deletions: 2,
+      isDraft: false,
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+      reviewDecision: "NONE",
+      reviews: { nodes: [] },
+      commits: {
+        nodes: [
+          {
+            commit: {
+              statusCheckRollup: {
+                state: "SUCCESS",
+                contexts: { nodes: [] },
+              },
+            },
+          },
+        ],
+      },
+    };
+
+    const extracted = extractPREnrichment(pullRequest);
+    expect(extracted?.data.ciChecks).toEqual([]);
+  });
+
+  it("returns undefined ciChecks when statusCheckRollup has no contexts field", () => {
+    const pullRequest = {
+      title: "No contexts",
+      state: "OPEN",
+      additions: 5,
+      deletions: 2,
+      isDraft: false,
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+      reviewDecision: "NONE",
+      reviews: { nodes: [] },
+      commits: {
+        nodes: [
+          {
+            commit: {
+              statusCheckRollup: {
+                state: "SUCCESS",
+                // No contexts field — older API response
+              },
+            },
+          },
+        ],
+      },
+    };
+
+    const extracted = extractPREnrichment(pullRequest);
+    expect(extracted?.data.ciChecks).toBeUndefined();
+  });
+
+  it("maps COMPLETED+SKIPPED conclusion to skipped status", () => {
+    const pullRequest = {
+      title: "Skipped check",
+      state: "OPEN",
+      additions: 5,
+      deletions: 2,
+      isDraft: false,
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+      reviewDecision: "NONE",
+      reviews: { nodes: [] },
+      commits: {
+        nodes: [
+          {
+            commit: {
+              statusCheckRollup: {
+                state: "SUCCESS",
+                contexts: {
+                  nodes: [
+                    {
+                      name: "optional-check",
+                      status: "COMPLETED",
+                      conclusion: "SKIPPED",
+                      detailsUrl: null,
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      },
+    };
+
+    const extracted = extractPREnrichment(pullRequest);
+    const check = extracted?.data.ciChecks?.[0];
+    expect(check?.status).toBe("skipped");
+  });
+});
