@@ -686,7 +686,7 @@ function DashboardInner({
           <div className="kanban-board-wrap">
             <div className="board-section-head">
               <div>
-                <h2 className="board-section-head__title">Attention Board</h2>
+                <div className="board-section-head__title" role="heading" aria-level={2}>Attention Board</div>
                 <p className="board-section-head__subtitle">
                   Triage by required intervention, not by chronology.
                 </p>
