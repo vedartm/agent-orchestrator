@@ -1,13 +1,13 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mockNotFound = vi.fn();
+const mockRedirect = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => "/projects/ao",
   useSearchParams: () => new URLSearchParams(),
-  notFound: () => { mockNotFound(); throw new Error("NEXT_NOT_FOUND"); },
+  redirect: (url: string) => { mockRedirect(url); throw new Error("NEXT_REDIRECT"); },
 }));
 
 vi.mock("next/link", () => ({
@@ -17,16 +17,24 @@ vi.mock("next/link", () => ({
 }));
 
 const mockGetAllProjects = vi.fn();
-const mockGetDashboardPageData = vi.fn();
-const mockGetDashboardProjectName = vi.fn();
+const mockLoadProjectPageData = vi.fn();
+const mockLoadPortfolioPageData = vi.fn();
+const mockGetDefaultCloneLocation = vi.fn().mockReturnValue("/tmp/clones");
 
 vi.mock("@/lib/project-name", () => ({
   getAllProjects: () => mockGetAllProjects(),
 }));
 
-vi.mock("@/lib/dashboard-page-data", () => ({
-  getDashboardPageData: (...args: unknown[]) => mockGetDashboardPageData(...args),
-  getDashboardProjectName: (...args: unknown[]) => mockGetDashboardProjectName(...args),
+vi.mock("@/lib/project-page-data", () => ({
+  loadProjectPageData: (...args: unknown[]) => mockLoadProjectPageData(...args),
+}));
+
+vi.mock("@/lib/portfolio-page-data", () => ({
+  loadPortfolioPageData: () => mockLoadPortfolioPageData(),
+}));
+
+vi.mock("@/lib/default-location", () => ({
+  getDefaultCloneLocation: () => mockGetDefaultCloneLocation(),
 }));
 
 vi.mock("@/components/Dashboard", () => ({
@@ -35,18 +43,24 @@ vi.mock("@/components/Dashboard", () => ({
   ),
 }));
 
+vi.mock("@/components/DashboardShell", () => ({
+  DashboardShell: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dashboard-shell">{children}</div>
+  ),
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
-  mockNotFound.mockReset();
+  mockRedirect.mockReset();
 });
 
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
-const loadPage = () => import("../projects/[id]/page.js").then((m) => m.default);
+const loadPage = () => import("../projects/[projectId]/page.js").then((m) => m.default);
 
 describe("ProjectPage", () => {
   it("renders Dashboard for a known project", async () => {
     mockGetAllProjects.mockReturnValue([{ id: "ao", name: "AO" }]);
-    mockGetDashboardPageData.mockResolvedValue({
+    mockLoadProjectPageData.mockResolvedValue({
       sessions: [],
       selectedProjectId: "ao",
       projectName: "AO",
@@ -54,21 +68,26 @@ describe("ProjectPage", () => {
       globalPause: null,
       orchestrators: [],
     });
+    mockLoadPortfolioPageData.mockResolvedValue({
+      projectSummaries: [{ id: "ao", name: "AO" }],
+      sessions: [],
+    });
 
     const ProjectPage = await loadPage();
-    const el = await ProjectPage({ params: Promise.resolve({ id: "ao" }) });
+    const el = await ProjectPage({ params: Promise.resolve({ projectId: "ao" }) });
     render(el as React.ReactElement);
 
+    expect(screen.getByTestId("dashboard-shell")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard")).toBeInTheDocument();
     expect(screen.getByText("ao")).toBeInTheDocument();
   });
 
-  it("calls notFound for an unknown project ID", async () => {
+  it("redirects for an unknown project ID", async () => {
     mockGetAllProjects.mockReturnValue([{ id: "ao", name: "AO" }]);
 
     const ProjectPage = await loadPage();
-    await expect(ProjectPage({ params: Promise.resolve({ id: "unknown" }) })).rejects.toThrow();
+    await expect(ProjectPage({ params: Promise.resolve({ projectId: "unknown" }) })).rejects.toThrow();
 
-    expect(mockNotFound).toHaveBeenCalled();
+    expect(mockRedirect).toHaveBeenCalledWith("/");
   });
 });
