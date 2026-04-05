@@ -74,7 +74,7 @@ export function registerProjectCommand(program: Command): void {
         const projectPath = resolve(expandHome(rawPath));
 
         // Load or scaffold global config
-        let globalConfig = loadGlobalConfig() ?? scaffoldGlobalConfig();
+        const globalConfig = loadGlobalConfig() ?? scaffoldGlobalConfig();
 
         // Check if already registered (exact path match)
         const existing = findProjectByPath(globalConfig, projectPath);
