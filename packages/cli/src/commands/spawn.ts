@@ -222,7 +222,7 @@ export function registerSpawn(program: Command): void {
     .description("Spawn a single agent session")
     .argument("[first]", "Issue identifier (project is auto-detected)")
     .argument("[second]", "" /* hidden second arg to catch old two-arg usage */)
-    .option("--project <id>", "Target project by ID (uses shadow config; works from any directory)")
+    .option("-p, --project <id>", "Target project by ID (uses shadow config; works from any directory)")
     .option("--open", "Open session in terminal tab")
     .option("--agent <name>", "Override the agent plugin (e.g. codex, claude-code)")
     .option("--claim-pr <pr>", "Immediately claim an existing PR for the spawned session")

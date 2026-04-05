@@ -1,42 +1,48 @@
 /**
- * Global config — the fixed-location registry + shadow copies.
+ * Global config management for multi-project architecture.
  *
- * Option C (Hybrid Local + Shadow) architecture:
+ * Layout:
+ *   ~/.agent-orchestrator/
+ *     config.yaml              <- Lightweight registry: project identity + global settings
+ *     projects/
+ *       {id}.yaml              <- Per-project shadow: behavior fields only
  *
- *   Global config  (~/.agent-orchestrator/config.yaml, XDG-aware)
- *     - Project registry: identity fields (name, path) per project
- *     - Shadow copies: behavior fields synced from local on `ao start`
- *     - Global operational settings: port, defaults, notifiers, reactions
+ * The global config at config.yaml owns:
+ * - Project registry (identity: name, path, project ID)
+ * - Global operational settings (port, defaults, notifiers, reactions)
  *
- *   Local config  (<project>/agent-orchestrator.yaml)
- *     - Behavior fields only (repo, agent, runtime, workspace, tracker, …)
- *     - No identity fields (name, path, sessionPrefix)
- *     - Flat YAML — no `projects:` wrapper
- *     - Source of truth; shadow is a convenience copy for remote/Docker use
+ * Shadow files at projects/{id}.yaml own:
+ * - Project behavior (agent, runtime, tracker, reactions, etc.)
+ * - Synced from local config on `ao start` (hybrid mode)
+ * - Edited directly by user (global-only mode)
  *
- * Load modes:
- *   In-project:  global (identity) + local (behavior) → merged effective config
- *   Remote:      global shadow only (no local config access needed)
- *   ao start:    validate local → sync shadow atomically → start daemon
+ * Two ownership modes per project:
+ * - Hybrid: local config exists -> shadow is a read-only cache synced on `ao start`
+ * - Global-only: no local config -> shadow IS the authoritative config
  *
  * Sync rules:
  *   - Shadow updated ONLY on `ao start`
- *   - Fields matching *Token/*Key/*Secret/*Password excluded with warning
+ *   - Fields matching secret-like patterns excluded with warning
  *   - Identity fields (name, path) never overwritten by shadow sync
  *   - Unknown / future fields preserved as opaque passthrough
  *   - Write is always atomic (temp-file + rename)
  */
 
-import { readFileSync, existsSync, mkdirSync, statSync } from "node:fs";
-import { resolve, join, dirname, basename } from "node:path";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, renameSync, unlinkSync } from "node:fs";
+import { resolve, join, dirname, basename, sep } from "node:path";
 import { homedir } from "node:os";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
+import { randomBytes } from "node:crypto";
 import { atomicWriteFileSync } from "./atomic-write.js";
+import { expandHome } from "./paths.js";
 
 // =============================================================================
-// CONSTANTS
+// TYPES / CONSTANTS
 // =============================================================================
+
+/** Config ownership mode per project */
+export type ConfigMode = "hybrid" | "global-only";
 
 /** Identity fields owned by the global registry — never overwritten by shadow. */
 const IDENTITY_FIELDS = new Set(["name", "path", "sessionPrefix"]);
@@ -44,8 +50,35 @@ const IDENTITY_FIELDS = new Set(["name", "path", "sessionPrefix"]);
 /** Internal fields prefixed with underscore (e.g. _shadowSyncedAt). */
 const INTERNAL_FIELD_PREFIX = "_";
 
+/** Internal fields (prefixed with _) */
+const isInternalField = (key: string): boolean => key.startsWith(INTERNAL_FIELD_PREFIX);
+
 /** Fields excluded from shadow sync (secret hygiene). Case-insensitive suffix match. */
 const SECRET_SUFFIX_PATTERN = /(token|key|secret|password)$/i;
+
+/**
+ * Secret-like field patterns (excluded from shadow sync in hybrid mode).
+ *
+ * These patterns are intentionally specific to avoid accidentally excluding
+ * config fields that only look like secrets by name (e.g. a field called
+ * `apiKey` that holds an env-var *name* rather than the secret itself).
+ * `/key$/i` alone is too broad — it would also match `workerKey`, `sessionKey`,
+ * or any other field that ends in "key" but is not a credential. Instead we
+ * require the field name to start with a known secret-category prefix, handling
+ * both camelCase (`apiKey`) and SCREAMING_SNAKE_CASE (`API_KEY`) variants via
+ * the optional `[-_]?` separator.
+ */
+const SECRET_PATTERNS = [
+  /(?:access|auth|api|bearer|refresh|id|secret)[-_]?token$/i,
+  /(?:api|secret|private|access|signing|encryption|auth)[-_]?key$/i,
+  /secret$/i,
+  /password$/i,
+  /credentials?$/i,
+];
+
+export function isSecretField(key: string): boolean {
+  return SECRET_PATTERNS.some((p) => p.test(key));
+}
 
 // =============================================================================
 // GLOBAL CONFIG PATH (XDG-aware)
@@ -78,72 +111,66 @@ export function getGlobalConfigPath(): string {
 }
 
 // =============================================================================
-// GLOBAL CONFIG SCHEMA
+// ZOD SCHEMAS
 // =============================================================================
 
 /**
- * Per-project entry in the global registry.
- * Contains identity fields + shadow behavior fields (passthrough).
- * Internal _shadowSyncedAt tracks last successful sync timestamp.
+ * Project entry in global config — identity only.
+ * Behavior fields live in separate shadow files at ~/.agent-orchestrator/projects/{id}.yaml.
  */
-export const GlobalProjectEntrySchema = z
-  .object({
-    /** Display name (identity — never overwritten by shadow sync). */
-    name: z.string().optional(),
-    /** Absolute path to the project root (identity). */
-    path: z.string(),
-    /** Unix timestamp of last successful shadow sync from local config. */
-    _shadowSyncedAt: z.number().optional(),
-  })
-  .passthrough();
+export const GlobalProjectEntrySchema = z.object({
+  /** Display name */
+  name: z.string().optional(),
+  /** Local path to the repo */
+  path: z.string(),
+  /** Unix timestamp of last successful shadow sync from local config. */
+  _shadowSyncedAt: z.number().optional(),
+}).passthrough();
 
 export type GlobalProjectEntry = z.infer<typeof GlobalProjectEntrySchema>;
 
 /**
  * Global config schema.
- * Operational settings + project registry with shadow behavior fields.
+ * Contains project registry + operational settings.
  */
-export const GlobalConfigSchema = z
-  .object({
-    /** Web dashboard port. Default: 3000 */
-    port: z.number().default(3000),
-    terminalPort: z.number().optional(),
-    directTerminalPort: z.number().optional(),
-    /** Time before a "ready" session becomes "idle". Default: 300 000 ms (5 min). */
-    readyThresholdMs: z.number().nonnegative().default(300_000),
-    /** Cross-project defaults — projects inherit when fields are omitted. */
-    defaults: z
-      .object({
-        runtime: z.string().default("tmux"),
-        agent: z.string().default("claude-code"),
-        workspace: z.string().default("worktree"),
-        notifiers: z.array(z.string()).default(["composio", "desktop"]),
-        orchestrator: z.object({ agent: z.string().optional() }).optional(),
-        worker: z.object({ agent: z.string().optional() }).optional(),
-      })
-      .default({}),
-    /** Project registry — map key is the canonical project ID. */
-    projects: z.record(GlobalProjectEntrySchema).default({}),
-    /** Optional explicit project ordering for sidebar / portfolio display. */
-    projectOrder: z.array(z.string()).optional(),
-    /** Notification channel configurations. */
-    notifiers: z.record(z.object({ plugin: z.string() }).passthrough()).default({}),
-    /** Maps priority levels to notifier channel IDs. */
-    notificationRouting: z.record(z.array(z.string())).default({
-      urgent: ["desktop", "composio"],
-      action: ["desktop", "composio"],
-      warning: ["composio"],
-      info: ["composio"],
-    }),
-    /** Reaction rules (default reactions merged at load time). */
-    reactions: z.record(z.object({}).passthrough()).default({}),
-  })
-  .passthrough();
+export const GlobalConfigSchema = z.object({
+  /** Web dashboard port */
+  port: z.number().default(3000),
+  /** Terminal WebSocket server port */
+  terminalPort: z.number().optional(),
+  /** Direct terminal WebSocket server port */
+  directTerminalPort: z.number().optional(),
+  /** Milliseconds before "ready" becomes "idle" */
+  readyThresholdMs: z.number().nonnegative().default(300_000),
+  /** Default plugin selections */
+  defaults: z
+    .object({
+      runtime: z.string().default("tmux"),
+      agent: z.string().default("claude-code"),
+      workspace: z.string().default("worktree"),
+      notifiers: z.array(z.string()).default(["composio", "desktop"]),
+      orchestrator: z.object({ agent: z.string().optional() }).optional(),
+      worker: z.object({ agent: z.string().optional() }).optional(),
+    })
+    .default({}),
+  /** Project registry (identity only — behavior is in shadow files) */
+  projects: z.record(GlobalProjectEntrySchema).default({}),
+  /** Display order for projects in sidebar/portfolio */
+  projectOrder: z.array(z.string()).optional(),
+  /** Installed external plugins */
+  plugins: z.array(z.any()).optional(),
+  /** Global notifier channel definitions */
+  notifiers: z.record(z.object({ plugin: z.string() }).passthrough()).optional(),
+  /** Global notification routing by priority level */
+  notificationRouting: z.record(z.array(z.string())).optional(),
+  /** Global reaction definitions (overridden per-project via shadow/local config) */
+  reactions: z.record(z.any()).optional(),
+}).passthrough();
 
 export type GlobalConfig = z.infer<typeof GlobalConfigSchema>;
 
 // =============================================================================
-// LOCAL PROJECT CONFIG SCHEMA (flat, behavior-only)
+// LOCAL (FLAT) CONFIG SCHEMA
 // =============================================================================
 
 /**
@@ -158,8 +185,8 @@ export type GlobalConfig = z.infer<typeof GlobalConfigSchema>;
  */
 export const LocalProjectConfigSchema = z
   .object({
-    repo: z.string().optional(),
-    defaultBranch: z.string().optional(),
+    repo: z.string(),
+    defaultBranch: z.string().default("main"),
     runtime: z.string().optional(),
     agent: z.string().optional(),
     workspace: z.string().optional(),
@@ -169,13 +196,13 @@ export const LocalProjectConfigSchema = z
         plugin: z.string(),
         webhook: z
           .object({
-            enabled: z.boolean().optional(),
+            enabled: z.boolean().default(true),
             path: z.string().optional(),
             secretEnvVar: z.string().optional(),
             signatureHeader: z.string().optional(),
             eventHeader: z.string().optional(),
             deliveryHeader: z.string().optional(),
-            maxBodyBytes: z.number().optional(),
+            maxBodyBytes: z.number().int().positive().optional(),
           })
           .optional(),
       })
@@ -187,19 +214,51 @@ export const LocalProjectConfigSchema = z
       .object({
         permissions: z
           .enum(["permissionless", "default", "auto-edit", "suggest", "skip"])
-          .optional(),
+          .default("permissionless")
+          .transform((v) => (v === "skip" ? "permissionless" : v)),
         model: z.string().optional(),
         orchestratorModel: z.string().optional(),
+        opencodeSessionId: z.string().optional(),
       })
       .passthrough()
-      .optional(),
+      .default({}),
     orchestrator: z
-      .object({ agent: z.string().optional(), agentConfig: z.object({}).passthrough().optional() })
+      .object({
+        agent: z.string().optional(),
+        agentConfig: z
+          .object({
+            permissions: z
+              .union([
+                z.enum(["permissionless", "default", "auto-edit", "suggest"]),
+                z.literal("skip"),
+              ])
+              .optional(),
+            model: z.string().optional(),
+          })
+          .passthrough()
+          .optional(),
+      })
       .optional(),
     worker: z
-      .object({ agent: z.string().optional(), agentConfig: z.object({}).passthrough().optional() })
+      .object({
+        agent: z.string().optional(),
+        agentConfig: z
+          .object({
+            permissions: z
+              .union([
+                z.enum(["permissionless", "default", "auto-edit", "suggest"]),
+                z.literal("skip"),
+              ])
+              .optional(),
+            model: z.string().optional(),
+          })
+          .passthrough()
+          .optional(),
+      })
       .optional(),
-    reactions: z.record(z.object({}).passthrough()).optional(),
+    reactions: z.record(z.any()).optional(),
+    notifiers: z.record(z.object({ plugin: z.string() }).passthrough()).optional(),
+    notificationRouting: z.record(z.array(z.string())).optional(),
     agentRules: z.string().optional(),
     agentRulesFile: z.string().optional(),
     orchestratorRules: z.string().optional(),
@@ -207,63 +266,329 @@ export const LocalProjectConfigSchema = z
       .enum(["reuse", "delete", "ignore", "delete-new", "ignore-new", "kill-previous"])
       .optional(),
     opencodeIssueSessionStrategy: z.enum(["reuse", "delete", "ignore"]).optional(),
-    decomposer: z.object({}).passthrough().optional(),
+    decomposer: z
+      .object({
+        enabled: z.boolean().default(false),
+        maxDepth: z.number().min(1).max(5).default(3),
+        model: z.string().default("claude-sonnet-4-20250514"),
+        requireApproval: z.boolean().default(true),
+      })
+      .optional(),
   })
   .passthrough();
 
 export type LocalProjectConfig = z.infer<typeof LocalProjectConfigSchema>;
 
 // =============================================================================
-// LOAD / SAVE
+// DISCOVERY
+// =============================================================================
+
+/**
+ * Discover the global config file path.
+ *
+ * Discovery order:
+ * 1. AO_GLOBAL_CONFIG_PATH env var (dedicated to global config — avoids
+ *    collision with AO_CONFIG_PATH which points to local/legacy configs)
+ * 2. $XDG_CONFIG_HOME/agent-orchestrator/config.yaml (if XDG_CONFIG_HOME set)
+ * 3. ~/.agent-orchestrator/config.yaml (fallback)
+ */
+export function findGlobalConfigPath(): string {
+  if (process.env["AO_GLOBAL_CONFIG_PATH"]) {
+    return resolve(process.env["AO_GLOBAL_CONFIG_PATH"]);
+  }
+
+  if (process.env["XDG_CONFIG_HOME"]) {
+    return resolve(process.env["XDG_CONFIG_HOME"], "agent-orchestrator", "config.yaml");
+  }
+
+  return resolve(homedir(), ".agent-orchestrator", "config.yaml");
+}
+
+// =============================================================================
+// LOADING
 // =============================================================================
 
 /**
  * Load and validate the global config.
  * Returns null if the file does not exist (not an error — first run).
+ *
+ * When called without arguments, uses findGlobalConfigPath() for the path.
+ * When called with configPath, loads from the specified path directly (used by
+ * tests and backward-compatible code that manages its own config location).
  */
 export function loadGlobalConfig(configPath?: string): GlobalConfig | null {
-  const path = configPath ?? getGlobalConfigPath();
+  const path = configPath ?? findGlobalConfigPath();
   if (!existsSync(path)) return null;
 
   const raw = readFileSync(path, "utf-8");
   const parsed = parseYaml(raw);
   if (!parsed || typeof parsed !== "object") return null;
 
-  const config = GlobalConfigSchema.parse(parsed);
+  let validated: z.infer<typeof GlobalConfigSchema>;
+  try {
+    validated = GlobalConfigSchema.parse(parsed);
+  } catch (err) {
+    const detail = err instanceof z.ZodError
+      ? err.issues.map((i) => `  ${i.path.join(".")}: ${i.message}`).join("\n")
+      : String(err);
+    throw new Error(`Invalid global config at ${path}:\n${detail}`, { cause: err });
+  }
 
+  // Clone before mutating to avoid modifying Zod's parse output directly
+  const config = structuredClone(validated);
   // Expand ~ in project paths
   for (const entry of Object.values(config.projects)) {
-    if (typeof entry.path === "string" && entry.path.startsWith("~/")) {
-      entry.path = join(homedir(), entry.path.slice(2));
-    }
+    entry.path = expandHome(entry.path);
   }
 
   return config;
 }
 
+// =============================================================================
+// SAVING
+// =============================================================================
+
 /**
  * Save the global config atomically (temp-file + rename).
  * Creates parent directories if they don't exist.
+ *
+ * When called without configPath, uses findGlobalConfigPath() and contracts
+ * paths back to ~ for readability. When called with configPath, writes to the
+ * specified location directly (used by tests and backward-compatible code).
  */
 export function saveGlobalConfig(config: GlobalConfig, configPath?: string): void {
-  const path = configPath ?? getGlobalConfigPath();
+  const path = configPath ?? findGlobalConfigPath();
   const dir = dirname(path);
   mkdirSync(dir, { recursive: true });
-  atomicWriteFileSync(path, stringifyYaml(config, { indent: 2 }));
+
+  if (configPath) {
+    // Legacy path: write directly using atomicWriteFileSync
+    atomicWriteFileSync(path, stringifyYaml(config, { indent: 2 }));
+  } else {
+    // New path: contract paths back to ~ for readability
+    const serializable = structuredClone(config);
+    const home = homedir();
+    for (const entry of Object.values(serializable.projects)) {
+      if (entry.path.startsWith(home + "/")) {
+        entry.path = "~/" + entry.path.slice(home.length + 1);
+      }
+    }
+
+    const yaml = stringifyYaml(serializable, { lineWidth: 0 });
+    // Write temp file in the same directory as the target to avoid EXDEV errors
+    // when /tmp is on a different filesystem (common on Linux with tmpfs).
+    const tmpPath = join(dir, `.config-${randomBytes(6).toString("hex")}.yaml.tmp`);
+    writeFileSync(tmpPath, yaml, "utf-8");
+    renameSync(tmpPath, path);
+  }
+}
+
+// =============================================================================
+// SCAFFOLD
+// =============================================================================
+
+/**
+ * Create a minimal global config with no projects registered.
+ */
+export function scaffoldGlobalConfig(): GlobalConfig {
+  const config = GlobalConfigSchema.parse({});
+  saveGlobalConfig(config);
+  return config;
+}
+
+// =============================================================================
+// PROJECT REGISTRATION
+// =============================================================================
+
+/**
+ * Register a project in the global config.
+ * Does not save — caller must call saveGlobalConfig().
+ */
+export function registerProject(
+  globalConfig: GlobalConfig,
+  projectId: string,
+  entry: GlobalProjectEntry,
+): GlobalConfig {
+  const updated = structuredClone(globalConfig);
+  updated.projects[projectId] = entry;
+  // Keep projectOrder consistent: if it's defined, append the new project
+  // so it appears in the portfolio UI instead of being silently omitted.
+  if (updated.projectOrder && !updated.projectOrder.includes(projectId)) {
+    updated.projectOrder = [...updated.projectOrder, projectId];
+  }
+  return updated;
 }
 
 /**
- * Load a flat local project config from <projectPath>/agent-orchestrator.yaml.
+ * Remove a project from the global config.
+ * Does not save — caller must call saveGlobalConfig().
+ */
+export function unregisterProject(
+  globalConfig: GlobalConfig,
+  projectId: string,
+): GlobalConfig {
+  const updated = structuredClone(globalConfig);
+  const { [projectId]: _, ...remainingProjects } = updated.projects;
+  updated.projects = remainingProjects;
+  if (updated.projectOrder) {
+    updated.projectOrder = updated.projectOrder.filter((id) => id !== projectId);
+  }
+  // Note: shadow file deletion is NOT done here — callers should call
+  // deleteShadowFile(projectId) AFTER successfully saving the global config,
+  // to avoid data loss if saveGlobalConfig fails.
+  return updated;
+}
+
+// =============================================================================
+// SHADOW FILE I/O
+// =============================================================================
+
+/**
+ * Get the directory where per-project shadow files are stored.
+ * Located next to the global config file: ~/.agent-orchestrator/projects/
+ */
+export function getShadowDir(): string {
+  const globalPath = findGlobalConfigPath();
+  return join(dirname(globalPath), "projects");
+}
+
+/**
+ * Get the shadow file path for a specific project.
+ * Validates the project ID to prevent path traversal.
+ */
+export function getShadowFilePath(projectId: string): string {
+  // Reject IDs with path separators or traversal patterns
+  if (!projectId || /[/\\]/.test(projectId) || /\.\./.test(projectId) || projectId === ".") {
+    throw new Error(`Invalid project ID for shadow file: "${projectId}"`);
+  }
+  return join(getShadowDir(), `${projectId}.yaml`);
+}
+
+/**
+ * Load a shadow file for a project. Returns null if missing or unparseable.
+ * Fault-isolated: one broken shadow does not affect other projects.
+ */
+export function loadShadowFile(projectId: string): Record<string, unknown> | null {
+  const filePath = getShadowFilePath(projectId);
+  if (!existsSync(filePath)) return null;
+  try {
+    const raw = readFileSync(filePath, "utf-8");
+    const parsed = parseYaml(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Save a shadow file for a project. Atomic write (temp + rename).
+ */
+export function saveShadowFile(projectId: string, data: Record<string, unknown>): void {
+  const dir = getShadowDir();
+  mkdirSync(dir, { recursive: true });
+  const filePath = getShadowFilePath(projectId);
+  const yaml = stringifyYaml(data, { lineWidth: 0 });
+  const tmpPath = join(dir, `.${projectId}-${randomBytes(6).toString("hex")}.yaml.tmp`);
+  writeFileSync(tmpPath, yaml, "utf-8");
+  renameSync(tmpPath, filePath);
+}
+
+/**
+ * Delete a shadow file for a project.
+ */
+export function deleteShadowFile(projectId: string): void {
+  const filePath = getShadowFilePath(projectId);
+  if (!existsSync(filePath)) return;
+  try {
+    unlinkSync(filePath);
+  } catch {
+    // Best-effort cleanup
+  }
+}
+
+// =============================================================================
+// MODE DETECTION
+// =============================================================================
+
+/**
+ * Detect the config ownership mode for a project.
+ *
+ * - If a local `agent-orchestrator.yaml` exists at project.path -> hybrid
+ * - Otherwise -> global-only
+ */
+export function detectConfigMode(projectPath: string): ConfigMode {
+  const localPath = findLocalConfigPath(projectPath);
+  return localPath ? "hybrid" : "global-only";
+}
+
+/**
+ * Find the local config file for a project, if it exists.
+ */
+export function findLocalConfigPath(projectPath: string): string | null {
+  const expanded = expandHome(projectPath);
+  const candidates = [
+    join(expanded, "agent-orchestrator.yaml"),
+    join(expanded, "agent-orchestrator.yml"),
+  ];
+
+  for (const p of candidates) {
+    if (existsSync(p)) {
+      return p;
+    }
+  }
+  return null;
+}
+
+/**
+ * Walk up the directory tree from startDir to find a local project config.
+ * Returns the config path and the directory it was found in (the project root),
+ * or null if no config is found up to the filesystem root.
+ */
+export function findLocalConfigUpwards(
+  startDir: string,
+): { configPath: string; projectRoot: string } | null {
+  let dir = resolve(startDir);
+  // Loop processes every directory except the root (where dir === dirname(dir)).
+  while (dir !== dirname(dir)) {
+    const configPath = findLocalConfigPath(dir);
+    if (configPath) return { configPath, projectRoot: dir };
+    dir = dirname(dir);
+  }
+  // Check the root directory (the loop exits before inspecting it).
+  const rootConfigPath = findLocalConfigPath(dir);
+  if (rootConfigPath) return { configPath: rootConfigPath, projectRoot: dir };
+  return null;
+}
+
+/**
+ * Load a flat local project config.
+ *
+ * Accepts either:
+ *   - A file path (ending in .yaml/.yml) — loads directly
+ *   - A project directory path — searches for agent-orchestrator.yaml/.yml
  *
  * Returns null when:
- *   - No config file found at projectPath
+ *   - No config file found
  *   - File has a `projects:` wrapper (old format — use loadConfig() instead)
  *   - File is empty or malformed
  */
-export function loadLocalProjectConfig(projectPath: string): LocalProjectConfig | null {
+export function loadLocalProjectConfig(configOrProjectPath: string): LocalProjectConfig | null {
+  // If it's a file path (ends with .yaml/.yml), load directly
+  if (configOrProjectPath.endsWith(".yaml") || configOrProjectPath.endsWith(".yml")) {
+    try {
+      const raw = readFileSync(configOrProjectPath, "utf-8");
+      const parsed = parseYaml(raw);
+      return LocalProjectConfigSchema.parse(parsed);
+    } catch {
+      return null;
+    }
+  }
+
+  // Otherwise treat as project directory path and search for config
   const candidates = [
-    join(projectPath, "agent-orchestrator.yaml"),
-    join(projectPath, "agent-orchestrator.yml"),
+    join(configOrProjectPath, "agent-orchestrator.yaml"),
+    join(configOrProjectPath, "agent-orchestrator.yml"),
   ];
 
   for (const path of candidates) {
@@ -279,7 +604,7 @@ export function loadLocalProjectConfig(projectPath: string): LocalProjectConfig 
 
     if (!parsed || typeof parsed !== "object") return null;
 
-    // Old format: has `projects:` wrapper → not a flat local config
+    // Old format: has `projects:` wrapper -> not a flat local config
     if ("projects" in (parsed as Record<string, unknown>)) return null;
 
     try {
@@ -292,19 +617,82 @@ export function loadLocalProjectConfig(projectPath: string): LocalProjectConfig 
   return null;
 }
 
+
 // =============================================================================
 // SHADOW SYNC
 // =============================================================================
 
 /**
+ * Compute shadow content from a local config without writing to disk.
+ *
+ * Pure function: excludes identity fields, internal fields, and secret-like
+ * fields. Stamps _shadowSyncedAt. Used to validate before any disk writes.
+ *
+ * Returns { shadow, excludedSecrets }
+ */
+export function computeShadow(
+  localConfig: LocalProjectConfig,
+): { shadow: Record<string, unknown>; excludedSecrets: string[] } {
+  const excludedSecrets: string[] = [];
+  const shadow: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(localConfig)) {
+    if (IDENTITY_FIELDS.has(key) || isInternalField(key)) continue;
+
+    if (isSecretField(key)) {
+      excludedSecrets.push(key);
+      continue;
+    }
+
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      shadow[key] = filterSecrets(value as Record<string, unknown>, excludedSecrets, key);
+    } else {
+      shadow[key] = value;
+    }
+  }
+
+  shadow["_shadowSyncedAt"] = Math.floor(Date.now() / 1000);
+  return { shadow, excludedSecrets };
+}
+
+/**
+ * Sync local config into a per-project shadow file (hybrid mode).
+ *
+ * Writes behavior fields to ~/.agent-orchestrator/projects/{id}.yaml.
+ * Does NOT modify the global config (identity stays in config.yaml).
+ * Excludes secret-like fields with a warning.
+ *
+ * Returns { unchanged global config, excluded secret fields }
+ */
+export function syncShadow(
+  globalConfig: GlobalConfig,
+  projectId: string,
+  localConfig: LocalProjectConfig,
+): { config: GlobalConfig; excludedSecrets: string[] } {
+  if (!globalConfig.projects[projectId]) {
+    throw new Error(`Project "${projectId}" not found in global config`);
+  }
+
+  const { shadow, excludedSecrets } = computeShadow(localConfig);
+
+  // Write to per-project shadow file (not inline in global config)
+  saveShadowFile(projectId, shadow);
+
+  // Return globalConfig unchanged — identity stays in config.yaml
+  return { config: globalConfig, excludedSecrets };
+}
+
+/**
  * Sync local project behavior fields into the global config shadow, atomically.
  *
- * Called by `ao start` after validating local config.
+ * Legacy API — writes shadow fields inline into the global config projects map.
+ * Kept for backward compatibility with tests and code that expects this pattern.
+ * New code should use syncShadow() which writes to per-project shadow files.
  *
  * Rules:
  *   - Identity fields (name, path, sessionPrefix) are never overwritten
  *   - Fields starting with `_` (internal) are excluded
- *   - Fields matching *Token/*Key/*Secret/*Password are excluded (warn)
+ *   - Fields matching secret patterns are excluded (warn)
  *   - All other fields from localConfig are written verbatim (passthrough)
  *   - _shadowSyncedAt is set to current Unix timestamp
  *   - Write is atomic
@@ -350,12 +738,36 @@ export function syncProjectShadow(
   saveGlobalConfig(globalConfig, configPath);
 }
 
+/** Recursively filter secret-like fields from an object at all nesting levels */
+export function filterSecrets(
+  obj: Record<string, unknown>,
+  excluded: string[],
+  parentKey: string,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (isSecretField(key)) {
+      excluded.push(`${parentKey}.${key}`);
+      continue;
+    }
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      result[key] = filterSecrets(value as Record<string, unknown>, excluded, `${parentKey}.${key}`);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 // =============================================================================
-// REGISTRATION
+// REGISTRATION (Legacy inline API)
 // =============================================================================
 
 /**
  * Register or update a project in the global registry.
+ *
+ * Legacy API — writes project entry inline into the global config.
+ * New code should use registerProject() + saveGlobalConfig() separately.
  *
  * - If the project already exists, identity fields are preserved and only
  *   updated if explicitly provided.
@@ -519,9 +931,6 @@ export function isOldConfigFormat(raw: unknown): boolean {
  *       when the old config is inside the project directory)
  *   4. Returns the new global config path
  *
- * The old storage directories (based on sha256(project.path)) remain valid
- * because the hash derivation is unchanged — configPath dirname = project.path.
- *
  * @param oldConfigPath  Absolute path to the old agent-orchestrator.yaml
  * @param globalConfigPath  Override for global config path (default: getGlobalConfigPath())
  * @returns The global config path
@@ -600,9 +1009,6 @@ export function migrateToGlobalConfig(oldConfigPath: string, globalConfigPath?: 
   saveGlobalConfig(newGlobal, targetGlobalPath);
 
   // Rewrite each old project's local config to flat format.
-  // Each old project had its config inside the multi-project file.
-  // For single-project configs at the project root: rewrite in place.
-  // For multi-project configs: write each project's local config to its path.
   const oldConfigDir = dirname(resolve(oldConfigPath));
   for (const [_projectId, project] of Object.entries(oldProjects)) {
     if (!project["path"]) continue;
@@ -613,7 +1019,6 @@ export function migrateToGlobalConfig(oldConfigPath: string, globalConfigPath?: 
         : (project["path"] as string);
 
     // Only rewrite if the old config lives inside this project's directory
-    // (single-project setup: the config IS in the project root)
     if (resolve(projectPath) !== resolve(oldConfigDir)) continue;
 
     const behaviorFields: Record<string, unknown> = {};
@@ -629,6 +1034,48 @@ export function migrateToGlobalConfig(oldConfigPath: string, globalConfigPath?: 
   }
 
   return targetGlobalPath;
+}
+
+// =============================================================================
+// MATCH / LOOKUP
+// =============================================================================
+
+/**
+ * Match the current working directory to a registered project.
+ * Returns the project ID if found, null otherwise.
+ */
+export function matchProjectByCwd(
+  globalConfig: GlobalConfig,
+  cwd: string,
+): string | null {
+  const resolvedCwd = resolve(cwd);
+  let bestMatch: { id: string; pathLen: number } | null = null;
+  for (const [id, entry] of Object.entries(globalConfig.projects)) {
+    const resolvedPath = resolve(expandHome(entry.path));
+    if (resolvedCwd === resolvedPath || resolvedCwd.startsWith(resolvedPath + sep)) {
+      // Prefer the longest (most specific) matching path
+      if (!bestMatch || resolvedPath.length > bestMatch.pathLen) {
+        bestMatch = { id, pathLen: resolvedPath.length };
+      }
+    }
+  }
+  return bestMatch?.id ?? null;
+}
+
+/**
+ * Check if a project path is already registered (under a different ID).
+ */
+export function findProjectByPath(
+  globalConfig: GlobalConfig,
+  projectPath: string,
+): { id: string; entry: GlobalProjectEntry } | null {
+  const resolvedPath = resolve(expandHome(projectPath));
+  for (const [id, entry] of Object.entries(globalConfig.projects)) {
+    if (resolve(expandHome(entry.path)) === resolvedPath) {
+      return { id, entry };
+    }
+  }
+  return null;
 }
 
 // =============================================================================

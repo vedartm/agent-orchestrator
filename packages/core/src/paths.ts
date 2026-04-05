@@ -23,13 +23,22 @@ import { realpathSync, existsSync, writeFileSync, readFileSync, mkdirSync } from
  * Handles non-existent paths gracefully (e.g. synthesized paths in remote/
  * Docker mode where no local config file exists) by falling back to
  * resolve() when realpathSync fails.
+ *
+ * Always resolves symlinks before hashing to ensure consistency.
+ *
+ * @deprecated Use generateProjectPathHash() for new code.
+ * This function is kept for backwards compatibility with existing storage directories.
  */
 export function generateConfigHash(configPath: string): string {
   let resolved: string;
   try {
     resolved = realpathSync(configPath);
   } catch {
-    // File may not exist (remote mode, Docker, pre-creation) — use resolved path
+    // Path doesn't exist (e.g. remote mode, Docker, pre-creation, or synthetic
+    // path used for global-only projects in multi-project mode:
+    // {projectDir}/agent-orchestrator.yaml).
+    // Fall back to resolve() which expands relative segments without requiring
+    // the file to exist on disk.
     resolved = resolve(configPath);
   }
   const configDir = dirname(resolved);
@@ -92,6 +101,9 @@ export function generateInstanceId(_configPath: string, projectPath: string): st
  * 4. Single word: first 3 chars (integrator → int)
  */
 export function generateSessionPrefix(projectId: string): string {
+  if (!projectId || projectId.length === 0) {
+    return "proj";
+  }
   if (projectId.length <= 4) {
     return projectId.toLowerCase();
   }
@@ -105,11 +117,13 @@ export function generateSessionPrefix(projectId: string): string {
   // kebab-case or snake_case: use initials
   if (projectId.includes("-") || projectId.includes("_")) {
     const separator = projectId.includes("-") ? "-" : "_";
-    return projectId
+    const prefix = projectId
       .split(separator)
+      .filter((word) => word.length > 0)
       .map((word) => word[0])
       .join("")
       .toLowerCase();
+    return prefix || projectId.slice(0, 3).toLowerCase();
   }
 
   // Single word: first 3 characters
@@ -260,6 +274,8 @@ export function getRegisteredPath(): string {
  */
 export function validateAndStoreOrigin(configPath: string, projectPath: string): void {
   const originPath = getOriginFilePath(configPath, projectPath);
+  // Use the same fallback as generateConfigHash: for global-only projects the
+  // configPath is a synthetic non-existent path, so realpathSync would throw.
   let resolvedConfigPath: string;
   try {
     resolvedConfigPath = realpathSync(configPath);

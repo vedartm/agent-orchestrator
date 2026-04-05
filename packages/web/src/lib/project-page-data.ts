@@ -39,7 +39,7 @@ export async function loadProjectPageData(projectFilter: string): Promise<Projec
     const { config, registry, sessionManager } = await getServices();
     const allSessions = await sessionManager.list();
 
-    pageData.globalPause = resolveGlobalPause(allSessions);
+    pageData.globalPause = resolveGlobalPause(allSessions, config.projects);
     const visibleSessions = filterProjectSessions(allSessions, projectFilter, config.projects);
     pageData.orchestrators = listDashboardOrchestrators(visibleSessions, config.projects);
     pageData.sidebarSessions = visibleSessions.map(sessionToDashboard);

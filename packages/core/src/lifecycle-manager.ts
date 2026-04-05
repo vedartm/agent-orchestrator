@@ -222,7 +222,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     await Promise.all(
       [...sessionsByProject.entries()].map(async ([projectId, projectSessions]) => {
         const project = config.projects[projectId];
-        if (!project?.scm) return;
+        if (!project?.scm?.plugin) return;
         const scm = registry.get<SCM>("scm", project.scm.plugin);
         if (!scm?.enrichSessionsPRBatch) return;
 
@@ -310,13 +310,13 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     if (!project) return session.status;
 
     const agentName = resolveAgentSelection({
-      role: resolveSessionRole(session.id, session.metadata),
+      role: resolveSessionRole(session.id, session.metadata, project.sessionPrefix),
       project,
       defaults: config.defaults,
       persistedAgent: session.metadata["agent"],
     }).agentName;
     const agent = registry.get<Agent>("agent", agentName);
-    const scm = project.scm ? registry.get<SCM>("scm", project.scm.plugin) : null;
+    const scm = project.scm?.plugin ? registry.get<SCM>("scm", project.scm.plugin) : null;
 
     // Track activity state across steps so stuck detection can run after PR checks
     let detectedIdleTimestamp: Date | null = null;
@@ -414,7 +414,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           // Persist PR URL so subsequent polls don't need to re-query.
           // Don't write status here — step 4 below will determine the
           // correct status (merged, ci_failed, etc.) on this same cycle.
-          const sessionsDir = getSessionsDir(config.configPath, project.path);
+          const sessionsDir = getSessionsDir(project.effectiveConfigPath ?? config.configPath, project.path);
           updateMetadata(sessionsDir, session.id, { pr: detectedPR.url });
         }
       } catch {
@@ -629,7 +629,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     const project = config.projects[session.projectId];
     if (!project) return;
 
-    const sessionsDir = getSessionsDir(config.configPath, project.path);
+    const sessionsDir = getSessionsDir(project.effectiveConfigPath ?? config.configPath, project.path);
     updateMetadata(sessionsDir, session.id, updates);
 
     const cleaned = Object.fromEntries(
@@ -658,7 +658,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     const project = config.projects[session.projectId];
     if (!project || !session.pr) return;
 
-    const scm = project.scm ? registry.get<SCM>("scm", project.scm.plugin) : null;
+    const scm = project.scm?.plugin ? registry.get<SCM>("scm", project.scm.plugin) : null;
     if (!scm) return;
 
     const humanReactionKey = "changes-requested";
@@ -835,7 +835,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     const project = config.projects[session.projectId];
     if (!project || !session.pr) return;
 
-    const scm = project.scm ? registry.get<SCM>("scm", project.scm.plugin) : null;
+    const scm = project.scm?.plugin ? registry.get<SCM>("scm", project.scm.plugin) : null;
     if (!scm) return;
 
     const ciReactionKey = "ci-failed";
@@ -958,7 +958,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     const project = config.projects[session.projectId];
     if (!project || !session.pr) return;
 
-    const scm = project.scm ? registry.get<SCM>("scm", project.scm.plugin) : null;
+    const scm = project.scm?.plugin ? registry.get<SCM>("scm", project.scm.plugin) : null;
     if (!scm) return;
 
     const conflictReactionKey = "merge-conflicts";
@@ -1267,6 +1267,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     start(intervalMs = 30_000): void {
       if (pollTimer) return; // Already running
       pollTimer = setInterval(() => void pollAll(), intervalMs);
+      // Detached by default — won't block process exit. Callers that need
+      // the process to stay alive (i.e. the ao start daemon) must call pin().
+      pollTimer.unref();
       // Run immediately on start
       void pollAll();
     },
@@ -1276,6 +1279,10 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         clearInterval(pollTimer);
         pollTimer = null;
       }
+    },
+
+    pin(): void {
+      pollTimer?.ref();
     },
 
     getStates(): Map<SessionId, SessionStatus> {

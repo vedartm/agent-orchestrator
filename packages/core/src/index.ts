@@ -16,7 +16,53 @@ export {
   getDefaultConfig,
   findConfig,
   findConfigFile,
+  applyGlobalConfigPipeline,
 } from "./config.js";
+
+// Global config — multi-project registry, shadow sync, mode detection
+export {
+  getGlobalConfigPath,
+  findGlobalConfigPath,
+  loadGlobalConfig,
+  saveGlobalConfig,
+  scaffoldGlobalConfig,
+  registerProject as registerProjectInGlobal,
+  unregisterProject as unregisterProjectFromGlobal,
+  detectConfigMode,
+  findLocalConfigPath,
+  findLocalConfigUpwards,
+  loadLocalProjectConfig,
+  computeShadow,
+  syncShadow,
+  syncProjectShadow,
+  registerProjectInGlobalConfig,
+  buildEffectiveProjectConfig,
+  isProjectShadowStale,
+  isOldConfigFormat,
+  migrateToGlobalConfig,
+  getShadowDir,
+  getShadowFilePath,
+  loadShadowFile,
+  saveShadowFile,
+  deleteShadowFile,
+  isSecretField,
+  filterSecrets,
+  matchProjectByCwd,
+  findProjectByPath,
+} from "./global-config.js";
+export type {
+  ConfigMode,
+  GlobalConfig,
+  GlobalProjectEntry,
+  LocalProjectConfig,
+} from "./global-config.js";
+
+// Effective config builder — merges global registry + shadow files
+export { buildEffectiveConfig } from "./migration.js";
+
+// Multi-project start — registration, sync, config building
+export { resolveMultiProjectStart, registerNewProject, validateAndCommitRegistration } from "./multi-project-start.js";
+export type { MultiProjectStartResult, RegisterNewProjectOpts, RegisterNewProjectResult } from "./multi-project-start.js";
 
 // Plugin registry
 export {
@@ -183,20 +229,9 @@ export {
   validateAndStoreOrigin,
 } from "./paths.js";
 
-// Global config — Option C hybrid architecture (global registry + local behavior)
-export {
-  getGlobalConfigPath,
-  loadGlobalConfig,
-  saveGlobalConfig,
-  loadLocalProjectConfig,
-  syncProjectShadow,
-  registerProjectInGlobalConfig,
-  buildEffectiveProjectConfig,
-  isProjectShadowStale,
-  isOldConfigFormat,
-  migrateToGlobalConfig,
-} from "./global-config.js";
-export type { GlobalConfig, GlobalProjectEntry, LocalProjectConfig } from "./global-config.js";
+// NOTE: Legacy exports (getGlobalConfigPath, syncProjectShadow, registerProjectInGlobalConfig,
+// buildEffectiveProjectConfig, isProjectShadowStale, isOldConfigFormat, migrateToGlobalConfig)
+// are now included in the unified global config export block above.
 
 // Config generator — auto-generate config from repo URL
 export {
