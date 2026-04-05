@@ -747,6 +747,7 @@ export async function createConfigOnly(): Promise<void> {
  * Start dashboard server in the background.
  * Returns the child process handle for cleanup.
  */
+/* c8 ignore start -- process-spawning startup code, tested via integration/onboarding */
 async function buildDashboard(webDir: string, env: NodeJS.ProcessEnv): Promise<void> {
   const spinner = ora();
   spinner.start("Building optimized dashboard (~15s)");
@@ -796,7 +797,15 @@ async function startDashboard(
   } else if (isMonorepo) {
     // Monorepo default: build optimized bundles then start production server.
     // This reduces JS bundle from ~1.7MB (dev) to ~170KB (gzipped).
-    await buildDashboard(webDir, env as NodeJS.ProcessEnv);
+    // Skip rebuild if assets already exist (e.g. after `pnpm build`).
+    const hasBuiltAssets =
+      existsSync(resolve(webDir, ".next", "BUILD_ID")) &&
+      existsSync(resolve(webDir, "dist-server", "start-all.js"));
+    if (hasBuiltAssets) {
+      console.log(chalk.dim("  Using existing build (run --rebuild to force)"));
+    } else {
+      await buildDashboard(webDir, env as NodeJS.ProcessEnv);
+    }
     console.log(chalk.dim("  Mode: optimized (production bundles)"));
     console.log(chalk.dim("  Tip: use --dev for hot reload when editing dashboard UI\n"));
     child = spawn("node", [resolve(webDir, "dist-server", "start-all.js")], {
@@ -831,6 +840,7 @@ async function startDashboard(
 
   return child;
 }
+/* c8 ignore stop */
 
 /**
  * Ensure tmux is available — interactive install with user consent if missing.
