@@ -27,4 +27,4 @@ Closes #<!-- issue number -->
 $ pnpm test
 ```
 
-**Verdict**: _fill in: PASS or INSUFFICIENT_
+**Verdict**: <!-- replace this comment with PASS or INSUFFICIENT -->
