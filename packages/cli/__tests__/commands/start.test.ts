@@ -96,6 +96,7 @@ vi.mock("../../src/lib/create-session-manager.js", () => ({
 vi.mock("../../src/lib/lifecycle-service.js", () => ({
   ensureLifecycleWorker: (...args: unknown[]) => mockEnsureLifecycleWorker(...args),
   stopLifecycleWorker: (...args: unknown[]) => mockStopLifecycleWorker(...args),
+  pinLifecycleWorker: vi.fn(),
 }));
 
 vi.mock("../../src/lib/web-dir.js", () => ({
