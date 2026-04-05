@@ -169,9 +169,9 @@ fi
 source "\$ao_bin_dir/ao-metadata-helper.sh" 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
-# Churn guard — block PR creation when open PRs already touch same files.
+# Churn guard — warn when open PRs already touch same files (non-blocking).
 # Fail-open: any error (no python3, no git, API timeout) allows the PR.
-# Override: include "Supersedes #N" in --body to bypass.
+# Override: include "Supersedes #N" in --body to suppress the warning.
 # ---------------------------------------------------------------------------
 churn_guard() {
   command -v python3 &>/dev/null || return 0
@@ -291,19 +291,16 @@ PYEOF
   if printf '%s' "\$overlap" | grep -q "^OVERLAP"; then
     echo "" >&2
     echo "============================================" >&2
-    echo "BLOCKED: File overlap with existing open PRs" >&2
+    echo "WARNING: File overlap with existing open PRs" >&2
     echo "" >&2
     echo "Your branch changes files already modified by open PRs:" >&2
     printf '%s\\n' "\$overlap" | tail -n +2 >&2
     echo "" >&2
     echo "  1. Check if the existing PR already covers your fix" >&2
-    echo "  2. If yes: comment on that PR instead of creating a new one" >&2
+    echo "  2. If yes: consider commenting on that PR instead" >&2
     echo "  3. If no: coordinate with the existing PR author" >&2
-    echo "  4. Only create a new PR if the existing one is stale (>24h no activity)" >&2
-    echo "" >&2
-    echo "Override: add 'Supersedes #<N>' to --body to bypass." >&2
+    echo "  4. Add 'Supersedes #<N>' to --body to suppress this warning." >&2
     echo "============================================" >&2
-    return 1
   fi
 
   return 0
@@ -313,8 +310,8 @@ PYEOF
 # All other commands pass through transparently without stream merging.
 case "\$1/\$2" in
   pr/create)
-    # Run churn guard before creating — exits 1 and prints explanation if blocked
-    churn_guard "\$@" || exit 1
+    # Run churn guard before creating — warns on file overlap but does not block
+    churn_guard "\$@"
 
     tmpout="\$(mktemp)"
     trap 'rm -f "\$tmpout"' EXIT
