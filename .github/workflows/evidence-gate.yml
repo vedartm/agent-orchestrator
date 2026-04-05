@@ -46,7 +46,7 @@ jobs:
 
           BODY=$(cat "$RUNNER_TEMP/pr_body.txt")
 
-          if printf '%s' "$BODY" | grep -qi '^[[:space:]]*## Evidence'; then
+          if printf '%s' "$BODY" | grep -qi '^[[:space:]]*## evidence'; then
             echo "found=true" >> "$GITHUB_OUTPUT"
           else
             echo "found=false" >> "$GITHUB_OUTPUT"
@@ -185,7 +185,7 @@ jobs:
           # then strip HTML comments so template placeholders (<!-- PASS | INSUFFICIENT -->)
           # cannot satisfy the verdict check on an unfilled template.
           EVIDENCE_SECTION=$(printf '%s' "$BODY" \
-            | sed -n '/^[[:space:]]*## [Ee]vidence/,$p' \
+            | sed -n '/^[[:space:]]*## evidence/I,$p' \
             | awk '
               { gsub(/<!--[^-]*(-[^-][^-]*)*-->/, "") }
               /<!--/ && !/-->/ { in_comment=1; next }
