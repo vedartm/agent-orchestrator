@@ -75,7 +75,7 @@ import { formatCommandError } from "../lib/cli-errors.js";
 import { detectOpenClawInstallation } from "../lib/openclaw-probe.js";
 import { applyOpenClawCredentials } from "../lib/credential-resolver.js";
 import { findProjectForDirectory } from "../lib/project-resolution.js";
-import { promptConfirm, promptSelect } from "../lib/prompts.js";
+import { promptSelect } from "../lib/prompts.js";
 
 const DEFAULT_PORT = 3000;
 const IS_TTY = Boolean(process.stdin.isTTY && process.stdout.isTTY);

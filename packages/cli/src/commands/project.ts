@@ -14,10 +14,8 @@ import { resolve } from "node:path";
 import type { Command } from "commander";
 import {
   loadGlobalConfig,
-  saveGlobalConfig,
   scaffoldGlobalConfig,
   unregisterProject,
-  deleteShadowFile,
   findProjectByPath,
   findGlobalConfigPath,
   loadConfig,
@@ -173,9 +171,7 @@ export function registerProjectCommand(program: Command): void {
       }
 
       // Remove from global config, then clean up shadow file
-      const updated = unregisterProject(globalConfig, projectId);
-      saveGlobalConfig(updated);
-      deleteShadowFile(projectId);
+      unregisterProject(projectId);
       const prefs = loadPreferences();
       if (prefs.defaultProjectId === projectId) {
         delete prefs.defaultProjectId;

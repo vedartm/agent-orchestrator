@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Session, RuntimeHandle, AgentLaunchConfig } from "@composio/ao-core";
 
@@ -846,9 +849,6 @@ describe("session ID capture from JSON stream", () => {
     const agent = create();
     agent.getLaunchCommand(makeLaunchConfig());
 
-    const fs = require("node:fs");
-    const os = require("node:os");
-    const path = require("node:path");
     const scriptPath = path.join(os.tmpdir(), "ao-opencode-scripts", "capture-session-id.js");
     const content = fs.readFileSync(scriptPath, "utf-8");
 
@@ -873,9 +873,6 @@ describe("title-based fallback sorting with newest-first", () => {
     const agent = create();
     agent.getLaunchCommand(makeLaunchConfig());
 
-    const fs = require("node:fs");
-    const os = require("node:os");
-    const path = require("node:path");
     const scriptPath = path.join(os.tmpdir(), "ao-opencode-scripts", "lookup-session-id.js");
     const content = fs.readFileSync(scriptPath, "utf-8");
 

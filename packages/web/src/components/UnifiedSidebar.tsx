@@ -1231,25 +1231,6 @@ const ATTENTION_STATUS_LABEL: Record<AttentionLevel, string> = {
   done: "done",
 };
 
-function AgentActivityDot({ attention }: { attention: AttentionLevel }) {
-  const color = AGENT_DOT_COLORS[attention];
-  const isAnimated = attention === "working";
-  return (
-    <span className="relative flex h-2 w-2 shrink-0">
-      {isAnimated && (
-        <span
-          className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60"
-          style={{ backgroundColor: color }}
-        />
-      )}
-      <span
-        className="relative inline-flex h-2 w-2 rounded-full"
-        style={{ backgroundColor: color }}
-      />
-    </span>
-  );
-}
-
 function StatusChip({ attention }: { attention: AttentionLevel }) {
   const label = ATTENTION_STATUS_LABEL[attention];
   const color = AGENT_DOT_COLORS[attention];

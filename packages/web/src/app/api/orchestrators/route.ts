@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     }
     const project = config.projects[projectId];
 
-    const agentErr = body.agent != null ? validateString(body.agent, "agent", 255) : null;
+    const agentErr = body.agent !== null && body.agent !== undefined ? validateString(body.agent, "agent", 255) : null;
     if (agentErr) {
       return NextResponse.json({ error: agentErr }, { status: 400 });
     }
