@@ -970,15 +970,16 @@ describe("multi-project start", () => {
   beforeEach(() => {
     globalConfigDir = join(tmpDir, ".ao-global");
     mkdirSync(join(globalConfigDir, "projects"), { recursive: true });
-    origGlobalEnv = process.env["AO_GLOBAL_CONFIG_PATH"];
-    process.env["AO_GLOBAL_CONFIG_PATH"] = join(globalConfigDir, "config.yaml");
+    // Override AO_GLOBAL_CONFIG (not _PATH) because findGlobalConfigPath checks it first
+    origGlobalEnv = process.env["AO_GLOBAL_CONFIG"];
+    process.env["AO_GLOBAL_CONFIG"] = join(globalConfigDir, "config.yaml");
   });
 
   afterEach(() => {
     if (origGlobalEnv !== undefined) {
-      process.env["AO_GLOBAL_CONFIG_PATH"] = origGlobalEnv;
+      process.env["AO_GLOBAL_CONFIG"] = origGlobalEnv;
     } else {
-      delete process.env["AO_GLOBAL_CONFIG_PATH"];
+      delete process.env["AO_GLOBAL_CONFIG"];
     }
   });
 

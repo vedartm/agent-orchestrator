@@ -350,10 +350,8 @@ describe("ao project remove", () => {
     mockPromptConfirm.mockResolvedValue(true);
     mockIsHumanCaller.mockReturnValue(false);
     mockSessionManager.list.mockResolvedValue([]);
-    mockUnregisterProject.mockImplementation((cfg: GlobalConfig, id: string) => {
-      const { [id]: _removed, ...rest } = cfg.projects;
-      const updated = { ...cfg, projects: rest };
-      return updated;
+    mockUnregisterProject.mockImplementation(() => {
+      // 1-arg version handles load, remove, save, and shadow delete internally
     });
     mockLoadConfig.mockReturnValue(makeGlobalConfig());
   });
@@ -364,9 +362,7 @@ describe("ao project remove", () => {
 
     await runCommand(["project", "remove", "my-project", "--force"]);
 
-    expect(mockUnregisterProject).toHaveBeenCalledWith(globalConfig, "my-project");
-    expect(mockSaveGlobalConfig).toHaveBeenCalled();
-    expect(mockDeleteShadowFile).toHaveBeenCalledWith("my-project");
+    expect(mockUnregisterProject).toHaveBeenCalledWith("my-project");
   });
 
   it("exits with error when global config is not found", async () => {
@@ -421,7 +417,7 @@ describe("ao project remove", () => {
     await runCommand(["project", "remove", "my-project", "--force"]);
 
     expect(mockPromptConfirm).not.toHaveBeenCalled();
-    expect(mockSaveGlobalConfig).toHaveBeenCalled();
+    expect(mockUnregisterProject).toHaveBeenCalledWith("my-project");
   });
 
   it("warns when ao start daemon is running after removal", async () => {
@@ -442,8 +438,7 @@ describe("ao project remove", () => {
 
     await runCommand(["project", "remove", "my-project", "--force"]);
 
-    expect(mockSaveGlobalConfig).toHaveBeenCalled();
-    expect(mockDeleteShadowFile).toHaveBeenCalledWith("my-project");
+    expect(mockUnregisterProject).toHaveBeenCalledWith("my-project");
   });
 
   it("proceeds when session manager throws", async () => {
@@ -452,7 +447,7 @@ describe("ao project remove", () => {
 
     await runCommand(["project", "remove", "my-project", "--force"]);
 
-    expect(mockSaveGlobalConfig).toHaveBeenCalled();
+    expect(mockUnregisterProject).toHaveBeenCalledWith("my-project");
   });
 
   it("clears the saved default when removing the default project", async () => {
@@ -476,10 +471,8 @@ describe("ao project rm", () => {
     mockPromptConfirm.mockResolvedValue(true);
     mockIsHumanCaller.mockReturnValue(false);
     mockSessionManager.list.mockResolvedValue([]);
-    mockUnregisterProject.mockImplementation((cfg: GlobalConfig, id: string) => {
-      const { [id]: _removed, ...rest } = cfg.projects;
-      const updated = { ...cfg, projects: rest };
-      return updated;
+    mockUnregisterProject.mockImplementation(() => {
+      // 1-arg version handles load, remove, save, and shadow delete internally
     });
     mockLoadConfig.mockReturnValue(makeGlobalConfig());
   });
@@ -490,8 +483,7 @@ describe("ao project rm", () => {
 
     await runCommand(["project", "rm", "my-project", "--force"]);
 
-    expect(mockUnregisterProject).toHaveBeenCalledWith(globalConfig, "my-project");
-    expect(mockSaveGlobalConfig).toHaveBeenCalled();
+    expect(mockUnregisterProject).toHaveBeenCalledWith("my-project");
   });
 });
 

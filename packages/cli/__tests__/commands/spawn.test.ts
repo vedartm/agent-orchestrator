@@ -67,6 +67,7 @@ vi.mock("../../src/lib/metadata.js", () => ({
 let tmpDir: string;
 let configPath: string;
 let cwdSpy: ReturnType<typeof vi.spyOn> | undefined;
+let previousAoGlobalConfig: string | undefined;
 
 import { Command } from "commander";
 import { registerSpawn } from "../../src/commands/spawn.js";
@@ -78,6 +79,19 @@ beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), "ao-spawn-test-"));
   configPath = join(tmpDir, "agent-orchestrator.yaml");
   writeFileSync(configPath, "projects: {}");
+
+  // Point global config to tmpDir so --project tests use a controlled registry
+  // instead of the real ~/.agent-orchestrator/config.yaml
+  previousAoGlobalConfig = process.env.AO_GLOBAL_CONFIG;
+  const globalDir = join(tmpDir, ".ao-global", "projects");
+  mkdirSync(globalDir, { recursive: true });
+  process.env.AO_GLOBAL_CONFIG = join(tmpDir, ".ao-global", "config.yaml");
+  // Write a minimal global config with the default test project
+  writeFileSync(
+    join(tmpDir, ".ao-global", "config.yaml"),
+    `projects:\n  my-app:\n    name: My App\n    path: ${join(tmpDir, "main-repo")}\n`,
+    "utf-8",
+  );
 
   mockConfigRef.current = {
     configPath,
@@ -127,6 +141,11 @@ beforeEach(() => {
 afterEach(() => {
   cwdSpy?.mockRestore();
   cwdSpy = undefined;
+  if (previousAoGlobalConfig === undefined) {
+    delete process.env.AO_GLOBAL_CONFIG;
+  } else {
+    process.env.AO_GLOBAL_CONFIG = previousAoGlobalConfig;
+  }
   const projectBaseDir = getProjectBaseDir(configPath, join(tmpDir, "main-repo"));
   if (projectBaseDir) {
     rmSync(projectBaseDir, { recursive: true, force: true });
@@ -531,24 +550,25 @@ describe("spawn command", () => {
   });
 
   it("uses --project flag to target a specific project", async () => {
-    // Add a second project
-    (mockConfigRef.current as Record<string, unknown>).projects = {
-      "my-app": {
-        name: "My App",
-        repo: "org/my-app",
-        path: join(tmpDir, "main-repo"),
-        defaultBranch: "main",
-        sessionPrefix: "app",
-      },
-      "other-proj": {
-        name: "Other Project",
-        repo: "org/other",
-        path: join(tmpDir, "other-repo"),
-        defaultBranch: "main",
-        sessionPrefix: "oth",
-      },
-    };
-    mkdirSync(join(tmpDir, "other-repo"), { recursive: true });
+    // Register other-proj in the global config so buildConfigFromGlobalRegistry finds it
+    const otherPath = join(tmpDir, "other-repo");
+    mkdirSync(otherPath, { recursive: true });
+    writeFileSync(
+      join(tmpDir, ".ao-global", "config.yaml"),
+      `projects:\n  my-app:\n    name: My App\n    path: ${join(tmpDir, "main-repo")}\n  other-proj:\n    name: Other Project\n    path: ${otherPath}\n`,
+      "utf-8",
+    );
+    // Write shadow file so buildEffectiveProjectConfig has behavior fields
+    writeFileSync(
+      join(tmpDir, ".ao-global", "projects", "other-proj.yaml"),
+      "repo: org/other\ndefaultBranch: main\nsessionPrefix: oth\n",
+      "utf-8",
+    );
+    writeFileSync(
+      join(tmpDir, ".ao-global", "projects", "my-app.yaml"),
+      "repo: org/my-app\ndefaultBranch: main\nsessionPrefix: app\n",
+      "utf-8",
+    );
 
     const fakeSession: Session = {
       id: "oth-1",
@@ -584,7 +604,7 @@ describe("spawn command", () => {
       .mocked(console.error)
       .mock.calls.map((c) => String(c[0]))
       .join("\n");
-    expect(errors).toContain("Unknown project");
+    expect(errors).toContain("is not registered");
   });
 });
 
