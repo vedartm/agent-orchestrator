@@ -22,5 +22,34 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Check for duplicate code
-        run: pnpm check:duplicates
+
+      - name: Run jscpd and capture output
+        id: jscpd
+        # Always run (don't stop on non-zero exit) so we can write the summary first.
+        # The exit code is preserved in steps.jscpd.outputs.exit_code and re-applied after.
+        run: |
+          set +e
+          OUTPUT=$(pnpm check:duplicates 2>&1)
+          EXIT_CODE=$?
+          set -e
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+          # Write job summary so clone details surface on the PR checks page
+          {
+            if [ $EXIT_CODE -ne 0 ]; then
+              echo "## ❌ Duplicate Code Check — threshold exceeded"
+            else
+              echo "## ✅ Duplicate Code Check — within threshold"
+            fi
+            echo ""
+            echo '```'
+            echo "$OUTPUT"
+            echo '```'
+            echo ""
+            echo "_Threshold: 3% of lines. Clones shown above even when passing._"
+            echo "_To suppress a false positive, add the files to \`.jscpd.json\` ignore list._"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Re-apply the original exit code so the step fails when threshold is crossed
+          exit $EXIT_CODE
