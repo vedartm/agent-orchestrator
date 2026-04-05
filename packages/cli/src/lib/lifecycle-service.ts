@@ -10,6 +10,21 @@ import { createHash } from "node:crypto";
 import type { LifecycleManager, OrchestratorConfig } from "@composio/ao-core";
 import { getLifecycleManager } from "./create-session-manager.js";
 
+function stableSerialize(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, nested]) => `${JSON.stringify(key)}:${stableSerialize(nested)}`)
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
 /**
  * Build a deterministic fingerprint from the config content that matters to
  * the lifecycle manager: the config file path plus each project's path and
@@ -21,13 +36,11 @@ import { getLifecycleManager } from "./create-session-manager.js";
  * the result.
  */
 function buildFingerprint(config: OrchestratorConfig): string {
-  const projectsDigest = JSON.stringify(
-    Object.entries(config.projects ?? {})
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([id, p]) => [id, p.path, p.agent, p.runtime, p.sessionPrefix]),
-  );
+  const projectsDigest = stableSerialize(config.projects ?? {});
+  const defaultsDigest = stableSerialize(config.defaults ?? {});
   return createHash("sha256")
     .update(config.configPath ?? "")
+    .update(defaultsDigest)
     .update(projectsDigest)
     .digest("hex")
     .slice(0, 16);

@@ -647,6 +647,18 @@ export interface SCM {
   /** Get automated review comments (bots, linters, security scanners) */
   getAutomatedComments(pr: PRInfo): Promise<AutomatedComment[]>;
 
+  // --- Listing ---
+
+  /** List open pull/merge requests for a project. Returns empty array when not implemented. */
+  listOpenPRs?(project: ProjectConfig, options?: { limit?: number }): Promise<Array<{
+    number: number;
+    title: string;
+    author: string;
+    branch: string;
+    url: string;
+    updatedAt?: string;
+  }>>;
+
   // --- Merge Readiness ---
 
   /** Check if PR is ready to merge */

@@ -1187,6 +1187,7 @@ export function registerStart(program: Command): void {
     .option("--no-dashboard", "Skip starting the dashboard server")
     .option("--no-orchestrator", "Skip starting the orchestrator agent")
     .option("--rebuild", "Clean and rebuild dashboard before starting")
+    .option("--interactive", "Prompt to configure agent settings before startup")
     .action(
       async (
         projectArg?: string,
@@ -1194,6 +1195,7 @@ export function registerStart(program: Command): void {
           dashboard?: boolean;
           orchestrator?: boolean;
           rebuild?: boolean;
+          interactive?: boolean;
         },
       ) => {
         try {

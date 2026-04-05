@@ -4,7 +4,7 @@ import { z } from "zod";
 export const RegisterProjectSchema = z.object({
   path: z.string().min(1, "Path is required"),
   name: z.string().optional(),
-  configProjectKey: z.string().optional(),
+  configProjectKey: z.string().regex(/^[a-zA-Z0-9_-]+$/, "Project key must be alphanumeric, hyphens, or underscores only").optional(),
 });
 export type RegisterProjectInput = z.infer<typeof RegisterProjectSchema>;
 

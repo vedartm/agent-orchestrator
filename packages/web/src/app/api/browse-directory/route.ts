@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 
     if (!isWithinDirectory(homePath, dirPath)) {
       return NextResponse.json(
-        { error: `Path is outside the allowed directory: ${homePath}` },
+        { error: "Path is outside the allowed directory" },
         { status: 403 },
       );
     }
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     const dirStat = await stat(dirPath).catch(() => null);
     if (!dirStat?.isDirectory()) {
       return NextResponse.json(
-        { error: `Not a directory: ${dirPath}` },
+        { error: "Not a directory" },
         { status: 400 },
       );
     }
@@ -63,7 +63,11 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       path: dirPath,
-      parent: dirPath === homePath ? null : resolve(dirPath, ".."),
+      parent: dirPath === homePath
+        ? null
+        : isWithinDirectory(homePath, resolve(dirPath, ".."))
+          ? resolve(dirPath, "..")
+          : null,
       directories,
       isGitRepo: hasGit,
       hasConfig,

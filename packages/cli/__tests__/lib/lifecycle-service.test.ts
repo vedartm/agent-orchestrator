@@ -115,6 +115,28 @@ describe("lifecycle-service (in-process)", () => {
       expect(status.started).toBe(true);
     });
 
+    it("restarts manager when nested project settings change", async () => {
+      await ensureLifecycleWorker(config, "my-project");
+      mockGetLifecycleManager.mockClear();
+      mockLifecycleStart.mockClear();
+
+      const updatedConfig = {
+        ...config,
+        projects: {
+          "my-project": {
+            ...config.projects["my-project"],
+            worker: { agent: "codex" },
+          },
+        },
+      } as unknown as OrchestratorConfig;
+
+      const status = await ensureLifecycleWorker(updatedConfig, "my-project");
+
+      expect(mockLifecycleStop).toHaveBeenCalledTimes(1);
+      expect(mockGetLifecycleManager).toHaveBeenCalledTimes(1);
+      expect(status.started).toBe(true);
+    });
+
     it("does NOT restart manager when config content is identical", async () => {
       await ensureLifecycleWorker(config, "my-project");
       mockGetLifecycleManager.mockClear();

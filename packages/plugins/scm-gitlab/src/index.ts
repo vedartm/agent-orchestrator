@@ -504,6 +504,49 @@ function createGitLabSCM(config?: Record<string, unknown>): SCM {
       }
     },
 
+    async listOpenPRs(project: ProjectConfig, options?: { limit?: number }) {
+      const projectRepo = project.repo;
+      if (!projectRepo) return [];
+
+      try {
+        const raw = await glab(
+          [
+            "mr",
+            "list",
+            "--repo",
+            projectRepo,
+            "-F",
+            "json",
+            "-P",
+            String(options?.limit ?? 50),
+          ],
+          resolveHostname(),
+        );
+
+        const mrs = parseJSON<
+          Array<{
+            iid: number;
+            web_url: string;
+            title: string;
+            source_branch: string;
+            author?: { username?: string };
+            updated_at?: string;
+          }>
+        >(raw, "listOpenPRs");
+
+        return mrs.map((mr) => ({
+          number: mr.iid,
+          title: mr.title,
+          author: mr.author?.username ?? "unknown",
+          branch: mr.source_branch,
+          url: mr.web_url,
+          updatedAt: mr.updated_at,
+        }));
+      } catch {
+        return [];
+      }
+    },
+
     async getPRState(pr: PRInfo): Promise<PRState> {
       const raw = await glab(
         ["mr", "view", String(pr.number), "--repo", repoFlag(pr), "-F", "json"],

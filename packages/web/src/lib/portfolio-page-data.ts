@@ -46,8 +46,12 @@ export async function loadPortfolioPageData(): Promise<{
   const sessions: DashboardSession[] = [];
   let orphanedSessionCount = 0;
 
+  const disabledProjectIds = new Set<string>();
   for (const project of portfolio) {
-    if (project.enabled === false) continue;
+    if (project.enabled === false) {
+      disabledProjectIds.add(project.id);
+      continue;
+    }
     summaries.set(project.id, {
       id: project.id,
       name: project.name,
@@ -65,7 +69,10 @@ export async function loadPortfolioPageData(): Promise<{
 
     const summary = summaries.get(item.project.id);
     if (!summary) {
-      orphanedSessionCount++;
+      // Only count as orphaned if the project is truly missing, not just disabled
+      if (!disabledProjectIds.has(item.project.id)) {
+        orphanedSessionCount++;
+      }
       continue;
     }
 

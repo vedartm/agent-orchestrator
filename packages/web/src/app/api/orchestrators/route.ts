@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { generateOrchestratorPrompt } from "@composio/ao-core";
 import { getServices } from "@/lib/services";
-import { validateIdentifier, validateConfiguredProject } from "@/lib/validation";
+import { validateIdentifier, validateConfiguredProject, validateString } from "@/lib/validation";
 
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
@@ -23,6 +23,10 @@ export async function POST(request: NextRequest) {
     }
     const project = config.projects[projectId];
 
+    const agentErr = body.agent != null ? validateString(body.agent, "agent", 255) : null;
+    if (agentErr) {
+      return NextResponse.json({ error: agentErr }, { status: 400 });
+    }
     const agent = typeof body.agent === "string" ? body.agent : undefined;
     const systemPrompt = generateOrchestratorPrompt({ config, projectId, project });
     const session = await sessionManager.spawnOrchestrator({ projectId, systemPrompt, agent });

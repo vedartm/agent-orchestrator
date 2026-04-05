@@ -88,7 +88,12 @@ export function invalidateServicesCache(): void {
 function loadCanonicalConfig(): OrchestratorConfig {
   const globalConfigPath = getGlobalConfigPath();
   if (existsSync(globalConfigPath)) {
-    return loadConfig(globalConfigPath);
+    try {
+      return loadConfig(globalConfigPath);
+    } catch {
+      // Global config exists but is empty or invalid — fall through to
+      // local config search so repos with a valid local config still work.
+    }
   }
 
   return loadConfig();

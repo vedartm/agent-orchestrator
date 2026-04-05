@@ -313,6 +313,14 @@ describe("start command — project resolution", () => {
     expect(output).toContain("Startup complete");
   });
 
+  it("accepts --interactive and completes startup", async () => {
+    mockConfigRef.current = makeConfig({ "my-app": makeProject() });
+
+    await expect(
+      program.parseAsync(["node", "test", "start", "--interactive", "--no-dashboard", "--no-orchestrator"]),
+    ).resolves.toBe(program);
+  });
+
   it("uses explicit project arg when given", async () => {
     mockConfigRef.current = makeConfig({
       frontend: makeProject({ name: "Frontend", sessionPrefix: "fe" }),

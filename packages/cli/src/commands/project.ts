@@ -176,6 +176,11 @@ export function registerProjectCommand(program: Command): void {
       const updated = unregisterProject(globalConfig, projectId);
       saveGlobalConfig(updated);
       deleteShadowFile(projectId);
+      const prefs = loadPreferences();
+      if (prefs.defaultProjectId === projectId) {
+        delete prefs.defaultProjectId;
+        savePreferences(prefs);
+      }
 
       console.log(chalk.green(`✓ Removed "${projectId}" from global config`));
       console.log(chalk.dim("  Local config (if any) was NOT deleted."));

@@ -551,6 +551,46 @@ function createGitHubSCM(): SCM {
       }
     },
 
+    async listOpenPRs(project: ProjectConfig, options?: { limit?: number }) {
+      const projectRepo = project.repo;
+      if (!projectRepo) return [];
+
+      try {
+        const raw = await gh([
+          "pr",
+          "list",
+          "--repo",
+          projectRepo,
+          "--limit",
+          String(options?.limit ?? 50),
+          "--state",
+          "open",
+          "--json",
+          "number,title,author,headRefName,url,updatedAt",
+        ]);
+
+        const prs: Array<{
+          number: number;
+          title: string;
+          author?: { login?: string };
+          headRefName: string;
+          url: string;
+          updatedAt?: string;
+        }> = JSON.parse(raw);
+
+        return prs.map((pr) => ({
+          number: pr.number,
+          title: pr.title,
+          author: pr.author?.login ?? "unknown",
+          branch: pr.headRefName,
+          url: pr.url,
+          updatedAt: pr.updatedAt,
+        }));
+      } catch {
+        return [];
+      }
+    },
+
     async resolvePR(reference: string, project: ProjectConfig): Promise<PRInfo> {
       const projectRepo = project.repo;
       if (!projectRepo) {

@@ -454,6 +454,15 @@ describe("ao project remove", () => {
 
     expect(mockSaveGlobalConfig).toHaveBeenCalled();
   });
+
+  it("clears the saved default when removing the default project", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig(["my-project"]));
+    mockLoadPreferences.mockReturnValue({ defaultProjectId: "my-project" });
+
+    await runCommand(["project", "remove", "my-project", "--force"]);
+
+    expect(mockSavePreferences).toHaveBeenCalledWith({});
+  });
 });
 
 // ---------------------------------------------------------------------------

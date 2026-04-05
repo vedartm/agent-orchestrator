@@ -117,8 +117,8 @@ describe("getAllProjects", () => {
 
     const { getAllProjects } = await import("../project-name");
     expect(getAllProjects()).toEqual([
-      { id: "my-app", name: "My App" },
-      { id: "docs", name: "docs" },
+      { id: "my-app", name: "My App", sessionPrefix: "my-app" },
+      { id: "docs", name: "docs", sessionPrefix: "docs" },
     ]);
   });
 

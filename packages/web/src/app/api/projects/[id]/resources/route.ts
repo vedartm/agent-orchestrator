@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { NextResponse } from "next/server";
-import { resolveProjectConfig, type Tracker } from "@composio/ao-core";
+import { resolveProjectConfig, type SCM, type Tracker } from "@composio/ao-core";
 import { getPortfolioServices } from "@/lib/portfolio-services";
 import { getServices } from "@/lib/services";
 
@@ -34,45 +34,10 @@ interface IssueResource {
 
 const BRANCH_FIELD_DELIMITER = "\u001f";
 
-interface GitHubPullRequestListItem {
-  number: number;
-  title: string;
-  author?: { login?: string };
-  headRefName: string;
-  url: string;
-  updatedAt?: string;
-}
-
 function matchesQuery(values: Array<string | undefined>, query: string): boolean {
   if (!query) return true;
   const normalized = query.toLowerCase();
   return values.some((value) => value?.toLowerCase().includes(normalized));
-}
-
-function isGitHubPullRequestListItem(value: unknown): value is GitHubPullRequestListItem {
-  if (!value || typeof value !== "object") return false;
-  const record = value as Record<string, unknown>;
-  const author = record["author"];
-  return (
-    typeof record["number"] === "number" &&
-    typeof record["title"] === "string" &&
-    typeof record["headRefName"] === "string" &&
-    typeof record["url"] === "string" &&
-    (record["updatedAt"] === undefined || typeof record["updatedAt"] === "string") &&
-    (author === undefined ||
-      (typeof author === "object" &&
-        author !== null &&
-        (((author as Record<string, unknown>)["login"] === undefined) ||
-          typeof (author as Record<string, unknown>)["login"] === "string")))
-  );
-}
-
-function parsePullRequests(stdout: string): GitHubPullRequestListItem[] {
-  const parsed: unknown = JSON.parse(stdout);
-  if (!Array.isArray(parsed)) {
-    throw new Error("Expected GitHub CLI to return an array of pull requests");
-  }
-  return parsed.filter(isGitHubPullRequestListItem);
 }
 
 function parseBranchLine(line: string): BranchResource | null {
@@ -88,35 +53,22 @@ function parseBranchLine(line: string): BranchResource | null {
   };
 }
 
-async function listPullRequests(repo?: string, query = ""): Promise<PullRequestResource[]> {
-  if (!repo) return [];
+async function listPullRequests(
+  scm: SCM | null,
+  project: Parameters<NonNullable<SCM["listOpenPRs"]>>[0] | null,
+  query = "",
+): Promise<PullRequestResource[]> {
+  if (!scm?.listOpenPRs || !project) return [];
 
   try {
-    const { stdout } = await execFileAsync(
-      "gh",
-      [
-        "pr",
-        "list",
-        "--repo",
-        repo,
-        "--limit",
-        "50",
-        "--state",
-        "open",
-        "--json",
-        "number,title,author,headRefName,url,updatedAt",
-      ],
-      { timeout: 15_000 },
-    );
-    const prs = parsePullRequests(stdout);
-
+    const prs = await scm.listOpenPRs(project, { limit: 50 });
     return prs
       .map((pr) => ({
         id: String(pr.number),
         number: pr.number,
         title: pr.title,
-        author: pr.author?.login ?? "unknown",
-        branch: pr.headRefName,
+        author: pr.author,
+        branch: pr.branch,
         url: pr.url,
         updatedAt: pr.updatedAt,
       }))
@@ -204,12 +156,15 @@ export async function GET(
     }
 
     const { registry } = await getServices();
+    const scm = resolved.project.scm?.plugin
+      ? (registry.get<SCM>("scm", resolved.project.scm.plugin) ?? null)
+      : null;
     const tracker = resolved.project.tracker?.plugin
       ? (registry.get<Tracker>("tracker", resolved.project.tracker.plugin) ?? undefined)
       : undefined;
 
     const [pullRequests, branches, issues] = await Promise.all([
-      listPullRequests(portfolioProject.repo, query),
+      listPullRequests(scm, resolved.project, query),
       listBranches(portfolioProject.repoPath, query),
       listIssues(tracker, resolved.project, query),
     ]);

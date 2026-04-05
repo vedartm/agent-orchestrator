@@ -172,12 +172,12 @@ function ProjectCard({ project }: { project: PortfolioProjectSummary }) {
 }
 
 const LEVEL_COLORS: Record<AttentionLevel, string> = {
-  merge: "#22c55e",
-  respond: "#f1be64",
-  review: "#06b6d4",
-  pending: "#5B7EF8",
-  working: "#22c55e",
-  done: "#3a4252",
+  merge: "var(--color-status-working)",
+  respond: "var(--color-status-attention)",
+  review: "var(--color-status-review)",
+  pending: "var(--color-accent)",
+  working: "var(--color-status-working)",
+  done: "var(--color-text-tertiary)",
 };
 
 // ---------------------------------------------------------------------------

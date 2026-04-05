@@ -31,6 +31,7 @@ vi.mock("@composio/ao-core", () => ({ configToYaml: vi.fn(() => "yaml"), findCon
 vi.mock("@/lib/api-schemas", async () => { const { z } = await import("zod"); return { CloneProjectSchema: z.object({ url: z.string().url("A valid Git URL is required"), location: z.string().min(1, "Location is required") }) }; });
 vi.mock("@/lib/local-project-config", () => ({ extractFlatLocalConfig: vi.fn(() => ({})) }));
 vi.mock("@/lib/path-security", () => ({ assertPathWithinHome: vi.fn(async (p: string) => p) }));
+vi.mock("@/lib/legacy-config-migration", () => ({ migrateLegacyConfigForPortfolioRegistration: vi.fn(() => ({ migrated: false })) }));
 vi.mock("@/lib/project-registration", () => ({ registerAndResolveProject: vi.fn(() => ({ id: "my-repo", name: "my-repo" })) }));
 
 import { POST } from "../route";
@@ -74,18 +75,18 @@ describe("POST /api/projects/clone", () => {
     expect(res.status).toBe(500);
   });
 
-  it("returns 500 when target path exists and is not a directory", async () => {
+  it("returns 400 when target path exists and is not a directory", async () => {
     mockStat.mockImplementation(async () => ({ isDirectory: () => false }));
     const res = await POST(new Request("http://localhost/api/projects/clone", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: "https://github.com/acme/my-repo", location: "/tmp/projects" }) }));
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.error).toContain("not a directory");
   });
 
-  it("returns 500 when target directory already exists", async () => {
+  it("returns 409 when target directory already exists", async () => {
     mockStat.mockImplementation(async () => ({ isDirectory: () => true }));
     const res = await POST(new Request("http://localhost/api/projects/clone", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: "https://github.com/acme/my-repo", location: "/tmp/projects" }) }));
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(409);
     const data = await res.json();
     expect(data.error).toContain("already exists");
   });

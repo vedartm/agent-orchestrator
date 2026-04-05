@@ -286,13 +286,15 @@ export type LocalProjectConfig = z.infer<typeof LocalProjectConfigSchema>;
 /**
  * Discover the global config file path.
  *
- * Discovery order:
- * 1. AO_GLOBAL_CONFIG_PATH env var (dedicated to global config — avoids
- *    collision with AO_CONFIG_PATH which points to local/legacy configs)
- * 2. $XDG_CONFIG_HOME/agent-orchestrator/config.yaml (if XDG_CONFIG_HOME set)
- * 3. ~/.agent-orchestrator/config.yaml (fallback)
+ * Delegates to getGlobalConfigPath() so both functions use the same env var
+ * (AO_GLOBAL_CONFIG). AO_GLOBAL_CONFIG_PATH is also accepted for backward
+ * compatibility but AO_GLOBAL_CONFIG takes precedence.
  */
 export function findGlobalConfigPath(): string {
+  if (process.env["AO_GLOBAL_CONFIG"]) {
+    return resolve(process.env["AO_GLOBAL_CONFIG"]);
+  }
+
   if (process.env["AO_GLOBAL_CONFIG_PATH"]) {
     return resolve(process.env["AO_GLOBAL_CONFIG_PATH"]);
   }

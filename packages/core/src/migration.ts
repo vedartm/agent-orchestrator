@@ -99,15 +99,15 @@ export function buildEffectiveConfig(
       const localPath = findLocalConfigPath(expandedPath);
       if (localPath) {
         effectiveConfigPath = localPath;
-        try {
-          const localConfig = loadLocalProjectConfig(localPath);
+        const localConfig = loadLocalProjectConfig(localPath);
+        if (localConfig) {
           behaviorFields = localConfig as Record<string, unknown>;
-        } catch (err) {
-          // Invalid local config — fall back to shadow file and warn the caller
-          // so the user knows their local config is NOT being applied.
+        } else {
+          // loadLocalProjectConfig returns null for malformed, empty, or legacy
+          // configs (it never throws). Fall back to the shadow file so one bad
+          // local config doesn't crash config loading for every project.
           warnings?.push(
-            `Project "${projectId}": local config at ${localPath} is invalid ` +
-              `(${err instanceof Error ? err.message : String(err)}); ` +
+            `Project "${projectId}": local config at ${localPath} could not be parsed; ` +
               `using shadow file instead. Fix the local config and re-run \`ao start\`.`,
           );
           behaviorFields = loadShadowOrEmpty(projectId);

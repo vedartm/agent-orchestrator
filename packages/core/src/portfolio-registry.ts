@@ -18,13 +18,16 @@ import {
   getPreferencesPath,
   getRegisteredPath,
   generateSessionPrefix,
+  expandHome,
 } from "./paths.js";
 import {
   getGlobalConfigPath,
   loadGlobalConfig,
   loadLocalProjectConfig,
+  loadShadowFile,
   registerProjectInGlobalConfig,
   saveGlobalConfig,
+  deleteShadowFile,
 } from "./global-config.js";
 import { atomicWriteFileSync } from "./atomic-write.js";
 import { loadConfig } from "./config.js";
@@ -230,23 +233,41 @@ function projectFromGlobalConfig(): PortfolioProject[] {
   if (!globalConfig) return [];
 
   const globalConfigPath = getGlobalConfigPath();
-  return Object.entries(globalConfig.projects).map(([id, entry]) => ({
-    id,
-    name: (typeof entry.name === "string" && entry.name.length > 0) ? entry.name : id,
-    configPath: globalConfigPath,
-    configProjectKey: id,
-    repoPath: entry.path,
-    repo: typeof entry.repo === "string" ? entry.repo : undefined,
-    defaultBranch: typeof entry.defaultBranch === "string" ? entry.defaultBranch : undefined,
-    sessionPrefix:
-      typeof entry.sessionPrefix === "string" && entry.sessionPrefix.length > 0
+  return Object.entries(globalConfig.projects).map(([id, entry]) => {
+    // Hydrate behavior fields (repo, defaultBranch, etc.) from shadow files.
+    // The global config only stores identity fields; behavior lives in per-project
+    // shadow files at ~/.agent-orchestrator/projects/{id}.yaml.
+    const shadow = loadShadowFile(id);
+    const repo =
+      (typeof entry.repo === "string" ? entry.repo : undefined) ??
+      (shadow && typeof shadow["repo"] === "string" ? shadow["repo"] : undefined);
+    const defaultBranch =
+      (typeof entry.defaultBranch === "string" ? entry.defaultBranch : undefined) ??
+      (shadow && typeof shadow["defaultBranch"] === "string" ? shadow["defaultBranch"] : undefined);
+    const sessionPrefix =
+      (typeof entry.sessionPrefix === "string" && entry.sessionPrefix.length > 0
         ? entry.sessionPrefix
-        : generateSessionPrefix(id),
-    source: "config",
-    enabled: true,
-    pinned: false,
-    lastSeenAt: new Date().toISOString(),
-  }));
+        : undefined) ??
+      (shadow && typeof shadow["sessionPrefix"] === "string" && (shadow["sessionPrefix"] as string).length > 0
+        ? shadow["sessionPrefix"] as string
+        : undefined) ??
+      generateSessionPrefix(id);
+
+    return {
+      id,
+      name: (typeof entry.name === "string" && entry.name.length > 0) ? entry.name : id,
+      configPath: globalConfigPath,
+      configProjectKey: id,
+      repoPath: entry.path,
+      repo,
+      defaultBranch,
+      sessionPrefix,
+      source: "config",
+      enabled: true,
+      pinned: false,
+      lastSeenAt: new Date().toISOString(),
+    };
+  });
 }
 
 function fallbackPortfolioFromLoadedConfig(): PortfolioProject[] {
@@ -305,10 +326,26 @@ export function registerProject(repoPath: string, configProjectKey?: string, dis
   }
 
   const projectId = configProjectKey ?? basename(normalizedRepoPath);
+
+  // Guard against silent ID collision: reject if an existing project with the
+  // same ID points to a different directory. Without this, a second repo that
+  // derives the same ID (e.g. two repos both named "api") would silently
+  // overwrite the first project's registry entry.
+  const globalConfig = loadGlobalConfig();
+  if (globalConfig?.projects[projectId]) {
+    const existingPath = normalizePath(expandHome(globalConfig.projects[projectId].path));
+    if (existingPath !== normalizedRepoPath) {
+      throw new Error(
+        `Project ID "${projectId}" is already registered at ${existingPath}. ` +
+        `Provide a unique configProjectKey to avoid collision.`,
+      );
+    }
+  }
+
   registerProjectInGlobalConfig(projectId, displayName ?? projectId, normalizedRepoPath, localConfig);
 }
 
-/** Remove a project from the canonical global config registry. */
+/** Remove a project from the canonical global config registry and clean up its shadow file. */
 export function unregisterProject(projectId: string): void {
   const globalConfig = loadGlobalConfig();
   if (!globalConfig?.projects[projectId]) return;
@@ -321,6 +358,7 @@ export function unregisterProject(projectId: string): void {
   }
 
   saveGlobalConfig(globalConfig);
+  deleteShadowFile(projectId);
 }
 
 /** Refresh is a no-op for the global-registry-backed portfolio. */

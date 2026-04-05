@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
         await ensureGitRepo(dirPath);
         await writeFile(
           join(dirPath, "agent-orchestrator.yaml"),
-          configToYaml(buildFlatLocalConfig()),
+          configToYaml(buildFlatLocalConfig(inferredName)),
           "utf-8",
         );
         localConfig = join(dirPath, "agent-orchestrator.yaml");
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
 
           await writeFile(
             join(dirPath, "agent-orchestrator.yaml"),
-            configToYaml(buildFlatLocalConfig()),
+            configToYaml(buildFlatLocalConfig(inferredName)),
             "utf-8",
           );
           localConfig = join(dirPath, "agent-orchestrator.yaml");

@@ -14,8 +14,8 @@ vi.mock("node:os", async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   return {
     ...actual,
-    default: { ...actual, homedir: vi.fn(() => "/home/testuser") },
-    homedir: vi.fn(() => "/home/testuser"),
+    default: { ...actual, homedir: vi.fn(() => "/fakehome/testuser") },
+    homedir: vi.fn(() => "/fakehome/testuser"),
   };
 });
 
@@ -23,7 +23,7 @@ import { isWithinDirectory, getHomePath, resolveHomeScopedPath, assertPathWithin
 
 beforeEach(() => {
   vi.mocked(realpath).mockImplementation((p) => Promise.resolve(p as string));
-  vi.mocked(homedir).mockReturnValue("/home/testuser");
+  vi.mocked(homedir).mockReturnValue("/fakehome/testuser");
 });
 
 describe("isWithinDirectory", () => {
@@ -47,7 +47,7 @@ describe("isWithinDirectory", () => {
 describe("getHomePath", () => {
   it("returns the resolved home directory", async () => {
     const result = await getHomePath();
-    expect(result).toBe("/home/testuser");
+    expect(result).toBe("/fakehome/testuser");
   });
 
   it("falls back to resolve when realpath fails", async () => {
@@ -60,13 +60,13 @@ describe("getHomePath", () => {
 describe("resolveHomeScopedPath", () => {
   it("returns home path when no rawPath is provided", async () => {
     const result = await resolveHomeScopedPath();
-    expect(result.homePath).toBe("/home/testuser");
-    expect(result.resolvedPath).toBe("/home/testuser");
+    expect(result.homePath).toBe("/fakehome/testuser");
+    expect(result.resolvedPath).toBe("/fakehome/testuser");
   });
 
   it("returns home path when null is provided", async () => {
     const result = await resolveHomeScopedPath(null);
-    expect(result.homePath).toBe("/home/testuser");
+    expect(result.homePath).toBe("/fakehome/testuser");
   });
 
   it("resolves absolute path as-is", async () => {
@@ -76,14 +76,14 @@ describe("resolveHomeScopedPath", () => {
 
   it("joins relative path with home directory", async () => {
     const result = await resolveHomeScopedPath("relative/path");
-    expect(result.resolvedPath).toBe("/home/testuser/relative/path");
+    expect(result.resolvedPath).toBe("/fakehome/testuser/relative/path");
   });
 });
 
 describe("assertPathWithinHome", () => {
   it("returns resolved path when within home", async () => {
-    const result = await assertPathWithinHome("/home/testuser/projects");
-    expect(result).toBe("/home/testuser/projects");
+    const result = await assertPathWithinHome("/fakehome/testuser/projects");
+    expect(result).toBe("/fakehome/testuser/projects");
   });
 
   it("throws when path is outside home", async () => {
