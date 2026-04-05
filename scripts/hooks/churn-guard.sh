@@ -83,7 +83,7 @@ cmd = sys.stdin.read()
 # Extract body content from --body '...' or --body \"...\" or -f body='...' or heredoc body
 body = ''
 # --body or -b flag with double-quoted value (supports --body=, --body , -b )
-m = re.search(r'(?:--body|-b)[=\s]\x22((?:[^\x22\\\\]|\\\\.)*)\x22', cmd, re.DOTALL)
+m = re.search(r'(?:--body|-b)[=\s]\x22((?:[^\x22\\\\]|\\.)*)\x22', cmd, re.DOTALL)
 if m:
     body = m.group(1)
 # --body or -b flag with single-quoted value (supports --body=, --body , -b )
@@ -93,7 +93,7 @@ if not body:
         body = m.group(1)
 # -f body=... or --field body=... (double-quoted)
 if not body:
-    m = re.search(r'(?:-[fF]|--field)\s+body=\x22((?:[^\x22\\\\]|\\\\.)*)\x22', cmd, re.DOTALL)
+    m = re.search(r'(?:-[fF]|--field)\s+body=\x22((?:[^\x22\\\\]|\\.)*)\x22', cmd, re.DOTALL)
     if m:
         body = m.group(1)
 # -f body=... (single-quoted)

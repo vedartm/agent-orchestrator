@@ -80,6 +80,7 @@ jobs:
           # and list-bullet format "- **Claim class**: ...".
           CLAIM=$(printf '%s' "$BODY" \
             | grep -i '\*\*Claim class' | grep -v '^- ' | head -1 \
+            | sed 's/<!--[^>]*-->//g' \
             | tr -d '*' \
             | sed 's/.*Claim class: *//I' \
             | sed 's/(.*//' \
@@ -91,6 +92,7 @@ jobs:
           if [ -z "$CLAIM" ]; then
             CLAIM=$(printf '%s' "$BODY" \
               | grep -i '^-.*\*\*Claim class' | head -1 \
+              | sed 's/<!--[^>]*-->//g' \
               | tr -d '*' \
               | sed 's/.*Claim class: *//I' \
               | sed 's/(.*//' \
