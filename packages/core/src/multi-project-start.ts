@@ -7,10 +7,13 @@
  */
 
 import { resolve, basename } from "node:path";
+import { readFileSync } from "node:fs";
+import { parse as parseYaml } from "yaml";
 import type { OrchestratorConfig } from "./types.js";
 import {
   type GlobalConfig,
   type GlobalProjectEntry,
+  type LocalProjectConfig,
   loadGlobalConfig,
   saveGlobalConfig,
   registerProject,
@@ -18,6 +21,7 @@ import {
   findLocalConfigPath,
   findLocalConfigUpwards,
   loadLocalProjectConfig,
+  isOldConfigFormat,
   computeShadow,
   syncShadow,
   saveShadowFile,
@@ -110,7 +114,32 @@ export function registerNewProject(
   if (configMode === "hybrid") {
     const localPath = findLocalConfigPath(projectPath);
     if (localPath) {
-      const localConfig = loadLocalProjectConfig(localPath);
+      let localConfig = loadLocalProjectConfig(localPath);
+      if (!localConfig) {
+        // loadLocalProjectConfig returns null for old-format configs with a
+        // `projects:` wrapper. Try to extract the project entry from inside.
+        try {
+          const raw = parseYaml(readFileSync(localPath, "utf-8"));
+          if (isOldConfigFormat(raw)) {
+            const projects = (raw as Record<string, unknown>)["projects"] as Record<string, Record<string, unknown>>;
+            const entries = Object.values(projects).filter((e) => e && typeof e === "object");
+            const byPath = entries.find(
+              (e) => e["path"] && resolve(expandHome(e["path"] as string)) === resolve(projectPath),
+            );
+            const candidate = byPath ?? entries[0];
+            if (candidate) {
+              // Strip identity fields (path, name) — computeShadow handles the rest
+              const { path: _p, name: _n, ...behavior } = candidate;
+              void _p;
+              void _n;
+              localConfig = behavior as LocalProjectConfig;
+              messages.push({ level: "info", text: "Migrated settings from old-format config" });
+            }
+          }
+        } catch {
+          // Parse failed — fall through to empty shadow
+        }
+      }
       if (!localConfig) {
         messages.push({ level: "warn", text: `Could not parse local config at ${localPath}` });
         pendingShadow = { repo: "", defaultBranch: "main" };

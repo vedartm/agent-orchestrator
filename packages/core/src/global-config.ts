@@ -874,7 +874,13 @@ export function isProjectShadowStale(projectId: string, globalConfig: GlobalConf
     | undefined;
   if (!entry) return false;
 
-  const syncedAt = entry._shadowSyncedAt;
+  // Check both the global config entry (legacy syncProjectShadow writes here)
+  // and the per-project shadow file (new syncShadow writes here).
+  let syncedAt = entry._shadowSyncedAt;
+  if (!syncedAt) {
+    const shadow = loadShadowFile(projectId);
+    syncedAt = (shadow?.["_shadowSyncedAt"] as number) ?? undefined;
+  }
   if (!syncedAt) return true; // Never synced
 
   const projectPath = entry.path as string;

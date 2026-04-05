@@ -969,7 +969,7 @@ async function runStartup(
   config: OrchestratorConfig,
   projectId: string,
   project: ProjectConfig,
-  opts?: { dashboard?: boolean; orchestrator?: boolean; rebuild?: boolean; interactive?: boolean },
+  opts?: { dashboard?: boolean; orchestrator?: boolean; rebuild?: boolean; interactive?: boolean; pin?: boolean },
 ): Promise<number> {
   // Ensure tmux is available before doing anything — covers all entry paths
   // (normal start, URL start, retry with existing config)
@@ -1043,8 +1043,10 @@ async function runStartup(
       spinner.start("Starting lifecycle worker");
       lifecycleStatus = await ensureLifecycleWorker(config, projectId);
       // Pin the lifecycle timer so this daemon process stays alive.
-      // Short-lived callers (ao spawn, attachToRunning) never pin — they exit naturally.
-      pinLifecycleWorker(projectId);
+      // Short-lived callers (ao spawn, attachToRunning) pass pin:false — they exit naturally.
+      if (opts?.pin !== false) {
+        pinLifecycleWorker(projectId);
+      }
       spinner.succeed(
         lifecycleStatus.started
           ? `Lifecycle worker started${lifecycleStatus.pid ? ` (PID ${lifecycleStatus.pid})` : ""}`
@@ -1565,7 +1567,7 @@ export function registerStart(program: Command): void {
             // (already running). The lifecycle timer starts unreffed by default,
             // so this process exits naturally — the existing instance's lifecycle
             // manager picks up the new session on its next poll cycle.
-            attachToRunning ? { ...opts, dashboard: false } : opts,
+            attachToRunning ? { ...opts, dashboard: false, pin: false } : opts,
           );
 
           // ── Register in running.json (Step 11) ──

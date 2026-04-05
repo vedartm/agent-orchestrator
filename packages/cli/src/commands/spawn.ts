@@ -55,6 +55,7 @@ function buildConfigFromGlobalRegistry(projectId: string): OrchestratorConfig {
     directTerminalPort: globalConfig.directTerminalPort,
     readyThresholdMs: globalConfig.readyThresholdMs,
     defaults: globalConfig.defaults,
+    plugins: globalConfig.plugins,
     notifiers: globalConfig.notifiers,
     notificationRouting: globalConfig.notificationRouting,
     reactions: globalConfig.reactions,

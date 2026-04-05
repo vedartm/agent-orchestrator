@@ -690,9 +690,11 @@ export function findConfigFile(startDir?: string): string | null {
   // 2. Search up directory tree from CWD (like git).
   // Delegates to findLocalConfigUpwards in global-config.ts, the single
   // implementation of this walk shared with the multi-project registration path.
+  // Only return configs with a `projects:` wrapper — flat local configs (post-migration)
+  // are behavior-only and should not be treated as orchestrator configs.
   const cwd = process.cwd();
   const foundInTree = findLocalConfigUpwards(cwd)?.configPath ?? null;
-  if (foundInTree) {
+  if (foundInTree && hasProjectsWrapper(foundInTree)) {
     return foundInTree;
   }
 
