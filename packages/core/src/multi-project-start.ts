@@ -139,6 +139,36 @@ export function registerNewProject(
 }
 
 // ---------------------------------------------------------------------------
+// Registration commit helper (shared by resolveMultiProjectStart + CLI)
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate a pending registration and, if valid, commit it to disk atomically.
+ *
+ * Encapsulates the validate-first, write-after contract:
+ * 1. Build effective config using pendingShadow (no disk reads for new project)
+ * 2. Run applyGlobalConfigPipeline — throws on any validation error
+ * 3. Write shadow file + global config only after validation passes
+ *
+ * Throws on validation failure. Because no files are written until step 3,
+ * no cleanup is needed on failure.
+ *
+ * @param warnings - Optional array to collect non-fatal build warnings
+ */
+export function validateAndCommitRegistration(
+  reg: RegisterNewProjectResult,
+  globalConfigPath: string,
+  warnings?: string[],
+): ReturnType<typeof applyGlobalConfigPipeline> {
+  const pendingShadows = { [reg.projectId]: reg.pendingShadow };
+  const built = buildEffectiveConfig(reg.updatedGlobalConfig, globalConfigPath, warnings, pendingShadows);
+  const effectiveConfig = applyGlobalConfigPipeline(built);
+  saveShadowFile(reg.projectId, reg.pendingShadow);
+  saveGlobalConfig(reg.updatedGlobalConfig);
+  return effectiveConfig;
+}
+
+// ---------------------------------------------------------------------------
 // Multi-project start result
 // ---------------------------------------------------------------------------
 
@@ -171,9 +201,9 @@ export function resolveMultiProjectStart(
   let projectId = matchProjectByCwd(globalConfig, resolvedDir);
   let isNewRegistration = false;
 
-  // pendingShadow is set for new registrations; used in buildEffectiveConfig
-  // so validation runs against the correct config before any writes occur.
-  let pendingShadow: Record<string, unknown> | undefined;
+  // newReg is set for new registrations and carries the pending shadow + updated global config
+  // through to the validateAndCommitRegistration call below.
+  let newReg: RegisterNewProjectResult | undefined;
 
   if (!projectId) {
     const found = findLocalConfigUpwards(resolvedDir);
@@ -181,11 +211,10 @@ export function resolveMultiProjectStart(
 
     if (found) {
       // Auto-register via shared helper — pure, no disk writes.
-      // Returns pendingShadow with the computed shadow content.
       const reg = registerNewProject(globalConfig, projectRoot);
       projectId = reg.projectId;
       globalConfig = reg.updatedGlobalConfig;
-      pendingShadow = reg.pendingShadow;
+      newReg = reg;
       isNewRegistration = true;
       messages.push(...reg.messages);
       messages.push({ level: "success", text: `Registered project "${projectId}" (${reg.configMode} mode)` });
@@ -214,24 +243,23 @@ export function resolveMultiProjectStart(
     }
   }
 
-  // 4. Build effective config via the shared pipeline (single source of truth in config.ts).
-  // For new registrations, pass pendingShadow so validation uses the correct session prefix
-  // before anything is written to disk — no cleanup path needed on failure.
+  // 4. Validate and commit.
+  // New registrations: validateAndCommitRegistration builds with pendingShadow
+  // so validation sees the correct session prefix before any writes, then writes
+  // both files only after validation passes.
+  // Already-registered: build normally (shadow already on disk, no new writes needed).
   const globalPath = findGlobalConfigPath();
   const buildWarnings: string[] = [];
-  const pendingShadows = pendingShadow && projectId ? { [projectId]: pendingShadow } : undefined;
-  const built = buildEffectiveConfig(globalConfig, globalPath, buildWarnings, pendingShadows);
+  let effectiveConfig: ReturnType<typeof applyGlobalConfigPipeline>;
+
+  if (isNewRegistration && newReg) {
+    effectiveConfig = validateAndCommitRegistration(newReg, globalPath, buildWarnings);
+  } else {
+    const built = buildEffectiveConfig(globalConfig, globalPath, buildWarnings);
+    effectiveConfig = applyGlobalConfigPipeline(built);
+  }
   for (const w of buildWarnings) {
     messages.push({ level: "warn", text: w });
-  }
-  // applyGlobalConfigPipeline throws on validation error (e.g. session prefix collision).
-  // Because no files have been written yet for new registrations, no cleanup is needed.
-  const effectiveConfig = applyGlobalConfigPipeline(built);
-
-  // 5. Persist only after validation passes (new registrations only).
-  if (isNewRegistration && pendingShadow) {
-    saveShadowFile(projectId, pendingShadow);
-    saveGlobalConfig(globalConfig);
   }
 
   return { config: effectiveConfig, projectId, messages };

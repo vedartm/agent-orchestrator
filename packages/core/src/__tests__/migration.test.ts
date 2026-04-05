@@ -3,42 +3,22 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { randomBytes } from "node:crypto";
 import { stringify as stringifyYaml } from "yaml";
 
 import { buildEffectiveConfig } from "../migration.js";
-import { saveGlobalConfig, saveShadowFile, type GlobalConfig } from "../global-config.js";
+import { saveGlobalConfig, saveShadowFile } from "../global-config.js";
+import { createGlobalConfigEnv, makeMinimalGlobalConfig as makeGlobalConfig } from "./helpers.js";
 
+const env = createGlobalConfigEnv("ao-migration");
 let testDir: string;
-let originalEnv: string | undefined;
 
 beforeEach(() => {
-  testDir = join(tmpdir(), `ao-migration-test-${randomBytes(6).toString("hex")}`);
-  mkdirSync(testDir, { recursive: true });
-  originalEnv = process.env["AO_GLOBAL_CONFIG_PATH"];
-  process.env["AO_GLOBAL_CONFIG_PATH"] = join(testDir, ".ao", "config.yaml");
+  testDir = env.setup();
 });
 
-afterEach(() => {
-  if (originalEnv !== undefined) {
-    process.env["AO_GLOBAL_CONFIG_PATH"] = originalEnv;
-  } else {
-    delete process.env["AO_GLOBAL_CONFIG_PATH"];
-  }
-  rmSync(testDir, { recursive: true, force: true });
-});
-
-function makeGlobalConfig(projects: Record<string, { name: string; path: string }>): GlobalConfig {
-  return {
-    port: 3000,
-    readyThresholdMs: 300000,
-    defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
-    projects,
-  };
-}
+afterEach(() => env.teardown());
 
 describe("buildEffectiveConfig", () => {
   it("sets configMode to global-only when no local config exists", () => {

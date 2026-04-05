@@ -13,16 +13,14 @@ import type { Command } from "commander";
 import {
   loadGlobalConfig,
   saveGlobalConfig,
-  saveShadowFile,
   scaffoldGlobalConfig,
   unregisterProject,
   deleteShadowFile,
   findProjectByPath,
   findGlobalConfigPath,
-  buildEffectiveConfig,
-  applyGlobalConfigPipeline,
   loadConfig,
   registerNewProject,
+  validateAndCommitRegistration,
   expandHome,
 } from "@composio/ao-core";
 import { getSessionManager } from "../lib/create-session-manager.js";
@@ -96,23 +94,13 @@ export function registerProjectCommand(program: Command): void {
           if (msg.level === "warn") console.log(chalk.yellow(`  ⚠ ${msg.text}`));
           else if (msg.level === "success") console.log(chalk.dim(`  ✓ ${msg.text}`));
         }
-        const { projectId, updatedGlobalConfig, pendingShadow } = reg;
+        // Validate and commit atomically — throws on validation failure,
+        // writes nothing until validation passes.
+        validateAndCommitRegistration(reg, findGlobalConfigPath());
 
-        // Validate with the pending (not-yet-written) shadow — no cleanup needed
-        // on failure because nothing has been written to disk yet.
-        const globalPath = findGlobalConfigPath();
-        const built = buildEffectiveConfig(updatedGlobalConfig, globalPath, undefined, {
-          [projectId]: pendingShadow,
-        });
-        applyGlobalConfigPipeline(built);
-
-        // Validation passed — write both files atomically.
-        saveShadowFile(projectId, pendingShadow);
-        saveGlobalConfig(updatedGlobalConfig);
-
-        console.log(chalk.green(`✓ Registered "${projectId}" (${reg.configMode})`));
+        console.log(chalk.green(`✓ Registered "${reg.projectId}" (${reg.configMode})`));
         console.log(chalk.dim(`  Path: ${projectPath}`));
-        console.log(chalk.dim(`  Name: ${reg.updatedGlobalConfig.projects[projectId]?.name ?? projectId}`));
+        console.log(chalk.dim(`  Name: ${reg.updatedGlobalConfig.projects[reg.projectId]?.name ?? reg.projectId}`));
       } catch (err) {
         console.error(chalk.red(err instanceof Error ? err.message : String(err)));
         process.exit(1);

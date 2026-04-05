@@ -54,7 +54,7 @@ export type {
 export { buildEffectiveConfig } from "./migration.js";
 
 // Multi-project start — registration, sync, config building
-export { resolveMultiProjectStart, registerNewProject } from "./multi-project-start.js";
+export { resolveMultiProjectStart, registerNewProject, validateAndCommitRegistration } from "./multi-project-start.js";
 export type { MultiProjectStartResult, RegisterNewProjectOpts, RegisterNewProjectResult } from "./multi-project-start.js";
 
 // Plugin registry

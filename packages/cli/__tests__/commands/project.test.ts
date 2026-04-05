@@ -9,14 +9,12 @@ import type { GlobalConfig, SessionManager } from "@composio/ao-core";
 const {
   mockLoadGlobalConfig,
   mockSaveGlobalConfig,
-  mockSaveShadowFile,
   mockRegisterNewProject,
+  mockValidateAndCommitRegistration,
   mockUnregisterProject,
   mockDeleteShadowFile,
   mockScaffoldGlobalConfig,
   mockFindProjectByPath,
-  mockBuildEffectiveConfig,
-  mockApplyGlobalConfigPipeline,
   mockFindGlobalConfigPath,
   mockLoadConfig,
   mockExpandHome,
@@ -41,14 +39,12 @@ const {
   return {
     mockLoadGlobalConfig: vi.fn(),
     mockSaveGlobalConfig: vi.fn(),
-    mockSaveShadowFile: vi.fn(),
     mockRegisterNewProject: vi.fn().mockReturnValue(defaultRegisterResult),
+    mockValidateAndCommitRegistration: vi.fn().mockReturnValue({ projects: {} }),
     mockUnregisterProject: vi.fn(),
     mockDeleteShadowFile: vi.fn(),
     mockScaffoldGlobalConfig: vi.fn(),
     mockFindProjectByPath: vi.fn().mockReturnValue(null),
-    mockBuildEffectiveConfig: vi.fn().mockReturnValue({ projects: {} }),
-    mockApplyGlobalConfigPipeline: vi.fn().mockImplementation((c: unknown) => c),
     mockFindGlobalConfigPath: vi.fn().mockReturnValue("/home/user/.ao/config.yaml"),
     mockLoadConfig: vi.fn(),
     mockExpandHome: vi.fn((p: string) => p),
@@ -75,14 +71,12 @@ vi.mock("@composio/ao-core", async (importOriginal) => {
     ...actual,
     loadGlobalConfig: mockLoadGlobalConfig,
     saveGlobalConfig: mockSaveGlobalConfig,
-    saveShadowFile: mockSaveShadowFile,
     registerNewProject: mockRegisterNewProject,
+    validateAndCommitRegistration: mockValidateAndCommitRegistration,
     unregisterProject: mockUnregisterProject,
     deleteShadowFile: mockDeleteShadowFile,
     scaffoldGlobalConfig: mockScaffoldGlobalConfig,
     findProjectByPath: mockFindProjectByPath,
-    buildEffectiveConfig: mockBuildEffectiveConfig,
-    applyGlobalConfigPipeline: mockApplyGlobalConfigPipeline,
     findGlobalConfigPath: mockFindGlobalConfigPath,
     loadConfig: mockLoadConfig,
     expandHome: mockExpandHome,
@@ -184,9 +178,8 @@ describe("ao project add", () => {
     vi.clearAllMocks();
     mockFindProjectByPath.mockReturnValue(null);
     mockExpandHome.mockImplementation((p: string) => p);
-    mockBuildEffectiveConfig.mockReturnValue({ projects: {} });
-    mockApplyGlobalConfigPipeline.mockImplementation((c: unknown) => c);
     mockFindGlobalConfigPath.mockReturnValue("/home/user/.ao/config.yaml");
+    mockValidateAndCommitRegistration.mockReturnValue({ projects: {} });
     mockRegisterNewProject.mockReturnValue({
       projectId: "ma",
       updatedGlobalConfig: makeGlobalConfig(["ma"]),
@@ -200,8 +193,10 @@ describe("ao project add", () => {
     mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig([]));
     await runCommand(["project", "add", "/home/user/my-app"]);
     expect(mockRegisterNewProject).toHaveBeenCalled();
-    expect(mockSaveShadowFile).toHaveBeenCalledWith("ma", { repo: "", defaultBranch: "main" });
-    expect(mockSaveGlobalConfig).toHaveBeenCalled();
+    expect(mockValidateAndCommitRegistration).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "ma", pendingShadow: { repo: "", defaultBranch: "main" } }),
+      "/home/user/.ao/config.yaml",
+    );
   });
 
   it("scaffolds global config when none exists", async () => {
@@ -210,7 +205,7 @@ describe("ao project add", () => {
     await runCommand(["project", "add", "/home/user/new-app"]);
     expect(mockScaffoldGlobalConfig).toHaveBeenCalled();
     expect(mockRegisterNewProject).toHaveBeenCalled();
-    expect(mockSaveGlobalConfig).toHaveBeenCalled();
+    expect(mockValidateAndCommitRegistration).toHaveBeenCalled();
   });
 
   it("skips registration when already registered (exact path match)", async () => {
@@ -271,23 +266,22 @@ describe("ao project add", () => {
     await runCommand(["project", "add", "/home/user/my-app"]);
     logSpy.mockRestore();
 
-    expect(mockSaveShadowFile).toHaveBeenCalledWith("my2", expect.objectContaining({ sessionPrefix: "my2" }));
-    expect(mockSaveGlobalConfig).toHaveBeenCalledWith(updatedGc);
+    expect(mockValidateAndCommitRegistration).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "my2", pendingShadow: expect.objectContaining({ sessionPrefix: "my2" }) }),
+      "/home/user/.ao/config.yaml",
+    );
   });
 
-  it("does not write shadow or global config when validation fails", async () => {
+  it("exits with error when validateAndCommitRegistration fails", async () => {
     mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig([]));
-    mockApplyGlobalConfigPipeline.mockImplementation(() => {
+    mockValidateAndCommitRegistration.mockImplementation(() => {
       throw new Error("Session prefix collision detected");
     });
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => { throw new Error("exit"); });
     await expect(runCommand(["project", "add", "/home/user/my-app"])).rejects.toThrow();
-
-    // Critical: no shadow or global config written on validation failure
-    expect(mockSaveShadowFile).not.toHaveBeenCalled();
-    expect(mockSaveGlobalConfig).not.toHaveBeenCalled();
+    expect(errorSpy.mock.calls.flat().join(" ")).toMatch(/collision/);
     errorSpy.mockRestore();
     exitSpy.mockRestore();
   });

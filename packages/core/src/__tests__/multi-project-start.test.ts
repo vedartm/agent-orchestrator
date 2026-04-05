@@ -3,50 +3,22 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { randomBytes } from "node:crypto";
 import { stringify as stringifyYaml } from "yaml";
 
 import { resolveMultiProjectStart, registerNewProject } from "../multi-project-start.js";
-import {
-  loadGlobalConfig,
-  saveGlobalConfig,
-  loadShadowFile,
-  getShadowFilePath,
-  scaffoldGlobalConfig,
-  type GlobalConfig,
-} from "../global-config.js";
+import { loadGlobalConfig, loadShadowFile, getShadowFilePath, scaffoldGlobalConfig } from "../global-config.js";
+import { createGlobalConfigEnv, setupGlobalConfig } from "./helpers.js";
 
+const env = createGlobalConfigEnv("ao-mps");
 let testDir: string;
-let originalEnv: string | undefined;
 
 beforeEach(() => {
-  testDir = join(tmpdir(), `ao-mps-test-${randomBytes(6).toString("hex")}`);
-  mkdirSync(testDir, { recursive: true });
-  originalEnv = process.env["AO_GLOBAL_CONFIG_PATH"];
-  process.env["AO_GLOBAL_CONFIG_PATH"] = join(testDir, ".ao", "config.yaml");
+  testDir = env.setup();
 });
 
-afterEach(() => {
-  if (originalEnv !== undefined) {
-    process.env["AO_GLOBAL_CONFIG_PATH"] = originalEnv;
-  } else {
-    delete process.env["AO_GLOBAL_CONFIG_PATH"];
-  }
-  rmSync(testDir, { recursive: true, force: true });
-});
-
-function setupGlobalConfig(projects: Record<string, { name: string; path: string }>): void {
-  const config: GlobalConfig = {
-    port: 3000,
-    readyThresholdMs: 300000,
-    defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
-    projects,
-  };
-  saveGlobalConfig(config);
-}
+afterEach(() => env.teardown());
 
 describe("resolveMultiProjectStart", () => {
   it("returns null when no global config exists", () => {

@@ -10,7 +10,8 @@ import { randomBytes } from "node:crypto";
 import { stringify as stringifyYaml } from "yaml";
 
 import { loadConfig, loadConfigWithPath } from "../config.js";
-import { saveGlobalConfig, saveShadowFile, type GlobalConfig } from "../global-config.js";
+import { saveShadowFile } from "../global-config.js";
+import { setupGlobalConfig } from "./helpers.js";
 
 let testDir: string;
 let projectDir: string;
@@ -41,16 +42,6 @@ afterEach(() => {
   }
   rmSync(testDir, { recursive: true, force: true });
 });
-
-function setupGlobalConfig(projects: Record<string, { name: string; path: string }>): void {
-  const config: GlobalConfig = {
-    port: 3000,
-    readyThresholdMs: 300000,
-    defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
-    projects,
-  };
-  saveGlobalConfig(config);
-}
 
 describe("loadConfig — multi-project path", () => {
   it("loads from global config + shadow files", () => {
