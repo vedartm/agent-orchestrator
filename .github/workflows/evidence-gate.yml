@@ -80,7 +80,7 @@ jobs:
           # and list-bullet format "- **Claim class**: ...".
           CLAIM=$(printf '%s' "$BODY" \
             | grep -i '\*\*Claim class' | grep -v '^- ' | head -1 \
-            | sed 's/<!--[^>]*-->//g' \
+            | sed 's/<!--[^-]*\(-[^-][^-]*\)*-->//g' \
             | tr -d '*' \
             | sed 's/.*Claim class: *//I' \
             | sed 's/(.*//' \
@@ -92,7 +92,7 @@ jobs:
           if [ -z "$CLAIM" ]; then
             CLAIM=$(printf '%s' "$BODY" \
               | grep -i '^-.*\*\*Claim class' | head -1 \
-              | sed 's/<!--[^>]*-->//g' \
+              | sed 's/<!--[^-]*\(-[^-][^-]*\)*-->//g' \
               | tr -d '*' \
               | sed 's/.*Claim class: *//I' \
               | sed 's/(.*//' \
@@ -123,8 +123,8 @@ jobs:
           if [ "$CLAIM" = "integration" ] || [ "$CLAIM" = "pipeline-e2e" ]; then
             # Strip HTML comments before scanning for Evidence section.
             EVIDENCE=$(printf '%s\n' "$BODY" | awk '
-              { gsub(/<!--[^>]*-->/, "") }
-              /^[[:space:]]*<!--/ && $0 !~ /<!--[^>]*-->/ { in_comment=1; next }
+              { gsub(/<!--[^-]*(-[^-][^-]*)*-->/, "") }
+              /<!--/ && !/-->/ { in_comment=1; next }
               in_comment && /-->/ { in_comment=0; next }
               in_comment { next }
               tolower($0) ~ /^[[:space:]]*##[[:space:]]+evidence([[:space:]]|$)/ { in_section=1; next }
@@ -187,8 +187,8 @@ jobs:
           EVIDENCE_SECTION=$(printf '%s' "$BODY" \
             | sed -n '/^[[:space:]]*## [Ee]vidence/,$p' \
             | awk '
-              { gsub(/<!--[^>]*-->/, "") }
-              /^[[:space:]]*<!--/ && $0 !~ /<!--[^>]*-->/ { in_comment=1; next }
+              { gsub(/<!--[^-]*(-[^-][^-]*)*-->/, "") }
+              /<!--/ && !/-->/ { in_comment=1; next }
               in_comment && /-->/ { in_comment=0; next }
               in_comment { next }
               { print }
@@ -197,8 +197,8 @@ jobs:
           # Fallback to full body (with HTML stripped) if Evidence section could not be isolated
           if [ -z "$EVIDENCE_SECTION" ]; then
             EVIDENCE_SECTION=$(printf '%s' "$BODY" | awk '
-              { gsub(/<!--[^>]*-->/, "") }
-              /^[[:space:]]*<!--/ && $0 !~ /<!--[^>]*-->/ { in_comment=1; next }
+              { gsub(/<!--[^-]*(-[^-][^-]*)*-->/, "") }
+              /<!--/ && !/-->/ { in_comment=1; next }
               in_comment && /-->/ { in_comment=0; next }
               in_comment { next }
               { print }
