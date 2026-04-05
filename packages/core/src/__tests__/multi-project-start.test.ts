@@ -9,12 +9,13 @@ import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { stringify as stringifyYaml } from "yaml";
 
-import { resolveMultiProjectStart } from "../multi-project-start.js";
+import { resolveMultiProjectStart, registerNewProject } from "../multi-project-start.js";
 import {
   loadGlobalConfig,
   saveGlobalConfig,
   loadShadowFile,
   getShadowFilePath,
+  scaffoldGlobalConfig,
   type GlobalConfig,
 } from "../global-config.js";
 
@@ -154,6 +155,56 @@ describe("resolveMultiProjectStart", () => {
     // Should register with the project root, not the subdirectory
     const project = result!.config.projects[result!.projectId];
     expect(project.path).toBe(projectDir);
+  });
+
+  it("registerNewProject is pure — returns pendingShadow without writing to disk", () => {
+    const projectDir = join(testDir, "pure-test");
+    mkdirSync(projectDir, { recursive: true });
+    writeFileSync(
+      join(projectDir, "agent-orchestrator.yaml"),
+      stringifyYaml({ repo: "org/pure-test", defaultBranch: "main", agent: "aider" }),
+    );
+
+    const globalConfig = scaffoldGlobalConfig();
+
+    const reg = registerNewProject(globalConfig, projectDir);
+
+    // Must return a projectId and pendingShadow
+    expect(reg.projectId).toBeTruthy();
+    expect(reg.pendingShadow).toBeDefined();
+    expect(reg.pendingShadow["repo"]).toBe("org/pure-test");
+    expect(reg.pendingShadow["agent"]).toBe("aider");
+
+    // Must NOT have written any shadow file to disk
+    const shadowFilePath = getShadowFilePath(reg.projectId);
+    expect(existsSync(shadowFilePath)).toBe(false);
+
+    // Must NOT have persisted the updated global config — the on-disk config
+    // should still have 0 projects (scaffoldGlobalConfig saves empty config,
+    // registerNewProject must not overwrite it with the new project entry)
+    const savedGc = loadGlobalConfig();
+    expect(Object.keys(savedGc?.projects ?? {})).toHaveLength(0);
+  });
+
+  it("auto-suffixed ID stores explicit sessionPrefix in pendingShadow to prevent collision", () => {
+    const dir1 = join(testDir, "myapp");
+    const dir2 = join(testDir, "other", "myapp"); // same basename → same derived prefix
+    mkdirSync(dir1, { recursive: true });
+    mkdirSync(dir2, { recursive: true });
+    writeFileSync(join(dir2, "agent-orchestrator.yaml"), stringifyYaml({ repo: "org/myapp2" }));
+
+    // Pre-occupy the ID that dir2 would naturally derive
+    const globalConfig = scaffoldGlobalConfig();
+    const reg1 = registerNewProject(globalConfig, dir1);
+
+    // Now register dir2 — should get a suffixed ID
+    const reg2 = registerNewProject(reg1.updatedGlobalConfig, dir2);
+
+    expect(reg2.projectId).not.toBe(reg1.projectId);
+    // The suffixed project must have an explicit sessionPrefix in its shadow
+    // so applyProjectDefaults doesn't re-derive the same prefix from basename
+    expect(reg2.pendingShadow["sessionPrefix"]).toBeDefined();
+    expect(reg2.pendingShadow["sessionPrefix"]).not.toBe(reg1.pendingShadow["sessionPrefix"] ?? "");
   });
 
   it("excludes secret-like fields from shadow", () => {

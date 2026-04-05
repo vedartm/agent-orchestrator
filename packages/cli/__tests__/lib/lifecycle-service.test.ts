@@ -25,10 +25,16 @@ const {
   ensureLifecycleWorker,
   stopLifecycleWorker,
   getLifecycleWorkerStatus,
+  pinLifecycleWorker,
   clearActiveManagers,
 } = await import("../../src/lib/lifecycle-service.js");
 
-const config = { configPath: "/home/user/project/agent-orchestrator.yaml" } as unknown as OrchestratorConfig;
+const config = {
+  configPath: "/home/user/project/agent-orchestrator.yaml",
+  projects: {
+    "my-project": { path: "/home/user/project", agent: "claude-code", runtime: "tmux", sessionPrefix: "mp", name: "P" },
+  },
+} as unknown as OrchestratorConfig;
 
 describe("lifecycle-service (in-process)", () => {
   beforeEach(() => {
@@ -74,21 +80,72 @@ describe("lifecycle-service (in-process)", () => {
       expect(mockGetLifecycleManager).toHaveBeenCalledWith(config, "project-b");
     });
 
-    it("restarts manager when config fingerprint changes", async () => {
+    it("restarts manager when config file path changes", async () => {
       await ensureLifecycleWorker(config, "my-project");
       expect(mockGetLifecycleManager).toHaveBeenCalledTimes(1);
 
-      // Simulate config reload from a different config file path
       const updatedConfig = { ...config, configPath: "/home/user/project/other.yaml" } as unknown as OrchestratorConfig;
       mockGetLifecycleManager.mockClear();
       mockLifecycleStart.mockClear();
 
       const status = await ensureLifecycleWorker(updatedConfig, "my-project");
 
-      expect(mockLifecycleStop).toHaveBeenCalledTimes(1); // old manager stopped
-      expect(mockGetLifecycleManager).toHaveBeenCalledTimes(1); // new manager created
+      expect(mockLifecycleStop).toHaveBeenCalledTimes(1);
+      expect(mockGetLifecycleManager).toHaveBeenCalledTimes(1);
       expect(mockLifecycleStart).toHaveBeenCalledWith(30_000);
       expect(status.started).toBe(true);
+    });
+
+    it("restarts manager when project content changes with same configPath", async () => {
+      // This was the fingerprinting bug: path-only fingerprint would miss in-place edits.
+      await ensureLifecycleWorker(config, "my-project");
+      mockGetLifecycleManager.mockClear();
+      mockLifecycleStart.mockClear();
+
+      // Same configPath, but different project config content
+      const updatedConfig = {
+        ...config,
+        projects: { "my-project": { path: "/different/path", agent: "codex", runtime: "tmux", sessionPrefix: "mp", name: "P" } },
+      } as unknown as OrchestratorConfig;
+
+      const status = await ensureLifecycleWorker(updatedConfig, "my-project");
+
+      expect(mockLifecycleStop).toHaveBeenCalledTimes(1);
+      expect(mockGetLifecycleManager).toHaveBeenCalledTimes(1);
+      expect(status.started).toBe(true);
+    });
+
+    it("does NOT restart manager when config content is identical", async () => {
+      await ensureLifecycleWorker(config, "my-project");
+      mockGetLifecycleManager.mockClear();
+
+      // Exact same config object (same fingerprint)
+      const status = await ensureLifecycleWorker(config, "my-project");
+
+      expect(mockLifecycleStop).not.toHaveBeenCalled();
+      expect(mockGetLifecycleManager).not.toHaveBeenCalled();
+      expect(status.started).toBe(false);
+    });
+  });
+
+  describe("pinLifecycleWorker", () => {
+    it("calls pin() on the active manager", async () => {
+      const mockPin = vi.fn();
+      mockGetLifecycleManager.mockResolvedValueOnce({
+        start: mockLifecycleStart,
+        stop: mockLifecycleStop,
+        pin: mockPin,
+      } as unknown as LifecycleManager);
+
+      await ensureLifecycleWorker(config, "my-project");
+      pinLifecycleWorker("my-project");
+
+      expect(mockPin).toHaveBeenCalledOnce();
+    });
+
+    it("does nothing if no manager is running for the project", () => {
+      // Must not throw even when project is unknown
+      expect(() => pinLifecycleWorker("nonexistent-project")).not.toThrow();
     });
   });
 

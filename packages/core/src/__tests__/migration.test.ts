@@ -124,6 +124,61 @@ describe("buildEffectiveConfig", () => {
     expect(result.projects["app"].repo).toBe("org/app-shadow");
   });
 
+  it("uses pendingShadow instead of reading from disk (validate-first invariant)", () => {
+    // This is the core of the validate-first pattern: buildEffectiveConfig must use
+    // pendingShadow content for a project that hasn't been written to disk yet.
+    // Without this, validation would run against an empty shadow and derive a
+    // wrong sessionPrefix, potentially allowing a collision to slip through.
+    const projectDir = join(testDir, "my-app");
+    mkdirSync(projectDir);
+    const gc = makeGlobalConfig({ app: { name: "App", path: projectDir } });
+    saveGlobalConfig(gc);
+    // Intentionally NO saveShadowFile call — the shadow doesn't exist on disk yet
+
+    const pendingShadow = {
+      repo: "org/pending-app",
+      defaultBranch: "develop",
+      agent: "codex",
+      sessionPrefix: "pending-prefix",
+    };
+
+    const result = buildEffectiveConfig(
+      gc,
+      join(testDir, ".ao", "config.yaml"),
+      undefined,
+      { app: pendingShadow },
+    );
+
+    expect(result.projects["app"].repo).toBe("org/pending-app");
+    expect(result.projects["app"].defaultBranch).toBe("develop");
+    expect(result.projects["app"].agent).toBe("codex");
+    // sessionPrefix from pendingShadow must be used directly — if it were read from disk
+    // (which is empty), applyProjectDefaults would re-derive it from basename instead
+    expect(result.projects["app"].sessionPrefix).toBe("pending-prefix");
+  });
+
+  it("pendingShadow takes precedence over existing shadow file on disk", () => {
+    // Even if a shadow file already exists (e.g. from a previous partial run),
+    // pendingShadow must win — the caller computed it from the current state.
+    const projectDir = join(testDir, "my-app");
+    mkdirSync(projectDir);
+    const gc = makeGlobalConfig({ app: { name: "App", path: projectDir } });
+    saveGlobalConfig(gc);
+    saveShadowFile("app", { repo: "org/stale-on-disk", defaultBranch: "main" });
+
+    const pendingShadow = { repo: "org/fresh-pending", defaultBranch: "develop" };
+
+    const result = buildEffectiveConfig(
+      gc,
+      join(testDir, ".ao", "config.yaml"),
+      undefined,
+      { app: pendingShadow },
+    );
+
+    expect(result.projects["app"].repo).toBe("org/fresh-pending");
+    expect(result.projects["app"].defaultBranch).toBe("develop");
+  });
+
   it("does not push warnings when local config is valid", () => {
     const projectDir = join(testDir, "my-app");
     mkdirSync(projectDir);

@@ -9,55 +9,64 @@ import type { GlobalConfig, SessionManager } from "@composio/ao-core";
 const {
   mockLoadGlobalConfig,
   mockSaveGlobalConfig,
-  mockRegisterProject,
+  mockSaveShadowFile,
+  mockRegisterNewProject,
   mockUnregisterProject,
   mockDeleteShadowFile,
   mockScaffoldGlobalConfig,
-  mockDetectConfigMode,
-  mockFindLocalConfigPath,
-  mockLoadLocalProjectConfig,
-  mockSyncShadow,
-  mockMatchProjectByCwd,
   mockFindProjectByPath,
+  mockBuildEffectiveConfig,
+  mockApplyGlobalConfigPipeline,
+  mockFindGlobalConfigPath,
   mockLoadConfig,
-  mockGenerateSessionPrefix,
-  mockGenerateProjectId,
   mockExpandHome,
   mockSessionManager,
   mockGetRunning,
   mockPromptConfirm,
   mockIsHumanCaller,
-} = vi.hoisted(() => ({
-  mockLoadGlobalConfig: vi.fn(),
-  mockSaveGlobalConfig: vi.fn(),
-  mockRegisterProject: vi.fn(),
-  mockUnregisterProject: vi.fn(),
-  mockDeleteShadowFile: vi.fn(),
-  mockScaffoldGlobalConfig: vi.fn(),
-  mockDetectConfigMode: vi.fn().mockReturnValue("global-only"),
-  mockFindLocalConfigPath: vi.fn().mockReturnValue(null),
-  mockLoadLocalProjectConfig: vi.fn(),
-  mockSyncShadow: vi.fn(),
-  mockMatchProjectByCwd: vi.fn().mockReturnValue(null),
-  mockFindProjectByPath: vi.fn().mockReturnValue(null),
-  mockLoadConfig: vi.fn(),
-  mockGenerateSessionPrefix: vi.fn((s: string) => s.slice(0, 2)),
-  mockGenerateProjectId: vi.fn((p: string) => p.split("/").pop() ?? p),
-  mockExpandHome: vi.fn((p: string) => p),
-  mockSessionManager: {
-    list: vi.fn().mockResolvedValue([]),
-    kill: vi.fn(),
-    cleanup: vi.fn(),
-    get: vi.fn(),
-    spawn: vi.fn(),
-    spawnOrchestrator: vi.fn(),
-    send: vi.fn(),
-    claimPR: vi.fn(),
-  },
-  mockGetRunning: vi.fn().mockResolvedValue(null),
-  mockPromptConfirm: vi.fn().mockResolvedValue(true),
-  mockIsHumanCaller: vi.fn().mockReturnValue(false),
-}));
+} = vi.hoisted(() => {
+  const pendingGc = {
+    port: 3000,
+    readyThresholdMs: 300_000,
+    defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: ["composio", "desktop"] },
+    projects: { "ma": { name: "my-app", path: "/home/user/my-app" } },
+  };
+  const defaultRegisterResult = {
+    projectId: "ma",
+    updatedGlobalConfig: pendingGc,
+    configMode: "global-only" as const,
+    messages: [] as Array<{ level: "info" | "warn" | "success"; text: string }>,
+    pendingShadow: { repo: "", defaultBranch: "main" },
+  };
+  return {
+    mockLoadGlobalConfig: vi.fn(),
+    mockSaveGlobalConfig: vi.fn(),
+    mockSaveShadowFile: vi.fn(),
+    mockRegisterNewProject: vi.fn().mockReturnValue(defaultRegisterResult),
+    mockUnregisterProject: vi.fn(),
+    mockDeleteShadowFile: vi.fn(),
+    mockScaffoldGlobalConfig: vi.fn(),
+    mockFindProjectByPath: vi.fn().mockReturnValue(null),
+    mockBuildEffectiveConfig: vi.fn().mockReturnValue({ projects: {} }),
+    mockApplyGlobalConfigPipeline: vi.fn().mockImplementation((c: unknown) => c),
+    mockFindGlobalConfigPath: vi.fn().mockReturnValue("/home/user/.ao/config.yaml"),
+    mockLoadConfig: vi.fn(),
+    mockExpandHome: vi.fn((p: string) => p),
+    mockSessionManager: {
+      list: vi.fn().mockResolvedValue([]),
+      kill: vi.fn(),
+      cleanup: vi.fn(),
+      get: vi.fn(),
+      spawn: vi.fn(),
+      spawnOrchestrator: vi.fn(),
+      send: vi.fn(),
+      claimPR: vi.fn(),
+    },
+    mockGetRunning: vi.fn().mockResolvedValue(null),
+    mockPromptConfirm: vi.fn().mockResolvedValue(true),
+    mockIsHumanCaller: vi.fn().mockReturnValue(false),
+  };
+});
 
 vi.mock("@composio/ao-core", async (importOriginal) => {
   // eslint-disable-next-line @typescript-eslint/consistent-type-imports
@@ -66,19 +75,16 @@ vi.mock("@composio/ao-core", async (importOriginal) => {
     ...actual,
     loadGlobalConfig: mockLoadGlobalConfig,
     saveGlobalConfig: mockSaveGlobalConfig,
-    registerProject: mockRegisterProject,
+    saveShadowFile: mockSaveShadowFile,
+    registerNewProject: mockRegisterNewProject,
     unregisterProject: mockUnregisterProject,
     deleteShadowFile: mockDeleteShadowFile,
     scaffoldGlobalConfig: mockScaffoldGlobalConfig,
-    detectConfigMode: mockDetectConfigMode,
-    findLocalConfigPath: mockFindLocalConfigPath,
-    loadLocalProjectConfig: mockLoadLocalProjectConfig,
-    syncShadow: mockSyncShadow,
-    matchProjectByCwd: mockMatchProjectByCwd,
     findProjectByPath: mockFindProjectByPath,
+    buildEffectiveConfig: mockBuildEffectiveConfig,
+    applyGlobalConfigPipeline: mockApplyGlobalConfigPipeline,
+    findGlobalConfigPath: mockFindGlobalConfigPath,
     loadConfig: mockLoadConfig,
-    generateSessionPrefix: mockGenerateSessionPrefix,
-    generateProjectId: mockGenerateProjectId,
     expandHome: mockExpandHome,
   };
 });
@@ -138,7 +144,6 @@ function runCommand(args: string[]): Promise<Command> {
 describe("ao project list", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDetectConfigMode.mockReturnValue("global-only");
   });
 
   it("lists registered projects", async () => {
@@ -177,23 +182,25 @@ describe("ao project list", () => {
 describe("ao project add", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDetectConfigMode.mockReturnValue("global-only");
-    mockFindLocalConfigPath.mockReturnValue(null);
-    mockMatchProjectByCwd.mockReturnValue(null);
     mockFindProjectByPath.mockReturnValue(null);
     mockExpandHome.mockImplementation((p: string) => p);
-    mockGenerateProjectId.mockImplementation((p: string) => p.split("/").pop() ?? p);
-    mockGenerateSessionPrefix.mockImplementation((s: string) => s.slice(0, 2));
-    mockRegisterProject.mockImplementation((cfg: GlobalConfig, id: string, entry: unknown) => ({
-      ...cfg,
-      projects: { ...cfg.projects, [id]: entry },
-    }));
+    mockBuildEffectiveConfig.mockReturnValue({ projects: {} });
+    mockApplyGlobalConfigPipeline.mockImplementation((c: unknown) => c);
+    mockFindGlobalConfigPath.mockReturnValue("/home/user/.ao/config.yaml");
+    mockRegisterNewProject.mockReturnValue({
+      projectId: "ma",
+      updatedGlobalConfig: makeGlobalConfig(["ma"]),
+      configMode: "global-only" as const,
+      messages: [],
+      pendingShadow: { repo: "", defaultBranch: "main" },
+    });
   });
 
   it("registers a new global-only project", async () => {
     mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig([]));
     await runCommand(["project", "add", "/home/user/my-app"]);
-    expect(mockRegisterProject).toHaveBeenCalled();
+    expect(mockRegisterNewProject).toHaveBeenCalled();
+    expect(mockSaveShadowFile).toHaveBeenCalledWith("ma", { repo: "", defaultBranch: "main" });
     expect(mockSaveGlobalConfig).toHaveBeenCalled();
   });
 
@@ -202,7 +209,8 @@ describe("ao project add", () => {
     mockScaffoldGlobalConfig.mockReturnValue(makeGlobalConfig([]));
     await runCommand(["project", "add", "/home/user/new-app"]);
     expect(mockScaffoldGlobalConfig).toHaveBeenCalled();
-    expect(mockRegisterProject).toHaveBeenCalled();
+    expect(mockRegisterNewProject).toHaveBeenCalled();
+    expect(mockSaveGlobalConfig).toHaveBeenCalled();
   });
 
   it("skips registration when already registered (exact path match)", async () => {
@@ -210,34 +218,35 @@ describe("ao project add", () => {
     mockLoadGlobalConfig.mockReturnValue(config);
     mockFindProjectByPath.mockReturnValue({ id: "ma", entry: config.projects["ma"] });
     await runCommand(["project", "add", "/home/user/my-app"]);
-    expect(mockRegisterProject).not.toHaveBeenCalled();
+    expect(mockRegisterNewProject).not.toHaveBeenCalled();
     expect(mockSaveGlobalConfig).not.toHaveBeenCalled();
   });
 
-  it("uses --id override when provided", async () => {
+  it("passes --id override to registerNewProject", async () => {
     mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig([]));
     await runCommand(["project", "add", "/home/user/my-app", "--id", "custom"]);
-    expect(mockRegisterProject).toHaveBeenCalledWith(
+    expect(mockRegisterNewProject).toHaveBeenCalledWith(
       expect.anything(),
-      "custom",
-      expect.anything(),
+      "/home/user/my-app",
+      expect.objectContaining({ explicitId: "custom" }),
     );
   });
 
-  it("uses --name override when provided", async () => {
+  it("passes --name override to registerNewProject", async () => {
     mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig([]));
     await runCommand(["project", "add", "/home/user/my-app", "--name", "My App"]);
-    expect(mockRegisterProject).toHaveBeenCalledWith(
+    expect(mockRegisterNewProject).toHaveBeenCalledWith(
       expect.anything(),
-      expect.any(String),
+      "/home/user/my-app",
       expect.objectContaining({ name: "My App" }),
     );
   });
 
-  it("errors when --id override is taken by a different path", async () => {
-    const config = makeGlobalConfig([]);
-    config.projects["custom"] = { name: "Other", path: "/other/path" } as GlobalConfig["projects"][string];
-    mockLoadGlobalConfig.mockReturnValue(config);
+  it("errors when registerNewProject throws (e.g. --id already in use)", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig([]));
+    mockRegisterNewProject.mockImplementation(() => {
+      throw new Error('Project ID "custom" is already in use by /other/path.');
+    });
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => { throw new Error("exit"); });
@@ -247,37 +256,57 @@ describe("ao project add", () => {
     exitSpy.mockRestore();
   });
 
-  it("appends numeric suffix when derived ID is taken by a different path", async () => {
-    // "my-app" → generateProjectId → "my-app" → generateSessionPrefix → "my" → taken by /other/path
-    mockGenerateProjectId.mockReturnValue("my-app");
-    mockGenerateSessionPrefix.mockReturnValue("my");
-    const config = makeGlobalConfig([]);
-    config.projects["my"] = { name: "Other", path: "/other/path" } as GlobalConfig["projects"][string];
-    mockLoadGlobalConfig.mockReturnValue(config);
-    mockRegisterProject.mockImplementation((cfg: GlobalConfig, id: string, entry: unknown) => ({
-      ...cfg,
-      projects: { ...cfg.projects, [id]: entry },
-    }));
+  it("uses auto-suffixed project ID returned by registerNewProject", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig([]));
+    const updatedGc = makeGlobalConfig(["my2"]);
+    mockRegisterNewProject.mockReturnValue({
+      projectId: "my2",
+      updatedGlobalConfig: updatedGc,
+      configMode: "global-only" as const,
+      messages: [{ level: "warn" as const, text: 'ID "my" taken, using "my2"' }],
+      pendingShadow: { repo: "", defaultBranch: "main", sessionPrefix: "my2" },
+    });
 
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     await runCommand(["project", "add", "/home/user/my-app"]);
-    spy.mockRestore();
+    logSpy.mockRestore();
 
-    expect(mockRegisterProject).toHaveBeenCalledWith(
-      expect.anything(),
-      "my2",
-      expect.anything(),
-    );
+    expect(mockSaveShadowFile).toHaveBeenCalledWith("my2", expect.objectContaining({ sessionPrefix: "my2" }));
+    expect(mockSaveGlobalConfig).toHaveBeenCalledWith(updatedGc);
   });
 
-  it("syncs shadow for hybrid projects", async () => {
+  it("does not write shadow or global config when validation fails", async () => {
     mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig([]));
-    mockDetectConfigMode.mockReturnValue("hybrid");
-    mockFindLocalConfigPath.mockReturnValue("/home/user/my-app/agent-orchestrator.yaml");
-    mockLoadLocalProjectConfig.mockReturnValue({ repo: "org/my-app", defaultBranch: "main" });
-    mockSyncShadow.mockReturnValue({ config: makeGlobalConfig(["my"]), excludedSecrets: [] });
+    mockApplyGlobalConfigPipeline.mockImplementation(() => {
+      throw new Error("Session prefix collision detected");
+    });
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => { throw new Error("exit"); });
+    await expect(runCommand(["project", "add", "/home/user/my-app"])).rejects.toThrow();
+
+    // Critical: no shadow or global config written on validation failure
+    expect(mockSaveShadowFile).not.toHaveBeenCalled();
+    expect(mockSaveGlobalConfig).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+
+  it("reports excluded secrets from registerNewProject messages", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig([]));
+    mockRegisterNewProject.mockReturnValue({
+      projectId: "ma",
+      updatedGlobalConfig: makeGlobalConfig(["ma"]),
+      configMode: "hybrid" as const,
+      messages: [{ level: "warn" as const, text: "Excluded secret-like fields: apiToken" }],
+      pendingShadow: { repo: "org/app", defaultBranch: "main" },
+    });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     await runCommand(["project", "add", "/home/user/my-app"]);
-    expect(mockSyncShadow).toHaveBeenCalled();
+    const output = logSpy.mock.calls.flat().join(" ");
+    expect(output).toContain("apiToken");
+    logSpy.mockRestore();
   });
 });
 
