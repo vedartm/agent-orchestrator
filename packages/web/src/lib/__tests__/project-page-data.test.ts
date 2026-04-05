@@ -181,7 +181,7 @@ describe("loadProjectPageData", () => {
 
     const result = await loadProjectPageData("my-app");
 
-    expect(mockResolveGlobalPause).toHaveBeenCalledWith(coreSessions);
+    expect(mockResolveGlobalPause).toHaveBeenCalledWith(coreSessions, { "my-app": {} });
     expect(result.globalPause).toEqual({ paused: true, reason: "manual" });
   });
 

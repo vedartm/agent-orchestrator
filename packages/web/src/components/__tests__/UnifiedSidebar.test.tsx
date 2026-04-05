@@ -319,7 +319,7 @@ describe("UnifiedSidebar attention pills", () => {
     setupFetch();
   });
 
-  it("renders attention pills for projects with working sessions", () => {
+  it("does not render attention pills in the sidebar (pills have been removed)", () => {
     render(
       <UnifiedSidebar
         projects={[
@@ -331,10 +331,8 @@ describe("UnifiedSidebar attention pills", () => {
         ]}
       />,
     );
-    // Should see pills for working (3), respond (2), review (1)
-    expect(screen.getByText("3w")).toBeInTheDocument();
-    expect(screen.getByText("2r")).toBeInTheDocument();
-    expect(screen.getByText("1r")).toBeInTheDocument();
+    // Attention pills (e.g. "3w", "2r", "1r") are no longer rendered in the sidebar
+    expect(screen.queryByText(/\d+[wmrp]/)).toBeNull();
   });
 
   it("does not render pills when all attention counts are zero", () => {
@@ -374,7 +372,6 @@ describe("UnifiedSidebar project session accordion", () => {
     fireEvent.click(screen.getByLabelText("Expand Project One sessions"));
 
     expect(screen.getByText("Fix flaky sidebar state")).toBeInTheDocument();
-    expect(screen.getByText("Codex · proj-1-1")).toBeInTheDocument();
     expect(screen.getAllByLabelText("Codex agent").length).toBeGreaterThan(0);
   });
 
@@ -399,7 +396,7 @@ describe("UnifiedSidebar project session accordion", () => {
     expect(screen.getByLabelText("Collapse Project One sessions")).toBeInTheDocument();
   });
 
-  it("shows inline confirm before killing an AO agent session", async () => {
+  it("shows terminate modal before killing an AO agent session", async () => {
     render(
       <UnifiedSidebar
         projects={[makeProject({ id: "proj-1", name: "Project One", activeCount: 1 })]}
@@ -417,9 +414,10 @@ describe("UnifiedSidebar project session accordion", () => {
 
     fireEvent.click(screen.getByLabelText("Terminate session"));
 
-    expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();
+    expect(screen.getByText("Terminate Session")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Terminate" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    fireEvent.click(screen.getByRole("button", { name: "Terminate" }));
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
@@ -429,7 +427,7 @@ describe("UnifiedSidebar project session accordion", () => {
     });
   });
 
-  it("clears the inline confirm state when the mouse leaves the AO agent row", () => {
+  it("closes terminate modal when Cancel is clicked", () => {
     render(
       <UnifiedSidebar
         projects={[makeProject({ id: "proj-1", name: "Project One", activeCount: 1 })]}
@@ -441,17 +439,16 @@ describe("UnifiedSidebar project session accordion", () => {
             metadata: { agent: "claude-code" },
           }),
         ]}
+        activeProjectId="proj-1"
       />,
     );
 
     fireEvent.click(screen.getByLabelText("Terminate session"));
-    expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();
+    expect(screen.getByText("Terminate Session")).toBeInTheDocument();
 
-    const row = screen.getByText("Investigate review feedback").closest(".group\\/agent");
-    expect(row).not.toBeNull();
-    fireEvent.pointerLeave(row!);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
-    expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Terminate Session")).not.toBeInTheDocument();
   });
 
   it("does not show orchestrator sessions in the sidebar agent lists", () => {
@@ -710,8 +707,9 @@ describe("UnifiedSidebar remove project", () => {
       />,
     );
 
-    // Click remove button (trash icon)
-    fireEvent.click(screen.getByLabelText("Remove workspace"));
+    // Open the project options menu, then click "Remove workspace"
+    fireEvent.click(screen.getByLabelText("Project options"));
+    fireEvent.click(screen.getByText("Remove workspace"));
 
     // Confirm modal appears
     expect(screen.getByText("Remove Workspace")).toBeInTheDocument();
@@ -736,7 +734,8 @@ describe("UnifiedSidebar remove project", () => {
       />,
     );
 
-    fireEvent.click(screen.getByLabelText("Remove workspace"));
+    fireEvent.click(screen.getByLabelText("Project options"));
+    fireEvent.click(screen.getByText("Remove workspace"));
     expect(screen.getByText("Remove Workspace")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -751,7 +750,8 @@ describe("UnifiedSidebar remove project", () => {
       />,
     );
 
-    fireEvent.click(screen.getByLabelText("Remove workspace"));
+    fireEvent.click(screen.getByLabelText("Project options"));
+    fireEvent.click(screen.getByText("Remove workspace"));
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
 
     await waitFor(() => {
@@ -783,7 +783,8 @@ describe("UnifiedSidebar remove project", () => {
       />,
     );
 
-    fireEvent.click(screen.getByLabelText("Remove workspace"));
+    fireEvent.click(screen.getByLabelText("Project options"));
+    fireEvent.click(screen.getByText("Remove workspace"));
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
 
     await waitFor(() => {
@@ -815,7 +816,8 @@ describe("UnifiedSidebar remove project", () => {
       />,
     );
 
-    fireEvent.click(screen.getByLabelText("Remove workspace"));
+    fireEvent.click(screen.getByLabelText("Project options"));
+    fireEvent.click(screen.getByText("Remove workspace"));
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
 
     await waitFor(() => {
@@ -938,7 +940,7 @@ describe("UnifiedSidebar active agents section", () => {
     setupFetch();
   });
 
-  it("renders the agents section when there are active sessions", () => {
+  it("renders active sessions in expanded project accordion", () => {
     const sessions: DashboardSession[] = [
       makeSession({
         id: "sess-1",
@@ -953,24 +955,26 @@ describe("UnifiedSidebar active agents section", () => {
       <UnifiedSidebar
         projects={[makeProject({ id: "proj-1", name: "My Project" })]}
         sessions={sessions}
+        activeProjectId="proj-1"
       />,
     );
 
-    expect(screen.getByText("Agents")).toBeInTheDocument();
+    // Sessions are shown in the expanded project accordion, not a separate "Agents" section
     expect(screen.getByText("Fix the bug")).toBeInTheDocument();
   });
 
-  it("does not render agents section when no sessions", () => {
+  it("shows 'No agents' when project is expanded but has no active sessions", () => {
     render(
       <UnifiedSidebar
         projects={[makeProject({ id: "proj-1", name: "My Project" })]}
+        activeProjectId="proj-1"
       />,
     );
 
-    expect(screen.queryByText("Agents")).toBeNull();
+    expect(screen.getByText("No agents")).toBeInTheDocument();
   });
 
-  it("does not render agents section when all sessions are done", () => {
+  it("shows 'No agents' when project is expanded and all sessions are done", () => {
     const sessions: DashboardSession[] = [
       makeSession({
         id: "sess-1",
@@ -984,13 +988,14 @@ describe("UnifiedSidebar active agents section", () => {
       <UnifiedSidebar
         projects={[makeProject({ id: "proj-1", name: "My Project" })]}
         sessions={sessions}
+        activeProjectId="proj-1"
       />,
     );
 
-    expect(screen.queryByText("Agents")).toBeNull();
+    expect(screen.getByText("No agents")).toBeInTheDocument();
   });
 
-  it("shows project name for each agent session", () => {
+  it("shows session title (from PR) in expanded project accordion", () => {
     const sessions: DashboardSession[] = [
       makeSession({
         id: "sess-1",
@@ -1023,11 +1028,13 @@ describe("UnifiedSidebar active agents section", () => {
       <UnifiedSidebar
         projects={[makeProject({ id: "proj-1", name: "My Project" })]}
         sessions={sessions}
+        activeProjectId="proj-1"
       />,
     );
 
-    // "My Project" appears in workspace list and agent section
+    // Project name in workspace list
     expect(screen.getAllByText("My Project").length).toBeGreaterThanOrEqual(1);
+    // Session title from PR shown in expanded accordion
     expect(screen.getByText("Add auth")).toBeInTheDocument();
   });
 
@@ -1046,15 +1053,17 @@ describe("UnifiedSidebar active agents section", () => {
       <UnifiedSidebar
         projects={[makeProject({ id: "proj-1", name: "My Project" })]}
         sessions={sessions}
+        activeProjectId="proj-1"
         activeSessionId="sess-1"
       />,
     );
 
-    const agentLink = screen.getByText("Session one").closest("a");
-    expect(agentLink?.className).toContain("bg-[var(--color-accent-subtle)]");
+    // The active session highlight is on the parent div (group/session), not the <a> itself
+    const sessionRow = screen.getByText("Session one").closest("a")?.parentElement;
+    expect(sessionRow?.className).toContain("bg-[var(--color-accent-subtle)]");
   });
 
-  it("shows agent count", () => {
+  it("shows all active sessions in expanded project accordion", () => {
     const sessions: DashboardSession[] = [
       makeSession({
         id: "sess-1",
@@ -1076,10 +1085,13 @@ describe("UnifiedSidebar active agents section", () => {
       <UnifiedSidebar
         projects={[makeProject({ id: "proj-1", name: "My Project" })]}
         sessions={sessions}
+        activeProjectId="proj-1"
       />,
     );
 
-    expect(screen.getByText("2")).toBeInTheDocument();
+    // Both sessions are listed individually in the expanded accordion
+    expect(screen.getByText("Session 1")).toBeInTheDocument();
+    expect(screen.getByText("Session 2")).toBeInTheDocument();
   });
 });
 
@@ -1386,7 +1398,9 @@ describe("UnifiedSidebar workspace resources modal", () => {
       />,
     );
 
-    fireEvent.click(screen.getByLabelText("Open from"));
+    // Open the project options menu first, then click "Open from"
+    fireEvent.click(screen.getByLabelText("Project options"));
+    fireEvent.click(screen.getByText("Open from"));
     // The modal should open - WorkspaceResourcesModal receives open=true
     // Since it's a real component, we check it's rendered
   });
@@ -1519,7 +1533,8 @@ describe("UnifiedSidebar pathname-based active project", () => {
       />,
     );
 
-    fireEvent.click(screen.getByLabelText("Remove workspace"));
+    fireEvent.click(screen.getByLabelText("Project options"));
+    fireEvent.click(screen.getByText("Remove workspace"));
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
 
     await waitFor(() => {

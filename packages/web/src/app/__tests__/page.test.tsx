@@ -15,29 +15,39 @@ vi.mock("next/link", () => ({
 }));
 
 const mockGetAllProjects = vi.fn();
-const mockGetDashboardPageData = vi.fn();
+const mockLoadPortfolioPageData = vi.fn();
 const mockGetDashboardProjectName = vi.fn();
 const mockResolveDashboardProjectFilter = vi.fn();
+const mockGetDefaultCloneLocation = vi.fn().mockReturnValue("/tmp/clones");
 
 vi.mock("@/lib/project-name", () => ({
   getAllProjects: () => mockGetAllProjects(),
 }));
 
+vi.mock("@/lib/portfolio-page-data", () => ({
+  loadPortfolioPageData: () => mockLoadPortfolioPageData(),
+}));
+
 vi.mock("@/lib/dashboard-page-data", () => ({
-  getDashboardPageData: (...args: unknown[]) => mockGetDashboardPageData(...args),
   getDashboardProjectName: (...args: unknown[]) => mockGetDashboardProjectName(...args),
   resolveDashboardProjectFilter: (...args: unknown[]) => mockResolveDashboardProjectFilter(...args),
 }));
 
+vi.mock("@/lib/default-location", () => ({
+  getDefaultCloneLocation: () => mockGetDefaultCloneLocation(),
+}));
+
 vi.mock("@/components/PortfolioPage", () => ({
-  PortfolioPage: ({ projects }: { projects: { id: string; name: string }[] }) => (
-    <div data-testid="portfolio-page">{projects.map((p) => p.name).join(",")}</div>
+  PortfolioPage: ({ projectSummaries }: { projectSummaries: { id: string; name: string }[] }) => (
+    <div data-testid="portfolio-page">
+      {projectSummaries.map((p) => p.name).join(",")}
+    </div>
   ),
 }));
 
-vi.mock("@/components/Dashboard", () => ({
-  Dashboard: ({ projectId }: { projectId: string }) => (
-    <div data-testid="dashboard">{projectId}</div>
+vi.mock("@/components/DashboardShell", () => ({
+  DashboardShell: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dashboard-shell">{children}</div>
   ),
 }));
 
@@ -52,69 +62,65 @@ beforeEach(() => {
 const loadPage = () => import("../page.js").then((m) => m.default);
 
 describe("Home page", () => {
-  it("renders PortfolioPage when multiple projects and no project filter", async () => {
-    mockGetAllProjects.mockReturnValue([
-      { id: "ao", name: "Agent Orchestrator" },
-      { id: "ds", name: "Docs Server" },
-    ]);
+  it("renders PortfolioPage with project summaries", async () => {
+    mockLoadPortfolioPageData.mockResolvedValue({
+      projectSummaries: [
+        { id: "ao", name: "Agent Orchestrator" },
+        { id: "ds", name: "Docs Server" },
+      ],
+      sessions: [],
+      orphanedSessionCount: 0,
+    });
 
     const Home = await loadPage();
-    const el = await Home({ searchParams: Promise.resolve({}) });
+    const el = await Home({});
     render(el as React.ReactElement);
 
+    expect(screen.getByTestId("dashboard-shell")).toBeInTheDocument();
     expect(screen.getByTestId("portfolio-page")).toBeInTheDocument();
     expect(screen.getByText(/Agent Orchestrator/)).toBeInTheDocument();
   });
 
   it("renders PortfolioPage when zero projects", async () => {
-    mockGetAllProjects.mockReturnValue([]);
+    mockLoadPortfolioPageData.mockResolvedValue({
+      projectSummaries: [],
+      sessions: [],
+      orphanedSessionCount: 0,
+    });
 
     const Home = await loadPage();
-    const el = await Home({ searchParams: Promise.resolve({}) });
+    const el = await Home({});
     render(el as React.ReactElement);
 
     expect(screen.getByTestId("portfolio-page")).toBeInTheDocument();
   });
 
-  it("renders Dashboard for single project with no filter", async () => {
-    mockGetAllProjects.mockReturnValue([{ id: "ao", name: "AO" }]);
-    mockResolveDashboardProjectFilter.mockReturnValue("ao");
-    mockGetDashboardPageData.mockResolvedValue({
+  it("renders DashboardShell wrapper", async () => {
+    mockLoadPortfolioPageData.mockResolvedValue({
+      projectSummaries: [{ id: "ao", name: "AO" }],
       sessions: [],
-      selectedProjectId: "ao",
-      projectName: "AO",
-      projects: [{ id: "ao", name: "AO" }],
-      globalPause: null,
-      orchestrators: [],
+      orphanedSessionCount: 0,
     });
 
     const Home = await loadPage();
-    const el = await Home({ searchParams: Promise.resolve({}) });
+    const el = await Home({});
     render(el as React.ReactElement);
 
-    expect(screen.getByTestId("dashboard")).toBeInTheDocument();
-    expect(screen.getByText("ao")).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-shell")).toBeInTheDocument();
+    expect(screen.getByTestId("portfolio-page")).toBeInTheDocument();
   });
 
-  it("renders Dashboard when explicit project filter is set", async () => {
-    mockGetAllProjects.mockReturnValue([
-      { id: "ao", name: "AO" },
-      { id: "ds", name: "DS" },
-    ]);
-    mockResolveDashboardProjectFilter.mockReturnValue("ao");
-    mockGetDashboardPageData.mockResolvedValue({
+  it("passes orphaned session count to PortfolioPage", async () => {
+    mockLoadPortfolioPageData.mockResolvedValue({
+      projectSummaries: [{ id: "ao", name: "AO" }],
       sessions: [],
-      selectedProjectId: "ao",
-      projectName: "AO",
-      projects: [{ id: "ao", name: "AO" }],
-      globalPause: null,
-      orchestrators: [],
+      orphanedSessionCount: 3,
     });
 
     const Home = await loadPage();
-    const el = await Home({ searchParams: Promise.resolve({ project: "ao" }) });
+    const el = await Home({});
     render(el as React.ReactElement);
 
-    expect(screen.getByTestId("dashboard")).toBeInTheDocument();
+    expect(screen.getByTestId("portfolio-page")).toBeInTheDocument();
   });
 });

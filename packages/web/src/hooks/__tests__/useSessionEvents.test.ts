@@ -399,6 +399,11 @@ describe("useSessionEvents", () => {
 
     it("clears the disconnect timer when EventSource reconnects", async () => {
       vi.useFakeTimers();
+      // onopen triggers a refresh fetch — mock it so the hook doesn't crash
+      vi.mocked(fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => [],
+      } as Response);
       const sessions = makeSessions(1);
 
       const { result } = renderHook(() => useSessionEvents(sessions, null));
