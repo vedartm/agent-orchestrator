@@ -45,8 +45,9 @@ jobs:
           fi
 
           BODY=$(cat "$RUNNER_TEMP/pr_body.txt")
+          STRIPPED_BODY=$(printf '%s' "$BODY" | python3 -c 'import re, sys; sys.stdout.write(re.sub(r"<!--.*?-->", "", sys.stdin.read(), flags=re.S))')
 
-          if printf '%s' "$BODY" | grep -qi '^[[:space:]]*## evidence'; then
+          if printf '%s' "$STRIPPED_BODY" | grep -qi '^[[:space:]]*## evidence'; then
             echo "found=true" >> "$GITHUB_OUTPUT"
           else
             echo "found=false" >> "$GITHUB_OUTPUT"
@@ -64,19 +65,20 @@ jobs:
           echo "  **Verdict**: PASS | INSUFFICIENT"
           echo ""
           echo "  Describe what was tested and how."
+          exit 1
 
       - name: Extract and normalize claim class
         id: claim
         if: steps.check.outputs.found == 'true'
         run: |
           BODY=$(cat "$RUNNER_TEMP/pr_body.txt")
+          STRIPPED_BODY=$(printf '%s' "$BODY" | python3 -c 'import re, sys; sys.stdout.write(re.sub(r"<!--.*?-->", "", sys.stdin.read(), flags=re.S))')
 
           # Extract claim class — normalize to lowercase short form.
           # Supports: **Claim class**: value  (colon inside bold, space after colon)
           # and list-bullet format "- **Claim class**: ...".
-          CLAIM=$(printf '%s' "$BODY" \
+          CLAIM=$(printf '%s' "$STRIPPED_BODY" \
             | grep -i '\*\*Claim class' | grep -v '^- ' | head -1 \
-            | sed 's/<!--[^-]*\(-[^-][^-]*\)*-->//g' \
             | tr -d '*' \
             | sed 's/.*Claim class: *//I' \
             | sed 's/(.*//' \
@@ -86,9 +88,8 @@ jobs:
 
           # Fallback: list-bullet format
           if [ -z "$CLAIM" ]; then
-            CLAIM=$(printf '%s' "$BODY" \
+            CLAIM=$(printf '%s' "$STRIPPED_BODY" \
               | grep -i '^-.*\*\*Claim class' | head -1 \
-              | sed 's/<!--[^-]*\(-[^-][^-]*\)*-->//g' \
               | tr -d '*' \
               | sed 's/.*Claim class: *//I' \
               | sed 's/(.*//' \
@@ -114,15 +115,12 @@ jobs:
           CLAIM: ${{ steps.claim.outputs.claim }}
         run: |
           BODY=$(cat "$RUNNER_TEMP/pr_body.txt")
+          STRIPPED_BODY=$(printf '%s' "$BODY" | python3 -c 'import re, sys; sys.stdout.write(re.sub(r"<!--.*?-->", "", sys.stdin.read(), flags=re.S))')
 
           # integration + pipeline-e2e claims require rich artifacts; unit/fix/feat/docs/chore can use terminal evidence only.
           if [ "$CLAIM" = "integration" ] || [ "$CLAIM" = "pipeline-e2e" ]; then
             # Strip HTML comments before scanning for Evidence section.
-            EVIDENCE=$(printf '%s\n' "$BODY" | awk '
-              { gsub(/<!--[^-]*(-[^-][^-]*)*-->/, "") }
-              /<!--/ && !/-->/ { in_comment=1; next }
-              in_comment && /-->/ { in_comment=0; next }
-              in_comment { next }
+            EVIDENCE=$(printf '%s\n' "$STRIPPED_BODY" | awk '
               tolower($0) ~ /^[[:space:]]*##[[:space:]]+evidence([[:space:]]|$)/ { in_section=1; next }
               in_section && /^[[:space:]]*##[[:space:]]/ { exit }
               in_section { print }
@@ -161,6 +159,7 @@ jobs:
               echo "Recommended for integration/pipeline-e2e claims:"
               echo "  - **Terminal test output**: fenced code block with a concrete test command"
               echo "    (e.g. \`\`\` block containing: pnpm test, npm test, vitest, jest, etc.)"
+              exit 1
             else
               echo "Strong evidence standard PASS for $CLAIM"
             fi
@@ -172,29 +171,21 @@ jobs:
         if: steps.check.outputs.found == 'true'
         run: |
           BODY=$(cat "$RUNNER_TEMP/pr_body.txt")
+          STRIPPED_BODY=$(printf '%s' "$BODY" | python3 -c 'import re, sys; sys.stdout.write(re.sub(r"<!--.*?-->", "", sys.stdin.read(), flags=re.S))')
 
           # Extract from "## Evidence" to EOF to avoid false matches before the section,
           # then strip HTML comments so template placeholders (<!-- PASS | INSUFFICIENT -->)
           # cannot satisfy the verdict check on an unfilled template.
-          EVIDENCE_SECTION=$(printf '%s' "$BODY" \
-            | sed -n '/^[[:space:]]*## evidence/I,$p' \
-            | awk '
-              { gsub(/<!--[^-]*(-[^-][^-]*)*-->/, "") }
-              /<!--/ && !/-->/ { in_comment=1; next }
-              in_comment && /-->/ { in_comment=0; next }
-              in_comment { next }
-              { print }
-            ')
+          EVIDENCE_SECTION=$(printf '%s\n' "$STRIPPED_BODY" | awk '
+            tolower($0) ~ /^[[:space:]]*##[[:space:]]+evidence([[:space:]]|$)/ { in_section=1; next }
+            in_section && /^[[:space:]]*##[[:space:]]/ { exit }
+            in_section { print }
+          ')
 
-          # Fallback to full body (with HTML stripped) if Evidence section could not be isolated
+          # Empty extraction means there was no real Evidence section after comment stripping.
           if [ -z "$EVIDENCE_SECTION" ]; then
-            EVIDENCE_SECTION=$(printf '%s' "$BODY" | awk '
-              { gsub(/<!--[^-]*(-[^-][^-]*)*-->/, "") }
-              /<!--/ && !/-->/ { in_comment=1; next }
-              in_comment && /-->/ { in_comment=0; next }
-              in_comment { next }
-              { print }
-            ')
+            echo "WARNING: No ## Evidence section found in PR body after stripping HTML comments."
+            exit 1
           fi
 
           # Check for PASS verdict — scoped to Evidence section
@@ -215,4 +206,5 @@ jobs:
             echo "Consider adding one of the following to your ## Evidence section:"
             echo "  **Verdict**: PASS"
             echo "  **Verdict**: INSUFFICIENT"
+            exit 1
           fi
