@@ -1,15 +1,11 @@
 import { getServices } from "@/lib/services";
 import { sessionToDashboard } from "@/lib/serialize";
 import { getAttentionLevel } from "@/lib/types";
-<<<<<<< HEAD
-import { filterWorkerSessions } from "@/lib/project-utils";
 import {
   createCorrelationId,
   createProjectObserver,
   type ProjectObserver,
 } from "@composio/ao-core";
-=======
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
 
 export const dynamic = "force-dynamic";
 
@@ -17,34 +13,20 @@ export const dynamic = "force-dynamic";
  * GET /api/events — SSE stream for real-time lifecycle events
  *
  * Sends session state updates to connected clients.
-<<<<<<< HEAD
  * Polls SessionManager.list() on an interval (no SSE push from core yet).
  */
-export async function GET(request: Request): Promise<Response> {
+export async function GET(_request: Request): Promise<Response> {
   const encoder = new TextEncoder();
   const correlationId = createCorrelationId("sse");
-  const { searchParams } = new URL(request.url);
-  const projectFilter = searchParams.get("project");
   type ServicesConfig = Awaited<ReturnType<typeof getServices>>["config"];
-=======
- * Also starts the lifecycle manager and backlog poller on first connection.
- */
-export async function GET(): Promise<Response> {
-  const encoder = new TextEncoder();
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let updates: ReturnType<typeof setInterval> | undefined;
   let observerProjectId: string | undefined;
   let observer: ProjectObserver | null = null;
 
-<<<<<<< HEAD
   const ensureObserver = (config: ServicesConfig): ProjectObserver | null => {
     if (!observerProjectId) {
-      const requestedProjectId =
-        projectFilter && projectFilter !== "all" && config.projects[projectFilter]
-          ? projectFilter
-          : undefined;
-      observerProjectId = requestedProjectId ?? Object.keys(config.projects)[0];
+      observerProjectId = Object.keys(config.projects)[0];
     }
     if (!observerProjectId) return null;
     if (!observer) {
@@ -52,17 +34,12 @@ export async function GET(): Promise<Response> {
     }
     return observer;
   };
-=======
-  // Start backlog poller (idempotent — lifecycle manager is started in services.ts)
-  startBacklogPoller();
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
 
   const stream = new ReadableStream({
     start(controller) {
       // Send initial snapshot
       void (async () => {
         try {
-<<<<<<< HEAD
           const { config } = await getServices();
           const projectObserver = ensureObserver(config);
           if (projectObserver && observerProjectId) {
@@ -89,22 +66,9 @@ export async function GET(): Promise<Response> {
 
         try {
           const { config, sessionManager } = await getServices();
-          const requestedProjectId =
-            projectFilter && projectFilter !== "all" && config.projects[projectFilter]
-              ? projectFilter
-              : undefined;
-          const sessions = await sessionManager.list(requestedProjectId);
-          const workerSessions = filterWorkerSessions(sessions, projectFilter, config.projects);
-          const dashboardSessions = workerSessions.map(sessionToDashboard);
-          const projectObserver = ensureObserver(config);
-=======
-          const { sessionManager, lifecycleManager } = await getServices();
           const sessions = await sessionManager.list();
           const dashboardSessions = sessions.map(sessionToDashboard);
-
-          // Include lifecycle state map for debugging/display
-          const lifecycleStates = Object.fromEntries(lifecycleManager.getStates());
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
+          const projectObserver = ensureObserver(config);
 
           const initialEvent = {
             type: "snapshot",
@@ -117,7 +81,6 @@ export async function GET(): Promise<Response> {
               attentionLevel: getAttentionLevel(s),
               lastActivityAt: s.lastActivityAt,
             })),
-            lifecycle: lifecycleStates,
           };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(initialEvent)}\n\n`));
           if (projectObserver && observerProjectId) {
@@ -156,24 +119,10 @@ export async function GET(): Promise<Response> {
         void (async () => {
           let dashboardSessions;
           try {
-<<<<<<< HEAD
             const { config, sessionManager } = await getServices();
-            const requestedProjectId =
-              projectFilter && projectFilter !== "all" && config.projects[projectFilter]
-                ? projectFilter
-                : undefined;
-            const sessions = await sessionManager.list(requestedProjectId);
-            const workerSessions = filterWorkerSessions(sessions, projectFilter, config.projects);
-            dashboardSessions = workerSessions.map(sessionToDashboard);
-            const projectObserver = ensureObserver(config);
-=======
-            const { sessionManager } = await getServices();
             const sessions = await sessionManager.list();
             dashboardSessions = sessions.map(sessionToDashboard);
-          } catch {
-            return;
-          }
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
+            const projectObserver = ensureObserver(config);
 
             if (projectObserver && observerProjectId) {
               projectObserver.setHealth({

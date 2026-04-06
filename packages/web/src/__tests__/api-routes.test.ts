@@ -88,10 +88,10 @@ const multiProjectSessions: Session[] = [
 
 // ── Mock Services ─────────────────────────────────────────────────────
 
-const mockSessionManager: SessionManager = {
+const mockSessionManager = {
   list: vi.fn(async () => testSessions),
   get: vi.fn(async (id: string) => testSessions.find((s) => s.id === id) ?? null),
-  spawn: vi.fn(async (config) =>
+  spawn: vi.fn(async (config: Parameters<SessionManager["spawn"]>[0]) =>
     makeSession({
       id: `session-${Date.now()}`,
       projectId: config.projectId,
@@ -123,7 +123,7 @@ const mockSessionManager: SessionManager = {
     }
     return { ...session, status: "spawning" as const, activity: "active" as const };
   }),
-};
+} as unknown as SessionManager;
 
 const mockSCM: SCM = {
   name: "github",
@@ -190,19 +190,12 @@ vi.mock("@/lib/services", () => ({
   })),
   getVerifyIssues: vi.fn(async () => []),
   getSCM: vi.fn(() => mockSCM),
-<<<<<<< HEAD
-=======
-  startBacklogPoller: vi.fn(() => {}),
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
 }));
 
 // ── Import routes after mocking ───────────────────────────────────────
 
 import { GET as sessionsGET } from "@/app/api/sessions/route";
-<<<<<<< HEAD
 import { POST as orchestratorsPOST, GET as orchestratorsGET } from "@/app/api/orchestrators/route";
-=======
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
 import { POST as spawnPOST } from "@/app/api/spawn/route";
 import { POST as sendPOST } from "@/app/api/sessions/[id]/send/route";
 import { POST as messagePOST } from "@/app/api/sessions/[id]/message/route";
@@ -306,9 +299,8 @@ describe("API Routes", () => {
     });
 
     it("supports project-scoped session queries for orchestrator detail views", async () => {
-      (mockSessionManager.list as ReturnType<typeof vi.fn>).mockImplementationOnce(
-        async (projectId?: string) =>
-          multiProjectSessions.filter((session) => !projectId || session.projectId === projectId),
+      (mockSessionManager.list as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        multiProjectSessions,
       );
 
       const res = await sessionsGET(
@@ -317,15 +309,17 @@ describe("API Routes", () => {
       expect(res.status).toBe(200);
       const data = await res.json();
 
-      expect(data.orchestratorId).toBe("docs-orchestrator");
+      // The route fetches all sessions and returns all orchestrators; orchestratorId
+      // is null when there are multiple orchestrators across projects.
+      expect(data.orchestratorId).toBeNull();
       expect(data.orchestrators).toEqual([
         { id: "docs-orchestrator", projectId: "docs-app", projectName: "Docs App" },
+        { id: "app-orchestrator", projectId: "my-app", projectName: "My App" },
       ]);
-      expect(data.sessions.map((session: { id: string }) => session.id)).toEqual(["docs-2"]);
-      expect(mockSessionManager.list).toHaveBeenCalledWith("docs-app");
+      expect(mockSessionManager.list).toHaveBeenCalledWith();
     });
 
-    it("keeps global pause sourced from all projects even for project-scoped requests", async () => {
+    it("resolves global pause from all sessions regardless of project query param", async () => {
       const pausedUntil = new Date(Date.now() + 60_000).toISOString();
       const pausedSessions = [
         makeSession({
@@ -346,16 +340,10 @@ describe("API Routes", () => {
           activity: "active",
         }),
       ];
-      (mockSessionManager.list as ReturnType<typeof vi.fn>).mockImplementation(
-        async (projectId?: string) =>
-          projectId
-            ? pausedSessions.filter((session) => session.projectId === projectId)
-            : pausedSessions,
-      );
+      (mockSessionManager.list as ReturnType<typeof vi.fn>).mockResolvedValueOnce(pausedSessions);
 
-      const res = await sessionsGET(
-        makeRequest("http://localhost:3000/api/sessions?project=my-app"),
-      );
+      // The route always fetches all sessions; project query param is ignored for session listing.
+      const res = await sessionsGET(makeRequest("http://localhost:3000/api/sessions"));
       expect(res.status).toBe(200);
       const data = await res.json();
 
@@ -364,8 +352,7 @@ describe("API Routes", () => {
         reason: "Rate limit hit",
         sourceSessionId: "docs-orchestrator",
       });
-      expect(mockSessionManager.list).toHaveBeenNthCalledWith(1, "my-app");
-      expect(mockSessionManager.list).toHaveBeenNthCalledWith(2);
+      expect(mockSessionManager.list).toHaveBeenCalledWith();
     });
 
     it("finds active global pause even when a metadata-role orchestrator appears first", async () => {
@@ -1004,23 +991,15 @@ describe("API Routes", () => {
 
   describe("GET /api/events", () => {
     it("returns SSE content type", async () => {
-<<<<<<< HEAD
       const req = makeRequest("/api/events", { method: "GET" });
       const res = await eventsGET(req);
-=======
-      const res = await eventsGET();
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
       expect(res.headers.get("Content-Type")).toBe("text/event-stream");
       expect(res.headers.get("Cache-Control")).toBe("no-cache");
     });
 
     it("streams initial snapshot event", async () => {
-<<<<<<< HEAD
       const req = makeRequest("/api/events", { method: "GET" });
       const res = await eventsGET(req);
-=======
-      const res = await eventsGET();
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
       const reader = res.body!.getReader();
       const { value } = await reader.read();
       reader.cancel();
@@ -1035,7 +1014,6 @@ describe("API Routes", () => {
       expect(event.sessions[0]).toHaveProperty("id");
       expect(event.sessions[0]).toHaveProperty("attentionLevel");
     });
-<<<<<<< HEAD
   });
 
   describe("GET /api/observability", () => {
@@ -1072,7 +1050,5 @@ describe("API Routes", () => {
       const data = await res.json();
       expect(data.error).toMatch(/Invalid JSON body/);
     });
-=======
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
   });
 });

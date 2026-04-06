@@ -440,7 +440,6 @@ describe("useSessionEvents", () => {
       expect(result.current.sessions[0].activity).toBe("idle");
       expect(result.current.sessions[1].status).toBe("working");
     });
-<<<<<<< HEAD
 
     it("preserves untouched session references across snapshot patches", async () => {
       const sessions = makeSessions(2);
@@ -518,105 +517,23 @@ describe("useSessionEvents", () => {
       expect(fetch).toHaveBeenCalledWith("/api/sessions", { signal: expect.any(AbortSignal) });
     });
 
-    it("ignores stale refresh completions after project changes", async () => {
-      vi.useFakeTimers();
-      const alphaSessions = [makeSession({ id: "alpha-0", projectId: "alpha" })];
-      const betaSessions = [makeSession({ id: "beta-0", projectId: "beta" })];
-      let resolveAlphaFetch: ((value: Response) => void) | null = null;
-
-      vi.mocked(fetch).mockImplementation((input) => {
-        const url = typeof input === "string" ? input : input.toString();
-        if (url.includes("project=alpha")) {
-          return new Promise<Response>((resolve) => {
-            resolveAlphaFetch = resolve;
-          });
-        }
-
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            sessions: [...betaSessions, makeSession({ id: "beta-1", projectId: "beta" })],
-            globalPause: null,
-          }),
-        } as unknown as Response);
-      });
+    it("resets sessions when initialSessions prop changes", async () => {
+      const firstSessions = [makeSession({ id: "alpha-0" })];
+      const secondSessions = [makeSession({ id: "beta-0" })];
 
       const { result, rerender } = renderHook(
-        ({ sessions, project }) => useSessionEvents(sessions, null, project),
+        ({ sessions }: { sessions: DashboardSession[] }) => useSessionEvents(sessions, null),
         {
-          initialProps: { sessions: alphaSessions, project: "alpha" },
+          initialProps: { sessions: firstSessions },
         },
       );
 
-      await act(async () => {
-        eventSourceInstances[0].onmessage?.({
-          data: JSON.stringify({
-            type: "snapshot",
-            sessions: [
-              {
-                id: "alpha-0",
-                status: "working",
-                activity: "active",
-                lastActivityAt: alphaSessions[0].lastActivityAt,
-              },
-              {
-                id: "alpha-1",
-                status: "working",
-                activity: "active",
-                lastActivityAt: new Date().toISOString(),
-              },
-            ],
-          }),
-        } as MessageEvent);
-        await vi.advanceTimersByTimeAsync(120);
-      });
+      expect(result.current.sessions).toEqual(firstSessions);
 
-      expect(fetch).toHaveBeenCalledTimes(1);
-      expect(fetch).toHaveBeenNthCalledWith(1, "/api/sessions?project=alpha", {
-        signal: expect.any(AbortSignal),
-      });
+      rerender({ sessions: secondSessions });
 
-      rerender({ sessions: betaSessions, project: "beta" });
-
-      await act(async () => {
-        resolveAlphaFetch?.({
-          ok: true,
-          json: async () => ({
-            sessions: [...alphaSessions, makeSession({ id: "alpha-1", projectId: "alpha" })],
-            globalPause: null,
-          }),
-        } as unknown as Response);
-        await Promise.resolve();
-      });
-
-      expect(result.current.sessions).toEqual(betaSessions);
-
-      await act(async () => {
-        eventSourceInstances[1].onmessage?.({
-          data: JSON.stringify({
-            type: "snapshot",
-            sessions: [
-              {
-                id: "beta-0",
-                status: "working",
-                activity: "active",
-                lastActivityAt: betaSessions[0].lastActivityAt,
-              },
-              {
-                id: "beta-1",
-                status: "working",
-                activity: "active",
-                lastActivityAt: new Date().toISOString(),
-              },
-            ],
-          }),
-        } as MessageEvent);
-        await vi.advanceTimersByTimeAsync(120);
-      });
-
-      expect(fetch).toHaveBeenCalledTimes(2);
-      expect(fetch).toHaveBeenNthCalledWith(2, "/api/sessions?project=beta", {
-        signal: expect.any(AbortSignal),
+      await waitFor(() => {
+        expect(result.current.sessions).toEqual(secondSessions);
       });
     });
 
@@ -663,8 +580,6 @@ describe("useSessionEvents", () => {
       expect(result.current.sessions).toHaveLength(1);
       expect(result.current.sessions[0].id).toBe("session-0");
     });
-=======
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
   });
 
   describe("sseAttentionLevels", () => {
@@ -677,7 +592,7 @@ describe("useSessionEvents", () => {
     it("seeds attention levels from initialAttentionLevels parameter", () => {
       const sessions = makeSessions(2);
       const initialLevels = { "session-0": "working" as const, "session-1": "respond" as const };
-      const { result } = renderHook(() => useSessionEvents(sessions, null, undefined, initialLevels));
+      const { result } = renderHook(() => useSessionEvents(sessions, null, initialLevels));
       expect(result.current.sseAttentionLevels).toEqual({
         "session-0": "working",
         "session-1": "respond",
@@ -776,7 +691,7 @@ describe("useSessionEvents", () => {
       let currentLevels: Record<string, AttentionLevel> | undefined = { "session-0": "respond" as const };
 
       const { result, rerender } = renderHook(() =>
-        useSessionEvents(currentSessions, null, undefined, currentLevels),
+        useSessionEvents(currentSessions, null, currentLevels),
       );
 
       expect(result.current.sseAttentionLevels).toEqual({ "session-0": "respond" });
@@ -923,70 +838,35 @@ describe("useSessionEvents", () => {
       expect(fetch).toHaveBeenCalledTimes(1);
     });
 
-    it("resets lastRefreshAtRef when project changes so new project gets immediate refresh", async () => {
+    it("fetches /api/sessions without a project query param", async () => {
       const sessions = makeSessions(1);
-      vi.mocked(fetch)
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ sessions, globalPause: null }),
-        } as unknown as Response)
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ sessions, globalPause: null }),
-        } as unknown as Response);
+      vi.mocked(fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ sessions, globalPause: null }),
+      } as unknown as Response);
 
-      const { rerender } = renderHook(
-        ({ project }: { project?: string }) => useSessionEvents(sessions, null, project),
-        { initialProps: { project: "projectA" } },
-      );
+      renderHook(() => useSessionEvents(sessions, null));
 
-      // First snapshot on project A triggers refresh
       await act(async () => {
         eventSourceMock!.onmessage!.call(eventSourceMock, {
           data: JSON.stringify({
             type: "snapshot",
-            sessions: sessions.map((s) => ({
-              id: s.id,
-              status: s.status,
-              activity: s.activity,
-              lastActivityAt: s.lastActivityAt,
-            })),
+            sessions: [
+              {
+                id: "session-new",
+                status: "working",
+                activity: "active",
+                lastActivityAt: new Date().toISOString(),
+              },
+            ],
           }),
         } as MessageEvent);
       });
 
       await waitFor(() => {
-        expect(fetch).toHaveBeenCalledTimes(1);
-        expect(fetch).toHaveBeenCalledWith(
-          "/api/sessions?project=projectA",
-          expect.objectContaining({ signal: expect.any(AbortSignal) }),
-        );
-      });
-
-      // Switch to project B — the effect reinitializes, resetting lastRefreshAtRef
-      rerender({ project: "projectB" });
-
-      // First snapshot on project B should trigger an immediate refresh
-      await act(async () => {
-        eventSourceMock!.onmessage!.call(eventSourceMock, {
-          data: JSON.stringify({
-            type: "snapshot",
-            sessions: sessions.map((s) => ({
-              id: s.id,
-              status: s.status,
-              activity: s.activity,
-              lastActivityAt: s.lastActivityAt,
-            })),
-          }),
-        } as MessageEvent);
-      });
-
-      await waitFor(() => {
-        expect(fetch).toHaveBeenCalledTimes(2);
-        expect(fetch).toHaveBeenLastCalledWith(
-          "/api/sessions?project=projectB",
-          expect.objectContaining({ signal: expect.any(AbortSignal) }),
-        );
+        expect(fetch).toHaveBeenCalledWith("/api/sessions", {
+          signal: expect.any(AbortSignal),
+        });
       });
     });
   });

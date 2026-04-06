@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useReducer, useRef } from "react";
-<<<<<<< HEAD
 import {
   getAttentionLevel,
   type AttentionLevel,
@@ -21,10 +20,6 @@ type ConnectionStatus = "connected" | "reconnecting" | "disconnected";
 
 /** Server-computed attention levels from the latest SSE snapshot. */
 export type SSEAttentionMap = Readonly<Record<string, AttentionLevel>>;
-
-=======
-import type { DashboardSession, SSESnapshotEvent, GlobalPauseState } from "@/lib/types";
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
 
 interface State {
   sessions: DashboardSession[];
@@ -96,7 +91,6 @@ function reducer(state: State, action: Action): State {
   }
 }
 
-<<<<<<< HEAD
 function createMembershipKey(
   sessions: Array<Pick<DashboardSession, "id">> | SSESnapshotEvent["sessions"],
 ): string {
@@ -104,18 +98,11 @@ function createMembershipKey(
     .map((session) => session.id)
     .sort()
     .join("\u0000");
-=======
-interface UseSessionEventsReturn {
-  sessions: DashboardSession[];
-  globalPause: GlobalPauseState | null;
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
 }
 
 export function useSessionEvents(
   initialSessions: DashboardSession[],
-<<<<<<< HEAD
   initialGlobalPause?: GlobalPauseState | null,
-  project?: string,
   initialAttentionLevels?: SSEAttentionMap,
 ): State {
   const [state, dispatch] = useReducer(reducer, {
@@ -123,13 +110,6 @@ export function useSessionEvents(
     globalPause: initialGlobalPause ?? null,
     connectionStatus: "connected" as ConnectionStatus,
     sseAttentionLevels: initialAttentionLevels ?? ({} as SSEAttentionMap),
-=======
-  initialGlobalPause: GlobalPauseState | null,
-): UseSessionEventsReturn {
-  const [state, dispatch] = useReducer(reducer, {
-    sessions: initialSessions,
-    globalPause: initialGlobalPause,
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
   });
   const sessionsRef = useRef(state.sessions);
   const initialAttentionLevelsRef = useRef(initialAttentionLevels);
@@ -145,7 +125,6 @@ export function useSessionEvents(
   }, [state.sessions]);
 
   useEffect(() => {
-<<<<<<< HEAD
     dispatch({
       type: "reset",
       sessions: initialSessions,
@@ -155,10 +134,7 @@ export function useSessionEvents(
   }, [initialSessions, initialGlobalPause]);
 
   useEffect(() => {
-    // Reset so the new project gets an immediate first refresh on its first SSE snapshot
-    lastRefreshAtRef.current = 0;
-
-    const url = project ? `/api/events?project=${encodeURIComponent(project)}` : "/api/events";
+    const url = "/api/events";
     const es = new EventSource(url);
     let disposed = false;
     let activeRefreshController: AbortController | null = null;
@@ -188,9 +164,7 @@ export function useSessionEvents(
         const refreshController = new AbortController();
         activeRefreshController = refreshController;
 
-        const sessionsUrl = project
-          ? `/api/sessions?project=${encodeURIComponent(project)}`
-          : "/api/sessions";
+        const sessionsUrl = "/api/sessions";
 
         void fetch(sessionsUrl, { signal: refreshController.signal })
           .then((res) => (res.ok ? res.json() : null))
@@ -245,13 +219,6 @@ export function useSessionEvents(
           });
       }, MEMBERSHIP_REFRESH_DELAY_MS);
     };
-=======
-    dispatch({ type: "reset", sessions: initialSessions, globalPause: initialGlobalPause });
-  }, [initialSessions, initialGlobalPause]);
-
-  useEffect(() => {
-    const es = new EventSource("/api/events");
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
 
     es.onmessage = (event: MessageEvent) => {
       try {
@@ -261,7 +228,6 @@ export function useSessionEvents(
           const workerPatches = snapshot.sessions.filter((s) => !s.id.endsWith("-orchestrator"));
           dispatch({ type: "snapshot", patches: workerPatches });
 
-<<<<<<< HEAD
           const currentMembershipKey = createMembershipKey(sessionsRef.current);
           const snapshotMembershipKey = createMembershipKey(snapshot.sessions);
 
@@ -273,34 +239,6 @@ export function useSessionEvents(
 
           if (Date.now() - lastRefreshAtRef.current >= STALE_REFRESH_INTERVAL_MS) {
             scheduleRefresh();
-=======
-          const currentIds = new Set(sessionsRef.current.map((s) => s.id));
-          const snapshotIds = new Set(workerPatches.map((s) => s.id));
-          const sameMembership =
-            currentIds.size === snapshotIds.size &&
-            [...snapshotIds].every((id) => currentIds.has(id));
-
-          if (!sameMembership && !refreshingRef.current) {
-            refreshingRef.current = true;
-            void fetch("/api/sessions")
-              .then((res) => (res.ok ? res.json() : null))
-              .then(
-                (
-                  payload: { sessions?: DashboardSession[]; globalPause?: GlobalPauseState } | null,
-                ) => {
-                  if (payload?.sessions) {
-                    dispatch({
-                      type: "reset",
-                      sessions: payload.sessions,
-                      globalPause: payload.globalPause ?? null,
-                    });
-                  }
-                },
-              )
-              .finally(() => {
-                refreshingRef.current = false;
-              });
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
           }
         }
       } catch {
@@ -308,7 +246,6 @@ export function useSessionEvents(
       }
     };
 
-<<<<<<< HEAD
     es.onopen = () => {
       clearDisconnectedTimer();
       if (!disposed) dispatch({ type: "setConnection", status: "connected" });
@@ -333,10 +270,6 @@ export function useSessionEvents(
           }
         }, DISCONNECTED_GRACE_PERIOD_MS);
       }
-=======
-    es.onerror = () => {
-      // EventSource auto-reconnects; nothing to do here
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
     };
 
     return () => {
@@ -351,5 +284,5 @@ export function useSessionEvents(
     };
   }, []);
 
-  return { sessions: state.sessions, globalPause: state.globalPause };
+  return state;
 }

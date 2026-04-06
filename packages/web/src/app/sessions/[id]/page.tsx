@@ -6,7 +6,6 @@ import { isOrchestratorSession } from "@composio/ao-core/types";
 import { SessionDetail } from "@/components/SessionDetail";
 import { type DashboardSession, type ActivityState, getAttentionLevel, type AttentionLevel } from "@/lib/types";
 import { activityIcon } from "@/lib/activity-icons";
-import type { ProjectInfo } from "@/lib/project-name";
 import { useSSESessionActivity } from "@/hooks/useSSESessionActivity";
 
 function truncate(s: string, max: number): string {
@@ -84,7 +83,7 @@ export default function SessionPage() {
   useEffect(() => {
     fetch("/api/projects")
       .then((res) => res.ok ? res.json() : null)
-      .then((data: { projects?: ProjectInfo[] } | null) => {
+      .then((data: { projects?: Array<{ id: string; sessionPrefix?: string }> } | null) => {
         if (data?.projects) {
           setPrefixByProject(
             new Map(data.projects.map((p) => [p.id, p.sessionPrefix ?? p.id])),

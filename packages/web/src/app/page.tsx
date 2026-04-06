@@ -1,35 +1,6 @@
 import type { Metadata } from "next";
 import { Dashboard } from "@/components/Dashboard";
 import {
-<<<<<<< HEAD
-  getDashboardPageData,
-  getDashboardProjectName,
-  resolveDashboardProjectFilter,
-} from "@/lib/dashboard-page-data";
-
-export async function generateMetadata(props: {
-  searchParams: Promise<{ project?: string }>;
-}): Promise<Metadata> {
-  const searchParams = await props.searchParams;
-  const projectFilter = resolveDashboardProjectFilter(searchParams.project);
-  const projectName = getDashboardProjectName(projectFilter);
-  return { title: { absolute: `ao | ${projectName}` } };
-}
-
-export default async function Home(props: { searchParams: Promise<{ project?: string }> }) {
-  const searchParams = await props.searchParams;
-  const projectFilter = resolveDashboardProjectFilter(searchParams.project);
-  const pageData = await getDashboardPageData(projectFilter);
-
-  return (
-    <Dashboard
-      initialSessions={pageData.sessions}
-      projectId={pageData.selectedProjectId}
-      projectName={pageData.projectName}
-      projects={pageData.projects}
-      initialGlobalPause={pageData.globalPause}
-      orchestrators={pageData.orchestrators}
-=======
   sessionToDashboard,
   resolveProject,
   enrichSessionPR,
@@ -39,6 +10,8 @@ export default async function Home(props: { searchParams: Promise<{ project?: st
 import { prCache, prCacheKey } from "@/lib/cache";
 import { getProjectName } from "@/lib/project-name";
 import { resolveGlobalPause, type GlobalPauseState } from "@/lib/global-pause";
+import { type DashboardSession } from "@/lib/types";
+import { getServices, getSCM } from "@/lib/services";
 
 export const dynamic = "force-dynamic";
 
@@ -52,13 +25,11 @@ export default async function Home() {
   let sessions: DashboardSession[] = [];
   let orchestratorId: string | null = null;
   let globalPause: GlobalPauseState | null = null;
-  let projectIds: string[] = [];
   const projectName = getProjectName();
   try {
     const { config, registry, sessionManager } = await getServices();
-    projectIds = Object.keys(config.projects);
     const allSessions = await sessionManager.list();
-    globalPause = resolveGlobalPause(allSessions);
+    globalPause = resolveGlobalPause(allSessions, config.projects);
 
     // Find the orchestrator session (any session ending with -orchestrator)
     // Only set orchestratorId if an actual session exists (no fallback)
@@ -142,8 +113,6 @@ export default async function Home() {
       orchestratorId={orchestratorId}
       projectName={projectName}
       initialGlobalPause={globalPause}
-      projectIds={projectIds}
->>>>>>> parent of c7c04c14 (feat(web): Project-scoped dashboard with sidebar navigation (#381))
     />
   );
 }

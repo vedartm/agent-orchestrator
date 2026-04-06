@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { OrchestratorSelector, type Orchestrator } from "@/components/OrchestratorSelector";
 import { getServices } from "@/lib/services";
-import { getAllProjects } from "@/lib/project-name";
-import { generateSessionPrefix } from "@composio/ao-core";
+import { loadConfig, generateSessionPrefix } from "@composio/ao-core";
 import { mapSessionsToOrchestrators } from "@/lib/orchestrator-utils";
 
 export const dynamic = "force-dynamic";
@@ -14,10 +13,12 @@ export async function generateMetadata(props: {
   const projectId = searchParams.project;
   let projectName = "Orchestrator";
   if (projectId) {
-    const projects = getAllProjects();
-    const project = projects.find((p) => p.id === projectId);
-    if (project) {
-      projectName = project.name;
+    try {
+      const config = loadConfig();
+      const project = config.projects[projectId];
+      if (project) projectName = project.name ?? projectId;
+    } catch {
+      // Config unavailable
     }
   }
   return { title: { absolute: `ao | ${projectName} - Select Orchestrator` } };
