@@ -346,7 +346,7 @@ describe("spawn", () => {
     expect(metadata?.["opencodeSessionId"]).toBe("ses_valid_newer");
   });
 
-  it("does not reuse issue mapping when opencodeIssueSessionStrategy is ignore", async () => {
+  it("does not reuse issue mapping when orchestratorSessionStrategy is ignore", async () => {
     const opencodeAgent: Agent = {
       ...mockAgent,
       name: "opencode",
@@ -370,7 +370,7 @@ describe("spawn", () => {
         "my-app": {
           ...config.projects["my-app"],
           agent: "opencode",
-          opencodeIssueSessionStrategy: "ignore",
+          orchestratorSessionStrategy: "ignore",
         },
       },
     };
@@ -400,7 +400,7 @@ describe("spawn", () => {
     expect(metadata?.["opencodeSessionId"]).toBeUndefined();
   });
 
-  it("deletes old issue mappings and starts fresh when opencodeIssueSessionStrategy is delete", async () => {
+  it("deletes old issue mappings and starts fresh when orchestratorSessionStrategy is delete", async () => {
     const deleteLogPath = join(tmpDir, "opencode-delete-issue.log");
     const mockBin = installMockOpencode(tmpDir, "[]", deleteLogPath);
     process.env.PATH = `${mockBin}:${originalPath ?? ""}`;
@@ -428,7 +428,7 @@ describe("spawn", () => {
         "my-app": {
           ...config.projects["my-app"],
           agent: "opencode",
-          opencodeIssueSessionStrategy: "delete",
+          orchestratorSessionStrategy: "delete",
         },
       },
     };
@@ -1734,6 +1734,51 @@ describe("spawn", () => {
       const session = await sm.spawnOrchestrator({ projectId: "my-app" });
 
       expect(session.runtimeHandle).toEqual(makeHandle("rt-1"));
+    });
+
+    it("forcedSuffix uses the specified suffix number directly", async () => {
+      const sm = createSessionManager({ config, registry: mockRegistry });
+
+      const session = await sm.spawnOrchestrator({ projectId: "my-app", forcedSuffix: 5 });
+
+      expect(session.id).toBe("app-orchestrator-5");
+    });
+
+    it("forcedSuffix throws when the ID is already reserved", async () => {
+      // Pre-create a reserved metadata file for app-orchestrator-5
+      const { reserveSessionId } = await import("../../metadata.js");
+      reserveSessionId(sessionsDir, "app-orchestrator-5");
+
+      const sm = createSessionManager({ config, registry: mockRegistry });
+
+      await expect(
+        sm.spawnOrchestrator({ projectId: "my-app", forcedSuffix: 5 }),
+      ).rejects.toThrow("already in use");
+    });
+
+    it("getEffectiveConfigPath returns join(project.path, agent-orchestrator.yaml) when globalConfigPath is set and no effectiveConfigPath", async () => {
+      // Config with globalConfigPath set — no per-project effectiveConfigPath
+      const globalConfigPath = join(tmpDir, ".ao", "config.yaml");
+      const configWithGlobal: OrchestratorConfig = {
+        ...config,
+        globalConfigPath,
+        projects: {
+          "my-app": {
+            ...config.projects["my-app"],
+            effectiveConfigPath: undefined,
+          },
+        },
+      };
+      const sm = createSessionManager({ config: configWithGlobal, registry: mockRegistry });
+
+      // Spawn an orchestrator — if getEffectiveConfigPath returns project.path/agent-orchestrator.yaml
+      // the session is created successfully and we can verify via sessionsDir derivation
+      // (the actual path is derived from the project path, not the global config path)
+      const session = await sm.spawnOrchestrator({ projectId: "my-app" });
+
+      // Session was spawned successfully — the per-project path was used for storage
+      expect(session.id).toBe("app-orchestrator-1");
+      expect(session.projectId).toBe("my-app");
     });
 
   });

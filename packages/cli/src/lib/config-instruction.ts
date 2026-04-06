@@ -75,7 +75,7 @@ projects:
     # ── Orchestrator session strategy (optional) ──────────────────
     # Controls what happens to the orchestrator session on restart.
     orchestratorSessionStrategy: reuse
-    # Options: reuse | delete | ignore | delete-new | ignore-new | kill-previous
+    # Options: reuse | delete | ignore | new
 
     # ── Workspace setup (optional) ────────────────────────────────
     symlinks:                 # Files/dirs to symlink into workspaces

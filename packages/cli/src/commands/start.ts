@@ -31,6 +31,9 @@ import {
   isOrchestratorSession,
   isTerminalSession,
   ConfigNotFoundError,
+  // Multi-project imports
+  resolveMultiProjectStart,
+  findLocalConfigPath,
   type OrchestratorConfig,
   type ProjectConfig,
   type ParsedRepoUrl,
@@ -38,7 +41,11 @@ import {
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { exec, execSilent, git } from "../lib/shell.js";
 import { getSessionManager } from "../lib/create-session-manager.js";
-import { ensureLifecycleWorker, stopLifecycleWorker } from "../lib/lifecycle-service.js";
+import {
+  ensureLifecycleWorker,
+  stopLifecycleWorker,
+  pinLifecycleWorker,
+} from "../lib/lifecycle-service.js";
 import {
   findWebDir,
   buildDashboardEnv,
@@ -50,10 +57,22 @@ import {
 } from "../lib/web-dir.js";
 import { rebuildDashboardProductionArtifacts } from "../lib/dashboard-rebuild.js";
 import { preflight } from "../lib/preflight.js";
-import { register, unregister, isAlreadyRunning, getRunning, waitForExit } from "../lib/running-state.js";
+import {
+  register,
+  unregister,
+  isAlreadyRunning,
+  getRunning,
+  waitForExit,
+  addProjectToRunning,
+  killRunningInstance,
+} from "../lib/running-state.js";
 import { isHumanCaller } from "../lib/caller-context.js";
 import { detectEnvironment } from "../lib/detect-env.js";
-import { detectAgentRuntime, detectAvailableAgents, type DetectedAgent } from "../lib/detect-agent.js";
+import {
+  detectAgentRuntime,
+  detectAvailableAgents,
+  type DetectedAgent,
+} from "../lib/detect-agent.js";
 import { detectDefaultBranch } from "../lib/git-utils.js";
 import { promptConfirm, promptSelect } from "../lib/prompts.js";
 import {
@@ -68,6 +87,39 @@ import { findProjectForDirectory } from "../lib/project-resolution.js";
 
 const DEFAULT_PORT = 3000;
 const IS_TTY = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+
+// =============================================================================
+// MULTI-PROJECT REGISTRATION & SYNC
+// =============================================================================
+
+/**
+ * Thin CLI wrapper around resolveMultiProjectStart from core.
+ * Adds user-facing console output for migration and registration messages.
+ */
+function handleMultiProjectStart(
+  workingDir: string,
+): { config: OrchestratorConfig; projectId: string } | null {
+  const result = resolveMultiProjectStart(workingDir);
+  if (!result) return null;
+
+  // Print messages from the core function
+  for (const msg of result.messages) {
+    if (msg.level === "success") {
+      console.log(chalk.green(`  ✓ ${msg.text}`));
+    } else if (msg.level === "warn") {
+      console.log(chalk.yellow(`  ⚠ ${msg.text}`));
+    } else {
+      console.log(chalk.dim(`  ${msg.text}`));
+    }
+  }
+
+  const wasRegistered = result.messages.some((m) => m.text.includes("Registered"));
+  if (wasRegistered) {
+    console.log(chalk.dim(`  Run \`ao project list\` to see all registered projects.`));
+  }
+
+  return { config: result.config, projectId: result.projectId };
+}
 
 // =============================================================================
 // HELPERS
@@ -174,15 +226,9 @@ function genericInstallHints(command: string): string[] {
     case "npm":
       return ["Install Node.js/npm from https://nodejs.org/"];
     case "pnpm":
-      return [
-        "corepack enable && corepack prepare pnpm@latest --activate",
-        "npm install -g pnpm",
-      ];
+      return ["corepack enable && corepack prepare pnpm@latest --activate", "npm install -g pnpm"];
     case "pipx":
-      return [
-        "python3 -m pip install --user pipx",
-        "python3 -m pipx ensurepath",
-      ];
+      return ["python3 -m pip install --user pipx", "python3 -m pipx ensurepath"];
     default:
       return [];
   }
@@ -195,7 +241,7 @@ function genericInstallHints(command: string): string[] {
  */
 async function promptAgentSelection(): Promise<{
   orchestratorAgent: string;
-  workerAgent: string
+  workerAgent: string;
 } | null> {
   if (canPromptForInstall()) {
     const available = await detectAvailableAgents();
@@ -230,7 +276,11 @@ function gitInstallAttempts(): InstallAttempt[] {
   }
   if (process.platform === "linux") {
     return [
-      { cmd: "sudo", args: ["apt-get", "install", "-y", "git"], label: "sudo apt-get install -y git" },
+      {
+        cmd: "sudo",
+        args: ["apt-get", "install", "-y", "git"],
+        label: "sudo apt-get install -y git",
+      },
       { cmd: "sudo", args: ["dnf", "install", "-y", "git"], label: "sudo dnf install -y git" },
     ];
   }
@@ -249,10 +299,7 @@ function gitInstallAttempts(): InstallAttempt[] {
 function gitInstallHints(): string[] {
   if (process.platform === "darwin") return ["brew install git"];
   if (process.platform === "win32") return ["winget install --id Git.Git -e --source winget"];
-  return [
-    "sudo apt install git      # Debian/Ubuntu",
-    "sudo dnf install git      # Fedora/RHEL",
-  ];
+  return ["sudo apt install git      # Debian/Ubuntu", "sudo dnf install git      # Fedora/RHEL"];
 }
 
 function ghInstallAttempts(): InstallAttempt[] {
@@ -261,7 +308,11 @@ function ghInstallAttempts(): InstallAttempt[] {
   }
   if (process.platform === "linux") {
     return [
-      { cmd: "sudo", args: ["apt-get", "install", "-y", "gh"], label: "sudo apt-get install -y gh" },
+      {
+        cmd: "sudo",
+        args: ["apt-get", "install", "-y", "gh"],
+        label: "sudo apt-get install -y gh",
+      },
       { cmd: "sudo", args: ["dnf", "install", "-y", "gh"], label: "sudo dnf install -y gh" },
     ];
   }
@@ -380,18 +431,17 @@ async function promptInstallAgentRuntime(available: DetectedAgent[]): Promise<De
   if (available.length > 0 || !canPromptForInstall()) return available;
 
   console.log(chalk.yellow("⚠ No supported agent runtime detected."));
-  console.log(chalk.dim("  You can install one now (recommended) or continue and install later.\n"));
-  const choice = await promptSelect(
-    "Choose runtime to install:",
-    [
-      ...AGENT_INSTALL_OPTIONS.map((option) => ({
-        value: option.id,
-        label: option.label,
-        hint: [option.cmd, ...option.args].join(" "),
-      })),
-      { value: "skip", label: "Skip for now" },
-    ],
+  console.log(
+    chalk.dim("  You can install one now (recommended) or continue and install later.\n"),
   );
+  const choice = await promptSelect("Choose runtime to install:", [
+    ...AGENT_INSTALL_OPTIONS.map((option) => ({
+      value: option.id,
+      label: option.label,
+      hint: [option.cmd, ...option.args].join(" "),
+    })),
+    { value: "skip", label: "Skip for now" },
+  ]);
   if (choice === "skip") {
     return available;
   }
@@ -616,7 +666,9 @@ async function autoCreateConfig(workingDir: string): Promise<OrchestratorConfig>
     console.log(chalk.yellow("⚠ tmux not found — will prompt to install at startup"));
   }
   if (!env.hasGh) {
-    console.log(chalk.yellow("⚠ GitHub CLI (gh) not found — optional, but recommended for GitHub workflows."));
+    console.log(
+      chalk.yellow("⚠ GitHub CLI (gh) not found — optional, but recommended for GitHub workflows."),
+    );
     const shouldInstallGh = await askYesNo("Install GitHub CLI now?", false);
     if (shouldInstallGh) {
       const installedGh = await tryInstallWithAttempts(
@@ -657,7 +709,9 @@ async function addProjectToConfig(
     let i = 2;
     while (config.projects[`${projectId}-${i}`]) i++;
     const newId = `${projectId}-${i}`;
-    console.log(chalk.yellow(`  ⚠ Project "${projectId}" already exists — using "${newId}" instead.`));
+    console.log(
+      chalk.yellow(`  ⚠ Project "${projectId}" already exists — using "${newId}" instead.`),
+    );
     projectId = newId;
   }
 
@@ -822,7 +876,11 @@ function tmuxInstallAttempts(): InstallAttempt[] {
   }
   if (process.platform === "linux") {
     return [
-      { cmd: "sudo", args: ["apt-get", "install", "-y", "tmux"], label: "sudo apt-get install -y tmux" },
+      {
+        cmd: "sudo",
+        args: ["apt-get", "install", "-y", "tmux"],
+        label: "sudo apt-get install -y tmux",
+      },
       { cmd: "sudo", args: ["dnf", "install", "-y", "tmux"], label: "sudo dnf install -y tmux" },
     ];
   }
@@ -831,21 +889,16 @@ function tmuxInstallAttempts(): InstallAttempt[] {
 
 function tmuxInstallHints(): string[] {
   if (process.platform === "darwin") return ["brew install tmux"];
-  if (process.platform === "win32") return [
-    "# Install WSL first, then inside WSL:",
-    "sudo apt install tmux",
-  ];
-  return [
-    "sudo apt install tmux      # Debian/Ubuntu",
-    "sudo dnf install tmux      # Fedora/RHEL",
-  ];
+  if (process.platform === "win32")
+    return ["# Install WSL first, then inside WSL:", "sudo apt install tmux"];
+  return ["sudo apt install tmux      # Debian/Ubuntu", "sudo dnf install tmux      # Fedora/RHEL"];
 }
 
 async function ensureTmux(): Promise<void> {
   const hasTmux = (await execSilent("tmux", ["-V"])) !== null;
   if (hasTmux) return;
 
-  console.log(chalk.yellow("⚠ tmux is required for runtime \"tmux\"."));
+  console.log(chalk.yellow('⚠ tmux is required for runtime "tmux".'));
   const shouldInstall = await askYesNo("Install tmux now?", true, false);
   if (shouldInstall) {
     const installed = await tryInstallWithAttempts(
@@ -870,7 +923,8 @@ async function ensureTmux(): Promise<void> {
 async function warnAboutOpenClawStatus(config: OrchestratorConfig): Promise<void> {
   const openclawConfig = config.notifiers?.["openclaw"];
   const openclawConfigured =
-    openclawConfig !== null && openclawConfig !== undefined &&
+    openclawConfig !== null &&
+    openclawConfig !== undefined &&
     typeof openclawConfig === "object" &&
     openclawConfig.plugin === "openclaw";
   const configuredUrl =
@@ -912,7 +966,14 @@ async function runStartup(
   config: OrchestratorConfig,
   projectId: string,
   project: ProjectConfig,
-  opts?: { dashboard?: boolean; orchestrator?: boolean; rebuild?: boolean; dev?: boolean },
+  opts?: {
+    dashboard?: boolean;
+    orchestrator?: boolean;
+    rebuild?: boolean;
+    dev?: boolean;
+    orchestratorSuffix?: string;
+    attachToRunning?: boolean;
+  },
 ): Promise<number> {
   // Ensure tmux is available before doing anything — covers all entry paths
   // (normal start, URL start, retry with existing config)
@@ -926,8 +987,10 @@ async function runStartup(
   // This avoids exposing API keys to projects/plugins that don't need them.
   const openclawNotifier = config.notifiers?.["openclaw"];
   const hasOpenClaw =
-    openclawNotifier !== null && openclawNotifier !== undefined &&
-    typeof openclawNotifier === "object" && openclawNotifier.plugin === "openclaw";
+    openclawNotifier !== null &&
+    openclawNotifier !== undefined &&
+    typeof openclawNotifier === "object" &&
+    openclawNotifier.plugin === "openclaw";
   if (hasOpenClaw) {
     const injectedKeys = applyOpenClawCredentials();
     if (injectedKeys.length > 0) {
@@ -936,7 +999,9 @@ async function runStartup(
     }
   }
 
-  const sessionId = `${project.sessionPrefix}-orchestrator`;
+  const sessionId = opts?.orchestratorSuffix
+    ? `${project.sessionPrefix}-orchestrator-${opts.orchestratorSuffix}`
+    : `${project.sessionPrefix}-orchestrator`;
   const shouldStartLifecycle = opts?.dashboard !== false || opts?.orchestrator !== false;
   let lifecycleStatus: Awaited<ReturnType<typeof ensureLifecycleWorker>> | null = null;
   let port = config.port ?? DEFAULT_PORT;
@@ -991,6 +1056,12 @@ async function runStartup(
     try {
       spinner.start("Starting lifecycle worker");
       lifecycleStatus = await ensureLifecycleWorker(config, projectId);
+      // Pin the lifecycle timer so this daemon process stays alive.
+      // attachToRunning callers skip pinning here; the call site decides whether
+      // to pin based on whether the existing daemon covers this project.
+      if (!opts?.attachToRunning) {
+        pinLifecycleWorker(projectId);
+      }
       spinner.succeed(
         lifecycleStatus.started
           ? `Lifecycle worker started${lifecycleStatus.pid ? ` (PID ${lifecycleStatus.pid})` : ""}`
@@ -1014,7 +1085,14 @@ async function runStartup(
   let selectedOrchestratorId: string | null = null;
 
   if (opts?.orchestrator !== false) {
-    const sm = await getSessionManager(config);
+    // Merge any runtime project overrides (e.g. orchestratorSessionStrategy: "new" set
+    // by the "Start new orchestrator" prompt) into config so the session manager sees
+    // the same values that drove the runStartup control-flow decisions above.
+    const smConfig = {
+      ...config,
+      projects: { ...config.projects, [projectId]: project },
+    };
+    const sm = await getSessionManager(smConfig);
 
     // Check for existing orchestrator sessions for this project
     let allSessions;
@@ -1040,32 +1118,75 @@ async function runStartup(
     );
 
     if (existingOrchestrators.length > 0) {
-      // Existing orchestrators found — always auto-select the most recently active one.
-      // With a single orchestrator, navigate directly to its session page.
-      // With multiple orchestrators, keep the selection page so the user can choose or spawn a
-      // new one — the dashboard only links to one orchestrator per project, so the selection page
-      // is the only startup path for multi-orchestrator projects.
-      const sortedOrchestrators = [...existingOrchestrators].sort(
-        (a, b) => (b.lastActivityAt?.getTime() ?? 0) - (a.lastActivityAt?.getTime() ?? 0),
-      );
-      const selected = sortedOrchestrators[0];
-      selectedOrchestratorId = selected.id;
-      // Use runtimeHandle.id if available, otherwise fall back to the session ID
-      tmuxTarget = selected.runtimeHandle?.id ?? selected.id;
-      if (opts?.dashboard !== false && existingOrchestrators.length > 1) {
-        hasExistingOrchestrators = true;
+      if (orchestratorSessionStrategy === "reuse") {
+        // Existing orchestrators found and strategy is reuse
+        if (opts?.dashboard === false) {
+          // No dashboard — auto-select the most recently active orchestrator
+          const sortedOrchestrators = [...existingOrchestrators].sort(
+            (a, b) => (b.lastActivityAt?.getTime() ?? 0) - (a.lastActivityAt?.getTime() ?? 0),
+          );
+          const selected = sortedOrchestrators[0];
+          selectedOrchestratorId = selected.id;
+          // Use runtimeHandle.id if available, otherwise fall back to the session ID
+          tmuxTarget = selected.runtimeHandle?.id ?? selected.id;
+          spinner.succeed(
+            `Using existing orchestrator session: ${selected.id}` +
+              (existingOrchestrators.length > 1
+                ? ` (${existingOrchestrators.length - 1} other session(s) available)`
+                : ""),
+          );
+        } else {
+          // Dashboard available — let the user select
+          hasExistingOrchestrators = true;
+          spinner.info(
+            `Found ${existingOrchestrators.length} existing orchestrator session(s). ` +
+              `Open the dashboard to select or start a new one.`,
+          );
+        }
+      } else if (orchestratorSessionStrategy === "ignore") {
+        // Strategy: ignore — leave existing orchestrators running, skip spawn
+        spinner.info(
+          `Found ${existingOrchestrators.length} existing orchestrator session(s). Skipping (strategy: ignore).`,
+        );
+      } else if (orchestratorSessionStrategy === "new") {
+        // Strategy: new — ignore existing orchestrators but always spawn a fresh one.
+        // Used when the user picks "Start new orchestrator" in multi-project mode.
+        spinner.info(
+          `Found ${existingOrchestrators.length} existing orchestrator session(s). Spawning a new one (strategy: new).`,
+        );
+      } else {
+        // Strategy: delete — kill existing orchestrators, then fall through to spawn a new one
+        spinner.start(
+          `Killing ${existingOrchestrators.length} existing orchestrator session(s)...`,
+        );
+        for (const existing of existingOrchestrators) {
+          try {
+            await sm.kill(existing.id);
+          } catch {
+            // Best-effort: continue even if one kill fails
+          }
+        }
+        spinner.succeed(`Killed existing orchestrator session(s)`);
+        // Fall through to spawn a new one below
       }
-      spinner.succeed(
-        `Using existing orchestrator session: ${selected.id}` +
-          (existingOrchestrators.length > 1
-            ? ` (${existingOrchestrators.length - 1} other session(s) available)` : ""),
-      );
-    } else {
-      // No existing orchestrators — spawn a new one
+    }
+
+    // Spawn a new orchestrator unless we already have one to use ("reuse" with
+    // dashboard, or "reuse" auto-selected) or strategy says not to ("ignore"
+    // with existing orchestrators running). All other strategies — "new",
+    // "delete" (killed above), or no existing orchestrators — fall through here.
+    const shouldSpawnOrchestrator =
+      !hasExistingOrchestrators &&
+      !selectedOrchestratorId &&
+      !(orchestratorSessionStrategy === "ignore" && existingOrchestrators.length > 0);
+
+    if (shouldSpawnOrchestrator) {
+      // No existing orchestrators, or strategy requires a new one — spawn a new one
       try {
         spinner.start("Creating orchestrator session");
         const systemPrompt = generateOrchestratorPrompt({ config, projectId, project });
-        const session = await sm.spawnOrchestrator({ projectId, systemPrompt });
+        const forcedSuffix = opts?.orchestratorSuffix ? Number(opts.orchestratorSuffix) : undefined;
+        const session = await sm.spawnOrchestrator({ projectId, systemPrompt, forcedSuffix });
         selectedOrchestratorId = session.id;
         if (session.runtimeHandle?.id) {
           tmuxTarget = session.runtimeHandle.id;
@@ -1204,21 +1325,30 @@ export function registerStart(program: Command): void {
           rebuild?: boolean;
           dev?: boolean;
           interactive?: boolean;
+          orchestratorSuffix?: string;
         },
       ) => {
         try {
           let config: OrchestratorConfig;
           let projectId: string;
           let project: ProjectConfig;
+          // URL and local-path branches are "quick start" flows that add and start
+          // a new project — they should proceed even when AO is already running
+          // (multi-project mode supports multiple simultaneous projects).
+          // The already-running check is only relevant for the no-arg and
+          // explicit-ID cases where the user might want to reuse the running instance.
+          let skipAlreadyRunningCheck = false;
 
           if (projectArg && isRepoUrl(projectArg)) {
             // ── URL argument: clone + auto-config + start ──
+            skipAlreadyRunningCheck = true;
             console.log(chalk.bold.cyan("\n  Agent Orchestrator — Quick Start\n"));
             const result = await handleUrlStart(projectArg);
             config = result.config;
             ({ projectId, project } = await resolveProjectByRepo(config, result.parsed));
           } else if (projectArg && isLocalPath(projectArg)) {
             // ── Path argument: add project if new, then start ──
+            skipAlreadyRunningCheck = true;
             const resolvedPath = resolve(projectArg.replace(/^~/, process.env["HOME"] || ""));
 
             // Try to load existing config
@@ -1246,7 +1376,8 @@ export function registerStart(program: Command): void {
 
               // Check if project is already in config (match by path)
               const existingEntry = Object.entries(config.projects).find(
-                ([, p]) => resolve(p.path.replace(/^~/, process.env["HOME"] || "")) === resolvedPath,
+                ([, p]) =>
+                  resolve(p.path.replace(/^~/, process.env["HOME"] || "")) === resolvedPath,
               );
 
               if (existingEntry) {
@@ -1261,14 +1392,14 @@ export function registerStart(program: Command): void {
                 project = config.projects[projectId];
               }
             }
-          } else {
-            // ── No arg or project ID: load config or auto-create ──
+          } else if (projectArg) {
+            // ── Explicit project ID: load config and resolve ──
+            // Don't run handleMultiProjectStart which would auto-register CWD
             let loadedConfig: OrchestratorConfig | null = null;
             try {
               loadedConfig = loadConfig();
             } catch (err) {
               if (err instanceof ConfigNotFoundError) {
-                // First run — auto-create config
                 loadedConfig = await autoCreateConfig(cwd());
               } else {
                 throw err;
@@ -1276,10 +1407,35 @@ export function registerStart(program: Command): void {
             }
             config = loadedConfig;
             ({ projectId, project } = await resolveProject(config, projectArg));
+          } else {
+            // ── No arg: try multi-project flow first ──
+            const multiResult = handleMultiProjectStart(cwd());
+            if (multiResult) {
+              config = multiResult.config;
+              ({ projectId, project } = await resolveProject(config, multiResult.projectId));
+            } else {
+              // Fall back to legacy single-file config or auto-create
+              let loadedConfig: OrchestratorConfig | null = null;
+              try {
+                loadedConfig = loadConfig();
+              } catch (err) {
+                if (err instanceof ConfigNotFoundError) {
+                  // First run — auto-create config
+                  loadedConfig = await autoCreateConfig(cwd());
+                } else {
+                  throw err;
+                }
+              }
+              config = loadedConfig;
+              ({ projectId, project } = await resolveProject(config));
+            }
           }
 
           // ── Already-running detection (Step 9) ──
-          const running = await isAlreadyRunning();
+          // Set to true when user picks "Start new orchestrator" in multi-project mode:
+          // the existing instance owns the dashboard and running.json — we only add a session.
+          let attachToRunning = false;
+          const running = skipAlreadyRunningCheck ? null : await isAlreadyRunning();
           if (running) {
             if (isHumanCaller()) {
               console.log(chalk.cyan(`\nℹ AO is already running.`));
@@ -1291,8 +1447,16 @@ export function registerStart(program: Command): void {
                 "AO is already running. What do you want to do?",
                 [
                   { value: "open", label: "Open dashboard", hint: "Keep the current instance" },
-                  { value: "new", label: "Start new orchestrator", hint: "Add a new session for this project" },
-                  { value: "restart", label: "Restart everything", hint: "Stop the current instance first" },
+                  {
+                    value: "new",
+                    label: "Start new orchestrator",
+                    hint: "Add a new session for this project",
+                  },
+                  {
+                    value: "restart",
+                    label: "Restart everything",
+                    hint: "Stop the current instance first",
+                  },
                   { value: "quit", label: "Quit" },
                 ],
                 "open",
@@ -1303,40 +1467,83 @@ export function registerStart(program: Command): void {
                 openUrl(url);
                 process.exit(0);
               } else if (choice === "new") {
-                // Generate unique orchestrator: same project, new session
-                const rawYaml = readFileSync(config.configPath, "utf-8");
-                const rawConfig = yamlParse(rawYaml);
+                // Spawn an additional orchestrator for the same project.
+                // Find the next available suffix (2, 3, 4...) by checking existing sessions.
+                const sm = await getSessionManager(config);
+                const sessions = await sm.list(projectId);
+                const orchPrefix = `${project.sessionPrefix}-orchestrator`;
+                let suffix = 2;
+                while (sessions.some((s) => s.id === `${orchPrefix}-${suffix}`)) suffix++;
 
-                // Collect existing prefixes to avoid collisions
-                const existingPrefixes = new Set(
-                  Object.values(rawConfig.projects as Record<string, Record<string, unknown>>).map(
-                    (p) => p.sessionPrefix as string,
-                  ).filter(Boolean),
-                );
+                if (config.globalConfigPath) {
+                  // Multi-project mode: attach to the running instance — it owns the
+                  // dashboard and running.json. We only add a new orchestrator session.
+                  // Override strategy to "new" so runStartup skips existing-orchestrator
+                  // handling and always spawns a fresh session with the suffix.
+                  attachToRunning = true;
+                  project = { ...project, orchestratorSessionStrategy: "new" };
+                  opts = { ...opts, orchestratorSuffix: String(suffix) };
+                  console.log(
+                    chalk.green(`\n✓ Starting orchestrator-${suffix} for "${projectId}"\n`),
+                  );
+                } else {
+                  // Legacy single-file mode: add a new project entry with different prefix.
+                  // Attach to the running instance so runStartup skips the dashboard
+                  // (already running) and calls addProjectToRunning instead of overwriting
+                  // running.json with a new PID.
+                  attachToRunning = true;
+                  // Check both ID and session prefix collisions to avoid a
+                  // "Duplicate session prefix" error when config is reloaded.
+                  const existingIds = new Set(Object.keys(config.projects));
+                  const existingPrefixes = new Set(
+                    Object.values(config.projects).map(
+                      (p) => p.sessionPrefix || generateSessionPrefix(basename(p.path)),
+                    ),
+                  );
+                  let newId: string;
+                  do {
+                    const rnd = Math.random().toString(36).slice(2, 6);
+                    newId = `${projectId}-${rnd}`;
+                  } while (
+                    existingIds.has(newId) ||
+                    existingPrefixes.has(generateSessionPrefix(newId))
+                  );
 
-                let newId: string;
-                let newPrefix: string;
-                do {
-                  const suffix = Math.random().toString(36).slice(2, 6);
-                  newId = `${projectId}-${suffix}`;
-                  newPrefix = generateSessionPrefix(newId);
-                } while (rawConfig.projects[newId] || existingPrefixes.has(newPrefix));
-
-                rawConfig.projects[newId] = {
-                  ...rawConfig.projects[projectId],
-                  sessionPrefix: newPrefix,
-                };
-                writeFileSync(config.configPath, yamlStringify(rawConfig, { indent: 2 }));
-                console.log(chalk.green(`\n✓ New orchestrator "${newId}" added to config\n`));
-                config = loadConfig(config.configPath);
-                projectId = newId;
-                project = config.projects[newId];
-                // Continue to startup below
+                  const rawYaml = readFileSync(config.configPath, "utf-8");
+                  const rawConfig = yamlParse(rawYaml);
+                  if (!rawConfig.projects) rawConfig.projects = {};
+                  if (rawConfig.projects[projectId]) {
+                    rawConfig.projects[newId] = {
+                      ...rawConfig.projects[projectId],
+                      sessionPrefix: generateSessionPrefix(newId),
+                    };
+                    writeFileSync(config.configPath, yamlStringify(rawConfig, { indent: 2 }));
+                    console.log(chalk.green(`\n✓ New orchestrator "${newId}" added to config\n`));
+                    config = loadConfig(config.configPath);
+                    const reloadedProject = config.projects[newId];
+                    if (reloadedProject) {
+                      projectId = newId;
+                      project = reloadedProject;
+                    } else {
+                      // Config reload didn't surface the new entry — fall back to suffix
+                      opts = { ...opts, orchestratorSuffix: String(suffix) };
+                      console.log(
+                        chalk.green(`\n✓ Starting orchestrator-${suffix} for "${projectId}"\n`),
+                      );
+                    }
+                  } else {
+                    // Project not found in raw YAML (unexpected — fall back to suffix approach)
+                    opts = { ...opts, orchestratorSuffix: String(suffix) };
+                    console.log(
+                      chalk.green(`\n✓ Starting orchestrator-${suffix} for "${projectId}"\n`),
+                    );
+                  }
+                }
               } else if (choice === "restart") {
-                try { process.kill(running.pid, "SIGTERM"); } catch { /* already dead */ }
+                killRunningInstance(running, "SIGTERM");
                 if (!(await waitForExit(running.pid, 5000))) {
                   console.log(chalk.yellow("  Process didn't exit cleanly, sending SIGKILL..."));
-                  try { process.kill(running.pid, "SIGKILL"); } catch { /* already dead */ }
+                  killRunningInstance(running, "SIGKILL");
                 }
                 await unregister();
                 console.log(chalk.yellow("\n  Stopped existing instance. Restarting...\n"));
@@ -1360,28 +1567,97 @@ export function registerStart(program: Command): void {
           if (agentOverride) {
             const { orchestratorAgent, workerAgent } = agentOverride;
 
-            const rawYaml = readFileSync(config.configPath, "utf-8");
-            const rawConfig = yamlParse(rawYaml);
-            const proj = rawConfig.projects[projectId];
-            proj.orchestrator = { ...(proj.orchestrator ?? {}), agent: orchestratorAgent };
-            proj.worker = { ...(proj.worker ?? {}), agent: workerAgent };
-            writeFileSync(config.configPath, yamlStringify(rawConfig, { indent: 2 }));
-            console.log(chalk.dim(`  ✓ Saved to ${config.configPath}\n`));
-            
+            if (config.globalConfigPath) {
+              // Multi-project mode: write agent override to local config
+              const localConfigPath = findLocalConfigPath(project.path);
+              if (localConfigPath) {
+                try {
+                  const localRaw = yamlParse(readFileSync(localConfigPath, "utf-8")) as Record<
+                    string,
+                    unknown
+                  >;
+                  const localOrch = localRaw["orchestrator"];
+                  const localWork = localRaw["worker"];
+                  localRaw["orchestrator"] = {
+                    ...(typeof localOrch === "object" &&
+                    localOrch !== null &&
+                    !Array.isArray(localOrch)
+                      ? (localOrch as Record<string, unknown>)
+                      : {}),
+                    agent: orchestratorAgent,
+                  };
+                  localRaw["worker"] = {
+                    ...(typeof localWork === "object" &&
+                    localWork !== null &&
+                    !Array.isArray(localWork)
+                      ? (localWork as Record<string, unknown>)
+                      : {}),
+                    agent: workerAgent,
+                  };
+                  writeFileSync(localConfigPath, yamlStringify(localRaw, { indent: 2 }));
+                  console.log(chalk.dim(`  ✓ Saved agent config to ${localConfigPath}\n`));
+                } catch {
+                  // Local config update failed — proceed without saving
+                }
+              } else {
+                console.log(
+                  chalk.dim(`  ✓ Agent selection noted (no local config to persist to)\n`),
+                );
+              }
+            } else {
+              // Legacy single-file mode
+              const rawYaml = readFileSync(config.configPath, "utf-8");
+              const rawConfig = yamlParse(rawYaml);
+              const proj = rawConfig.projects[projectId];
+              if (proj) {
+                proj.orchestrator = { ...(proj.orchestrator ?? {}), agent: orchestratorAgent };
+                proj.worker = { ...(proj.worker ?? {}), agent: workerAgent };
+                writeFileSync(config.configPath, yamlStringify(rawConfig, { indent: 2 }));
+                console.log(chalk.dim(`  ✓ Saved to ${config.configPath}\n`));
+              }
+            }
+            // Pass configPath so loadConfig() reads from the same source we
+            // just wrote to, instead of preferring the global config which
+            // wouldn't have the just-saved agent overrides.
             config = loadConfig(config.configPath);
             project = config.projects[projectId];
           }
 
-          const actualPort = await runStartup(config, projectId, project, opts);
+          const actualPort = await runStartup(
+            config,
+            projectId,
+            project,
+            // When attaching to an existing AO instance: skip the dashboard
+            // (already running). The lifecycle timer starts unreffed by default —
+            // the existing instance's lifecycle manager picks up the new session
+            // on its next poll cycle, unless it doesn't cover this project (see below).
+            attachToRunning ? { ...opts, dashboard: false, attachToRunning: true } : opts,
+          );
+
+          // When attaching to an existing instance, ensure the new session gets
+          // lifecycle coverage. If the existing daemon was started before this
+          // project was registered (running.projects doesn't include projectId),
+          // pin the lifecycle worker so this process stays alive and polls it,
+          // and add this project to running.json so `ao stop` can find us.
+          // When the daemon does cover the project, the timer stays unreffed and
+          // the process exits naturally.
+          if (attachToRunning && running && !running.projects.includes(projectId)) {
+            pinLifecycleWorker(projectId);
+            await addProjectToRunning(projectId);
+          }
 
           // ── Register in running.json (Step 11) ──
-          await register({
-            pid: process.pid,
-            configPath: config.configPath,
-            port: actualPort,
-            startedAt: new Date().toISOString(),
-            projects: Object.keys(config.projects),
-          });
+          // Skip when attaching to an already-running instance: the existing process
+          // owns running.json and re-writing it would overwrite its PID/port.
+          if (!attachToRunning) {
+            await register({
+              pid: process.pid,
+              configPath: config.configPath,
+              port: actualPort,
+              startedAt: new Date().toISOString(),
+              projects: Object.keys(config.projects),
+            });
+          }
         } catch (err) {
           if (err instanceof Error) {
             console.error(chalk.red("\nError:"), err.message);
@@ -1408,87 +1684,69 @@ export function registerStop(program: Command): void {
     .description("Stop orchestrator agent and dashboard")
     .option("--purge-session", "Delete mapped OpenCode session when stopping")
     .option("--all", "Stop all running AO instances")
-    .action(
-      async (
-        projectArg?: string,
-        opts: { purgeSession?: boolean; all?: boolean } = {},
-      ) => {
-        try {
-          // Check running.json first
-          const running = await getRunning();
+    .action(async (projectArg?: string, opts: { purgeSession?: boolean; all?: boolean } = {}) => {
+      try {
+        // Check running.json first
+        const running = await getRunning();
 
-          if (opts.all) {
-            // --all: kill via running.json if available, then fallback to config
-            if (running) {
-              try {
-                process.kill(running.pid, "SIGTERM");
-              } catch {
-                // Already dead
-              }
-              await unregister();
-              console.log(
-                chalk.green(`\n✓ Stopped AO on port ${running.port}`),
-              );
-              console.log(chalk.dim(`  Projects: ${running.projects.join(", ")}\n`));
-            } else {
-              console.log(chalk.yellow("No running AO instance found in running.json."));
-            }
-            return;
-          }
-
-          const config = loadConfig();
-          const { projectId: _projectId, project } = await resolveProject(config, projectArg, "stop");
-          const sessionId = `${project.sessionPrefix}-orchestrator`;
-          const port = config.port ?? 3000;
-
-          console.log(chalk.bold(`\nStopping orchestrator for ${chalk.cyan(project.name)}\n`));
-
-          // Kill orchestrator session via SessionManager
-          const sm = await getSessionManager(config);
-          const existing = await sm.get(sessionId);
-
-          if (existing) {
-            const spinner = ora("Stopping orchestrator session").start();
-            const purgeOpenCode = opts?.purgeSession === true;
-            await sm.kill(sessionId, { purgeOpenCode });
-            spinner.succeed("Orchestrator session stopped");
-          } else {
-            console.log(chalk.yellow(`Orchestrator session "${sessionId}" is not running`));
-          }
-
-          const lifecycleStopped = await stopLifecycleWorker(config, _projectId);
-          if (lifecycleStopped) {
-            console.log(chalk.green("Lifecycle worker stopped"));
-          } else {
-            console.log(chalk.yellow("Lifecycle worker not running"));
-          }
-
-          // Stop dashboard — kill parent PID from running.json, then also stop
-          // any dashboard child process via lsof (parent SIGTERM may not propagate)
+        if (opts.all) {
+          // --all: kill via running.json if available, then fallback to config
           if (running) {
-            try {
-              process.kill(running.pid, "SIGTERM");
-            } catch {
-              // Already dead
-            }
+            killRunningInstance(running);
             await unregister();
-          }
-          await stopDashboard(running?.port ?? port);
-
-          console.log(chalk.bold.green("\n✓ Orchestrator stopped\n"));
-          console.log(
-            chalk.dim(`  Uptime: since ${running?.startedAt ?? "unknown"}`),
-          );
-          console.log(
-            chalk.dim(`  Projects: ${Object.keys(config.projects).join(", ")}\n`),
-          );
-        } catch (err) {
-          if (err instanceof Error) {
-            console.error(chalk.red("\nError:"), err.message);
+            console.log(chalk.green(`\n✓ Stopped AO on port ${running.port}`));
+            console.log(chalk.dim(`  Projects: ${running.projects.join(", ")}\n`));
           } else {
-            console.error(chalk.red("\nError:"), String(err));
+            console.log(chalk.yellow("No running AO instance found in running.json."));
           }
-          process.exit(1);
+          return;
         }
-      });
+
+        const config = loadConfig();
+        const { projectId: _projectId, project } = await resolveProject(config, projectArg, "stop");
+        const sessionId = `${project.sessionPrefix}-orchestrator`;
+        const port = config.port ?? 3000;
+
+        console.log(chalk.bold(`\nStopping orchestrator for ${chalk.cyan(project.name)}\n`));
+
+        // Kill orchestrator session via SessionManager
+        const sm = await getSessionManager(config);
+        const existing = await sm.get(sessionId);
+
+        if (existing) {
+          const spinner = ora("Stopping orchestrator session").start();
+          const purgeOpenCode = opts?.purgeSession === true;
+          await sm.kill(sessionId, { purgeOpenCode });
+          spinner.succeed("Orchestrator session stopped");
+        } else {
+          console.log(chalk.yellow(`Orchestrator session "${sessionId}" is not running`));
+        }
+
+        const lifecycleStopped = await stopLifecycleWorker(config, _projectId);
+        if (lifecycleStopped) {
+          console.log(chalk.green("Lifecycle worker stopped"));
+        } else {
+          console.log(chalk.yellow("Lifecycle worker not running"));
+        }
+
+        // Stop dashboard — kill parent PID from running.json, then also stop
+        // any dashboard child process via lsof (parent SIGTERM may not propagate)
+        if (running) {
+          killRunningInstance(running);
+          await unregister();
+        }
+        await stopDashboard(running?.port ?? port);
+
+        console.log(chalk.bold.green("\n✓ Orchestrator stopped\n"));
+        console.log(chalk.dim(`  Uptime: since ${running?.startedAt ?? "unknown"}`));
+        console.log(chalk.dim(`  Projects: ${Object.keys(config.projects).join(", ")}\n`));
+      } catch (err) {
+        if (err instanceof Error) {
+          console.error(chalk.red("\nError:"), err.message);
+        } else {
+          console.error(chalk.red("\nError:"), String(err));
+        }
+        process.exit(1);
+      }
+    });
 }

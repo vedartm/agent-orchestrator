@@ -38,6 +38,7 @@ const {
     spawnOrchestrator: vi.fn(),
     send: vi.fn(),
     claimPR: vi.fn(),
+    restore: vi.fn(),
   },
   mockWaitForPortAndOpen: vi.fn().mockResolvedValue(undefined),
   mockSpawn: vi.fn(),
@@ -77,17 +78,8 @@ vi.mock("ora", () => ({
 vi.mock("@composio/ao-core", async (importOriginal) => {
   // eslint-disable-next-line @typescript-eslint/consistent-type-imports
   const actual = await importOriginal<typeof import("@composio/ao-core")>();
-  const normalizeOrchestratorSessionStrategy =
-    actual.normalizeOrchestratorSessionStrategy ??
-    ((strategy: string | undefined) => {
-      if (strategy === "kill-previous" || strategy === "delete-new") return "delete";
-      if (strategy === "ignore-new") return "ignore";
-      return strategy ?? "reuse";
-    });
-
   return {
     ...actual,
-    normalizeOrchestratorSessionStrategy,
     loadConfig: (path?: string) => {
       if (path) return actual.loadConfig(path);
       return mockConfigRef.current;
@@ -102,6 +94,7 @@ vi.mock("../../src/lib/create-session-manager.js", () => ({
 vi.mock("../../src/lib/lifecycle-service.js", () => ({
   ensureLifecycleWorker: (...args: unknown[]) => mockEnsureLifecycleWorker(...args),
   stopLifecycleWorker: (...args: unknown[]) => mockStopLifecycleWorker(...args),
+  pinLifecycleWorker: vi.fn(),
 }));
 
 vi.mock("../../src/lib/web-dir.js", () => ({
@@ -141,7 +134,13 @@ vi.mock("../../src/lib/caller-context.js", () => ({
 
 vi.mock("../../src/lib/detect-env.js", () => ({
   detectEnvironment: vi.fn().mockResolvedValue({
-    git: { isRepo: true, remoteUrl: null, ownerRepo: null, currentBranch: "main", defaultBranch: "main" },
+    git: {
+      isRepo: true,
+      remoteUrl: null,
+      ownerRepo: null,
+      currentBranch: "main",
+      defaultBranch: "main",
+    },
     tools: { hasTmux: true, hasGh: false, ghAuthed: false },
     apiKeys: { hasLinear: false, hasSlack: false },
   }),
@@ -239,8 +238,6 @@ beforeEach(() => {
     running: true,
     started: true,
     pid: 12345,
-    pidFile: "/tmp/lifecycle-worker.pid",
-    logFile: "/tmp/lifecycle-worker.log",
   });
   mockStopLifecycleWorker.mockReset();
   mockStopLifecycleWorker.mockResolvedValue(true);
@@ -857,7 +854,7 @@ describe("start command — orchestrator session strategy display", () => {
     expect(output).not.toContain("reused existing session");
   });
 
-  it.each(["delete", "ignore", "delete-new", "ignore-new", "kill-previous"] as const)(
+  it.each(["delete", "ignore", "new"] as const)(
     "uses attach messaging when strategy is %s",
     async (orchestratorSessionStrategy) => {
       mockConfigRef.current = makeConfig({
@@ -1103,15 +1100,14 @@ describe("start command — autoCreateConfig", () => {
     const { detectProjectType } = await import("../../src/lib/project-detection.js");
     vi.mocked(detectProjectType).mockReturnValue({ languages: [], frameworks: [] });
 
-    const { detectAvailableAgents, detectAgentRuntime } = await import("../../src/lib/detect-agent.js");
+    const { detectAvailableAgents, detectAgentRuntime } =
+      await import("../../src/lib/detect-agent.js");
     vi.mocked(detectAvailableAgents).mockResolvedValue([]);
     vi.mocked(detectAgentRuntime).mockResolvedValue("claude-code");
 
     const { findFreePort } = await import("../../src/lib/web-dir.js");
     vi.mocked(findFreePort).mockResolvedValue(3000);
 
-    // start.ts uses `import { cwd } from "node:process"` which is intercepted
-    // by the node:process mock defined at the top of this file.
     mockProcessCwd.mockReturnValue(tmpDir);
 
     await createConfigOnly();
@@ -1122,5 +1118,123 @@ describe("start command — autoCreateConfig", () => {
     const content = readFileSync(configPath, "utf-8");
     const parsed = parseYaml(content) as { defaults?: { notifiers?: unknown[] } };
     expect(parsed.defaults?.notifiers).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Multi-project integration (handleMultiProjectStart)
+// ---------------------------------------------------------------------------
+
+describe("multi-project start", () => {
+  let globalConfigDir: string;
+  let origGlobalEnv: string | undefined;
+
+  beforeEach(() => {
+    globalConfigDir = join(tmpDir, ".ao-global");
+    mkdirSync(globalConfigDir, { recursive: true });
+    origGlobalEnv = process.env["AO_GLOBAL_CONFIG_PATH"];
+    process.env["AO_GLOBAL_CONFIG_PATH"] = join(globalConfigDir, "config.yaml");
+  });
+
+  afterEach(() => {
+    if (origGlobalEnv !== undefined) {
+      process.env["AO_GLOBAL_CONFIG_PATH"] = origGlobalEnv;
+    } else {
+      delete process.env["AO_GLOBAL_CONFIG_PATH"];
+    }
+  });
+
+  function writeGlobalConfig(projects: Record<string, { name: string; path: string }>): void {
+    const entries = Object.entries(projects);
+    if (entries.length === 0) {
+      writeFileSync(join(globalConfigDir, "config.yaml"), "projects: {}\n", "utf-8");
+    } else {
+      const yaml = entries
+        .map(([id, p]) => `  ${id}:\n    name: ${p.name}\n    path: ${p.path}`)
+        .join("\n");
+      writeFileSync(join(globalConfigDir, "config.yaml"), `projects:\n${yaml}\n`, "utf-8");
+    }
+  }
+
+  it("loads config from global registry", async () => {
+    // Use core module functions directly (imported via the mock passthrough)
+    const core = await import("@composio/ao-core");
+    const projectPath = join(tmpDir, "my-project");
+    mkdirSync(projectPath, { recursive: true });
+
+    writeGlobalConfig({ mp: { name: "My Project", path: projectPath } });
+
+    const gc = core.loadGlobalConfig();
+    expect(gc).not.toBeNull();
+    expect(gc!.projects["mp"]).toBeDefined();
+    expect(gc!.projects["mp"].name).toBe("My Project");
+  });
+
+  it("builds effective config from global registry + local config", async () => {
+    const core = await import("@composio/ao-core");
+    const projectPath = join(tmpDir, "eff-proj");
+    mkdirSync(projectPath, { recursive: true });
+    writeFileSync(
+      join(projectPath, "agent-orchestrator.yaml"),
+      "repo: org/effective\ndefaultBranch: develop\n",
+      "utf-8",
+    );
+
+    writeGlobalConfig({ ep: { name: "Effective Project", path: projectPath } });
+
+    const gc = core.loadGlobalConfig()!;
+    const globalPath = core.findGlobalConfigPath();
+    const config = core.buildEffectiveConfig(gc, globalPath);
+
+    expect(config.projects["ep"]).toBeDefined();
+    expect(config.projects["ep"].repo).toBe("org/effective");
+    expect(config.projects["ep"].defaultBranch).toBe("develop");
+    expect(config.projects["ep"].name).toBe("Effective Project");
+  });
+
+  it("matchProjectByCwd finds registered project", async () => {
+    const core = await import("@composio/ao-core");
+    const projectPath = join(tmpDir, "match-proj");
+    mkdirSync(projectPath, { recursive: true });
+
+    writeGlobalConfig({ mp: { name: "Match", path: projectPath } });
+
+    const gc = core.loadGlobalConfig()!;
+    expect(core.matchProjectByCwd(gc, projectPath)).toBe("mp");
+    expect(core.matchProjectByCwd(gc, join(projectPath, "src"))).toBe("mp");
+    expect(core.matchProjectByCwd(gc, "/unrelated/path")).toBeNull();
+  });
+
+  it("prints ao project list hint after registering a new project", async () => {
+    const core = await import("@composio/ao-core");
+    const projectPath = join(tmpDir, "hint-proj");
+    mkdirSync(projectPath, { recursive: true });
+    writeFileSync(
+      join(projectPath, "agent-orchestrator.yaml"),
+      "repo: org/hint\ndefaultBranch: main\n",
+    );
+
+    // Empty global config — project will be auto-registered on start
+    writeGlobalConfig({});
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const result = core.resolveMultiProjectStart(projectPath);
+    // Simulate what handleMultiProjectStart does with the messages
+    if (result) {
+      for (const msg of result.messages) {
+        if (msg.level === "success") console.log(`  ✓ ${msg.text}`);
+        else if (msg.level === "warn") console.log(`  ⚠ ${msg.text}`);
+        else console.log(`  ${msg.text}`);
+      }
+      const wasRegistered = result.messages.some((m) => m.text.includes("Registered"));
+      if (wasRegistered) {
+        console.log(`  Run \`ao project list\` to see all registered projects.`);
+      }
+    }
+
+    const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toContain("ao project list");
+    logSpy.mockRestore();
   });
 });

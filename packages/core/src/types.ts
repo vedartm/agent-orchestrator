@@ -1,4 +1,5 @@
 import type { ObservabilityLevel } from "./observability.js";
+import type { ConfigMode } from "./global-config.js";
 
 /**
  * Agent Orchestrator — Core Type Definitions
@@ -242,6 +243,13 @@ export interface SessionSpawnConfig {
 export interface OrchestratorSpawnConfig {
   projectId: string;
   systemPrompt?: string;
+  /**
+   * When set, use this specific suffix number for the orchestrator session ID
+   * (`{prefix}-orchestrator-{suffix}`) instead of auto-incrementing.
+   * Used by `ao start` when the user picks "Start new orchestrator" and the
+   * CLI has already computed the desired suffix from the existing session list.
+   */
+  forcedSuffix?: number;
 }
 
 // =============================================================================
@@ -1012,6 +1020,12 @@ export interface OrchestratorConfig {
    */
   configPath: string;
 
+  /**
+   * Path to the global config file (multi-project mode).
+   * Set when loaded via global config. Undefined in legacy single-file mode.
+   */
+  globalConfigPath?: string;
+
   /** Web dashboard port (defaults to 3000) */
   port?: number;
 
@@ -1032,6 +1046,9 @@ export interface OrchestratorConfig {
 
   /** Project configurations */
   projects: Record<string, ProjectConfig>;
+
+  /** Display order for projects in sidebar/portfolio */
+  projectOrder?: string[];
 
   /** Notification channel configs */
   notifiers: Record<string, NotifierConfig>;
@@ -1136,6 +1153,12 @@ export interface ProjectConfig {
   /** Session name prefix (e.g. "app" → "app-1", "app-2") */
   sessionPrefix: string;
 
+  /** Config ownership mode (set at runtime, not persisted) */
+  configMode?: ConfigMode;
+
+  /** Per-project config path used for hash-based session directory computation. Set to the local config path in hybrid mode to preserve backward-compatible hashes. */
+  effectiveConfigPath?: string;
+
   /** Override default runtime */
   runtime?: string;
 
@@ -1176,15 +1199,7 @@ export interface ProjectConfig {
   /** Rules for the orchestrator agent (stored, reserved for future use) */
   orchestratorRules?: string;
 
-  orchestratorSessionStrategy?:
-    | "reuse"
-    | "delete"
-    | "ignore"
-    | "delete-new"
-    | "ignore-new"
-    | "kill-previous";
-
-  opencodeIssueSessionStrategy?: "reuse" | "delete" | "ignore";
+  orchestratorSessionStrategy?: "reuse" | "delete" | "ignore" | "new";
 
   /** Task decomposition configuration */
   decomposer?: {
@@ -1450,6 +1465,13 @@ export interface LifecycleManager {
 
   /** Stop the lifecycle polling loop */
   stop(): void;
+
+  /**
+   * Re-reference the poll timer so it keeps the Node.js event loop alive.
+   * Only call from the long-running daemon (`ao start`). By default the
+   * timer is unreffed and will not block process exit.
+   */
+  pin(): void;
 
   /** Get current state for all sessions */
   getStates(): Map<SessionId, SessionStatus>;

@@ -5,6 +5,12 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 export interface RunningState {
   pid: number;
+  /**
+   * PIDs of secondary `ao start` processes that attached to this running instance
+   * to provide lifecycle coverage for projects the original daemon doesn't cover.
+   * `ao stop` kills these alongside `pid` so none become orphaned.
+   */
+  secondaryPids?: number[];
   configPath: string;
   port: number;
   startedAt: string;
@@ -102,6 +108,48 @@ export async function register(entry: RunningState): Promise<void> {
     writeState(entry);
   } finally {
     release();
+  }
+}
+
+/**
+ * Add a project and this process's PID to the existing running instance.
+ *
+ * Used when `ao start` attaches to a running daemon and pins its own lifecycle
+ * worker for a project the daemon doesn't cover. Records both the project ID
+ * (so the dashboard knows it exists) and `process.pid` in `secondaryPids` (so
+ * `ao stop` can SIGTERM this process alongside the original daemon).
+ *
+ * No-ops if there is no active running instance.
+ */
+export async function addProjectToRunning(projectId: string): Promise<void> {
+  const release = await acquireLock();
+  try {
+    const state = readState();
+    if (!state || !isProcessAlive(state.pid)) return;
+    const projects = state.projects.includes(projectId)
+      ? state.projects
+      : [...state.projects, projectId];
+    const existing = state.secondaryPids ?? [];
+    const secondaryPids = existing.includes(process.pid)
+      ? existing
+      : [...existing, process.pid];
+    writeState({ ...state, projects, secondaryPids });
+  } finally {
+    release();
+  }
+}
+
+/**
+ * Send SIGTERM (and SIGKILL fallback) to all PIDs associated with a running
+ * instance — the main daemon PID and any secondary PIDs registered by attached
+ * `ao start` processes. Callers should call `unregister()` afterwards.
+ *
+ * @param signal - Signal to send. Defaults to "SIGTERM".
+ */
+export function killRunningInstance(state: RunningState, signal: NodeJS.Signals = "SIGTERM"): void {
+  const pids = [state.pid, ...(state.secondaryPids ?? [])];
+  for (const pid of pids) {
+    try { process.kill(pid, signal); } catch { /* already dead */ }
   }
 }
 

@@ -37,7 +37,7 @@ import {
   type CICheck,
 } from "./types.js";
 import { updateMetadata } from "./metadata.js";
-import { getSessionsDir } from "./paths.js";
+import { getSessionsDir, resolveProjectConfigPath } from "./paths.js";
 import { createCorrelationId, createProjectObserver } from "./observability.js";
 import { resolveAgentSelection, resolveSessionRole } from "./agent-selection.js";
 
@@ -459,7 +459,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           // Persist PR URL so subsequent polls don't need to re-query.
           // Don't write status here — step 4 below will determine the
           // correct status (merged, ci_failed, etc.) on this same cycle.
-          const sessionsDir = getSessionsDir(config.configPath, project.path);
+          const sessionsDir = getSessionsDir(resolveProjectConfigPath(project.path, project.effectiveConfigPath, config.globalConfigPath, config.configPath), project.path);
           updateMetadata(sessionsDir, session.id, { pr: detectedPR.url });
         }
       } catch {
@@ -711,7 +711,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     const project = config.projects[session.projectId];
     if (!project) return;
 
-    const sessionsDir = getSessionsDir(config.configPath, project.path);
+    const sessionsDir = getSessionsDir(resolveProjectConfigPath(project.path, project.effectiveConfigPath, config.globalConfigPath, config.configPath), project.path);
     updateMetadata(sessionsDir, session.id, updates);
 
     const cleaned = Object.fromEntries(
@@ -1406,6 +1406,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     start(intervalMs = 30_000): void {
       if (pollTimer) return; // Already running
       pollTimer = setInterval(() => void pollAll(), intervalMs);
+      // Detached by default — won't block process exit. Callers that need
+      // the process to stay alive (i.e. the ao start daemon) must call pin().
+      pollTimer.unref();
       // Run immediately on start
       void pollAll();
     },
@@ -1415,6 +1418,10 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         clearInterval(pollTimer);
         pollTimer = null;
       }
+    },
+
+    pin(): void {
+      pollTimer?.ref();
     },
 
     getStates(): Map<SessionId, SessionStatus> {

@@ -1,0 +1,386 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Command } from "commander";
+import type { GlobalConfig, SessionManager } from "@composio/ao-core";
+
+// ---------------------------------------------------------------------------
+// Hoisted mocks
+// ---------------------------------------------------------------------------
+
+const {
+  mockLoadGlobalConfig,
+  mockSaveGlobalConfig,
+  mockRegisterNewProject,
+  mockValidateAndCommitRegistration,
+  mockUnregisterProject,
+  mockScaffoldGlobalConfig,
+  mockFindProjectByPath,
+  mockFindGlobalConfigPath,
+  mockLoadConfig,
+  mockExpandHome,
+  mockSessionManager,
+  mockGetRunning,
+  mockPromptConfirm,
+  mockIsHumanCaller,
+} = vi.hoisted(() => {
+  const pendingGc = {
+    port: 3000,
+    readyThresholdMs: 300_000,
+    defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: ["composio", "desktop"] },
+    projects: { "ma": { name: "my-app", path: "/home/user/my-app" } },
+  };
+  const defaultRegisterResult = {
+    projectId: "ma",
+    updatedGlobalConfig: pendingGc,
+    configMode: "hybrid" as const,
+    messages: [] as Array<{ level: "info" | "warn" | "success"; text: string }>,
+  };
+  return {
+    mockLoadGlobalConfig: vi.fn(),
+    mockSaveGlobalConfig: vi.fn(),
+    mockRegisterNewProject: vi.fn().mockReturnValue(defaultRegisterResult),
+    mockValidateAndCommitRegistration: vi.fn().mockReturnValue({ projects: {} }),
+    mockUnregisterProject: vi.fn(),
+    mockScaffoldGlobalConfig: vi.fn(),
+    mockFindProjectByPath: vi.fn().mockReturnValue(null),
+    mockFindGlobalConfigPath: vi.fn().mockReturnValue("/home/user/.ao/config.yaml"),
+    mockLoadConfig: vi.fn(),
+    mockExpandHome: vi.fn((p: string) => p),
+    mockSessionManager: {
+      list: vi.fn().mockResolvedValue([]),
+      kill: vi.fn(),
+      cleanup: vi.fn(),
+      get: vi.fn(),
+      spawn: vi.fn(),
+      spawnOrchestrator: vi.fn(),
+      send: vi.fn(),
+      claimPR: vi.fn(),
+    },
+    mockGetRunning: vi.fn().mockResolvedValue(null),
+    mockPromptConfirm: vi.fn().mockResolvedValue(true),
+    mockIsHumanCaller: vi.fn().mockReturnValue(false),
+  };
+});
+
+vi.mock("@composio/ao-core", async (importOriginal) => {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+  const actual = await importOriginal<typeof import("@composio/ao-core")>();
+  return {
+    ...actual,
+    loadGlobalConfig: mockLoadGlobalConfig,
+    saveGlobalConfig: mockSaveGlobalConfig,
+    registerNewProject: mockRegisterNewProject,
+    validateAndCommitRegistration: mockValidateAndCommitRegistration,
+    unregisterProject: mockUnregisterProject,
+    scaffoldGlobalConfig: mockScaffoldGlobalConfig,
+    findProjectByPath: mockFindProjectByPath,
+    findGlobalConfigPath: mockFindGlobalConfigPath,
+    loadConfig: mockLoadConfig,
+    expandHome: mockExpandHome,
+  };
+});
+
+vi.mock("../../src/lib/create-session-manager.js", () => ({
+  getSessionManager: async (): Promise<SessionManager> => mockSessionManager as unknown as SessionManager,
+}));
+
+vi.mock("../../src/lib/running-state.js", () => ({
+  getRunning: () => mockGetRunning(),
+}));
+
+vi.mock("../../src/lib/prompts.js", () => ({
+  promptConfirm: (...args: unknown[]) => mockPromptConfirm(...args),
+}));
+
+vi.mock("../../src/lib/caller-context.js", () => ({
+  isHumanCaller: () => mockIsHumanCaller(),
+}));
+
+// ---------------------------------------------------------------------------
+// Import after mocks
+// ---------------------------------------------------------------------------
+
+import { registerProjectCommand } from "../../src/commands/project.js";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeGlobalConfig(
+  projectIds: string[] = ["my-project"],
+): GlobalConfig {
+  const projects: GlobalConfig["projects"] = {};
+  for (const id of projectIds) {
+    projects[id] = { name: id, path: `/home/user/${id}` } as GlobalConfig["projects"][string];
+  }
+  return {
+    port: 3000,
+    readyThresholdMs: 300_000,
+    defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: ["composio", "desktop"] },
+    projects,
+  } as GlobalConfig;
+}
+
+function runCommand(args: string[]): Promise<Command> {
+  const program = new Command();
+  program.exitOverride();
+  registerProjectCommand(program);
+  return program.parseAsync(["node", "ao", ...args]);
+}
+
+// ---------------------------------------------------------------------------
+// ao project list
+// ---------------------------------------------------------------------------
+
+describe("ao project list", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("lists registered projects", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig(["app", "api"]));
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await runCommand(["project", "list"]);
+    const output = spy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toContain("app");
+    expect(output).toContain("api");
+    spy.mockRestore();
+  });
+
+  it("shows message when no global config", async () => {
+    mockLoadGlobalConfig.mockReturnValue(null);
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await runCommand(["project", "list"]);
+    const output = spy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toContain("No global config");
+    spy.mockRestore();
+  });
+
+  it("shows message when no projects registered", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig([]));
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await runCommand(["project", "list"]);
+    const output = spy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toContain("No projects");
+    spy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ao project add
+// ---------------------------------------------------------------------------
+
+describe("ao project add", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFindProjectByPath.mockReturnValue(null);
+    mockExpandHome.mockImplementation((p: string) => p);
+    mockFindGlobalConfigPath.mockReturnValue("/home/user/.ao/config.yaml");
+    mockValidateAndCommitRegistration.mockReturnValue({ projects: {} });
+    mockRegisterNewProject.mockReturnValue({
+      projectId: "ma",
+      updatedGlobalConfig: makeGlobalConfig(["ma"]),
+      configMode: "hybrid" as const,
+      messages: [],
+    });
+  });
+
+  it("registers a new project", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig([]));
+    await runCommand(["project", "add", "/home/user/my-app"]);
+    expect(mockRegisterNewProject).toHaveBeenCalled();
+    expect(mockValidateAndCommitRegistration).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "ma" }),
+      "/home/user/.ao/config.yaml",
+      expect.any(Array),
+    );
+  });
+
+  it("scaffolds global config when none exists", async () => {
+    mockLoadGlobalConfig.mockReturnValue(null);
+    mockScaffoldGlobalConfig.mockReturnValue(makeGlobalConfig([]));
+    await runCommand(["project", "add", "/home/user/new-app"]);
+    expect(mockScaffoldGlobalConfig).toHaveBeenCalled();
+    expect(mockRegisterNewProject).toHaveBeenCalled();
+    expect(mockValidateAndCommitRegistration).toHaveBeenCalled();
+  });
+
+  it("skips registration when already registered (exact path match)", async () => {
+    const config = makeGlobalConfig(["ma"]);
+    mockLoadGlobalConfig.mockReturnValue(config);
+    mockFindProjectByPath.mockReturnValue({ id: "ma", entry: config.projects["ma"] });
+    await runCommand(["project", "add", "/home/user/my-app"]);
+    expect(mockRegisterNewProject).not.toHaveBeenCalled();
+    expect(mockSaveGlobalConfig).not.toHaveBeenCalled();
+  });
+
+  it("passes --id override to registerNewProject", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig([]));
+    await runCommand(["project", "add", "/home/user/my-app", "--id", "custom"]);
+    expect(mockRegisterNewProject).toHaveBeenCalledWith(
+      expect.anything(),
+      "/home/user/my-app",
+      expect.objectContaining({ explicitId: "custom" }),
+    );
+  });
+
+  it("passes --name override to registerNewProject", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig([]));
+    await runCommand(["project", "add", "/home/user/my-app", "--name", "My App"]);
+    expect(mockRegisterNewProject).toHaveBeenCalledWith(
+      expect.anything(),
+      "/home/user/my-app",
+      expect.objectContaining({ name: "My App" }),
+    );
+  });
+
+  it("shows warning message when registerNewProject reports a suffix collision", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig([]));
+    mockRegisterNewProject.mockReturnValue({
+      projectId: "my2",
+      updatedGlobalConfig: makeGlobalConfig(["my2"]),
+      configMode: "hybrid" as const,
+      messages: [{ level: "warn" as const, text: 'ID "my" taken, using "my2"' }],
+    });
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await runCommand(["project", "add", "/home/user/my-app"]);
+    const output = spy.mock.calls.map((c) => c.join(" ")).join("\n");
+    spy.mockRestore();
+
+    expect(output).toContain('ID "my" taken, using "my2"');
+    expect(mockValidateAndCommitRegistration).toHaveBeenCalled();
+  });
+
+  it("forwards warnings from validateAndCommitRegistration", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig([]));
+    const warnings: string[] = [];
+    mockValidateAndCommitRegistration.mockImplementation(
+      (_reg: unknown, _path: unknown, w?: string[]) => {
+        w?.push("Some non-fatal warning");
+        return { projects: {} };
+      },
+    );
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await runCommand(["project", "add", "/home/user/my-app"]);
+    const output = spy.mock.calls.map((c) => c.join(" ")).join("\n");
+    spy.mockRestore();
+
+    void warnings;
+    expect(output).toContain("Some non-fatal warning");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ao project remove
+// ---------------------------------------------------------------------------
+
+describe("ao project remove", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetRunning.mockResolvedValue(null);
+    mockPromptConfirm.mockResolvedValue(true);
+    mockIsHumanCaller.mockReturnValue(false);
+    mockSessionManager.list.mockResolvedValue([]);
+    mockUnregisterProject.mockImplementation((cfg: GlobalConfig, id: string) => {
+      const { [id]: _removed, ...rest } = cfg.projects;
+      const updated = { ...cfg, projects: rest };
+      return updated;
+    });
+    mockLoadConfig.mockReturnValue(makeGlobalConfig());
+  });
+
+  it("removes a project when found in global config", async () => {
+    const globalConfig = makeGlobalConfig(["my-project"]);
+    mockLoadGlobalConfig.mockReturnValue(globalConfig);
+
+    await runCommand(["project", "remove", "my-project", "--force"]);
+
+    expect(mockUnregisterProject).toHaveBeenCalledWith(globalConfig, "my-project");
+    expect(mockSaveGlobalConfig).toHaveBeenCalled();
+  });
+
+  it("exits with error when global config is not found", async () => {
+    mockLoadGlobalConfig.mockReturnValue(null);
+    const mockExit = vi.spyOn(process, "exit").mockImplementation(() => { throw new Error("exit"); });
+
+    await expect(runCommand(["project", "remove", "nonexistent", "--force"])).rejects.toThrow();
+    expect(mockExit).toHaveBeenCalledWith(1);
+
+    mockExit.mockRestore();
+  });
+
+  it("exits with error when project ID is not in global config", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig(["other-project"]));
+    const mockExit = vi.spyOn(process, "exit").mockImplementation(() => { throw new Error("exit"); });
+
+    await expect(runCommand(["project", "remove", "nonexistent", "--force"])).rejects.toThrow();
+    expect(mockExit).toHaveBeenCalledWith(1);
+
+    mockExit.mockRestore();
+  });
+
+  it("shows active sessions and includes orphan warning in prompt", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig(["my-project"]));
+    mockSessionManager.list.mockResolvedValue([{ id: "my-project-session-1" }, { id: "my-project-session-2" }]);
+    mockIsHumanCaller.mockReturnValue(true);
+    mockPromptConfirm.mockResolvedValue(true);
+
+    await runCommand(["project", "remove", "my-project"]);
+
+    expect(mockPromptConfirm).toHaveBeenCalledWith(
+      expect.stringContaining("active sessions will be orphaned"),
+      false,
+    );
+  });
+
+  it("cancels when user declines confirmation", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig(["my-project"]));
+    mockIsHumanCaller.mockReturnValue(true);
+    mockPromptConfirm.mockResolvedValue(false);
+
+    await runCommand(["project", "remove", "my-project"]);
+
+    expect(mockSaveGlobalConfig).not.toHaveBeenCalled();
+  });
+
+  it("skips confirmation with --force", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig(["my-project"]));
+    mockIsHumanCaller.mockReturnValue(true);
+
+    await runCommand(["project", "remove", "my-project", "--force"]);
+
+    expect(mockPromptConfirm).not.toHaveBeenCalled();
+    expect(mockSaveGlobalConfig).toHaveBeenCalled();
+  });
+
+  it("warns when ao start daemon is running after removal", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig(["my-project"]));
+    mockGetRunning.mockResolvedValue({ pid: 12345, configPath: "/tmp/config.yaml", port: 3000, startedAt: "", projects: ["my-project"] });
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await runCommand(["project", "remove", "my-project", "--force"]);
+
+    const output = spy.mock.calls.map((c: unknown[]) => c.join(" ")).join("\n");
+    expect(output).toContain("12345");
+    spy.mockRestore();
+  });
+
+  it("proceeds even when getRunning throws", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig(["my-project"]));
+    mockGetRunning.mockRejectedValue(new Error("no running.json"));
+
+    await runCommand(["project", "remove", "my-project", "--force"]);
+
+    expect(mockSaveGlobalConfig).toHaveBeenCalled();
+  });
+
+  it("proceeds when session manager throws", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig(["my-project"]));
+    mockLoadConfig.mockImplementation(() => { throw new Error("no config"); });
+
+    await runCommand(["project", "remove", "my-project", "--force"]);
+
+    expect(mockSaveGlobalConfig).toHaveBeenCalled();
+  });
+});

@@ -21,6 +21,9 @@ describe("Config Loading", () => {
 
     // Clear AO_CONFIG_PATH to ensure test isolation
     delete process.env.AO_CONFIG_PATH;
+    // Point global config to a non-existent path so loadConfig() does not pick
+    // up the developer's real ~/.agent-orchestrator/config.yaml during tests.
+    process.env["AO_GLOBAL_CONFIG_PATH"] = join(testDir, "nonexistent-global.yaml");
 
     // Change to test directory
     process.chdir(testDir);
