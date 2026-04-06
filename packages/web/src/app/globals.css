@@ -785,7 +785,7 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
 }
 
 .dashboard-stat-card__value--review {
-  color: var(--color-status-review);
+  color: var(--color-accent-orange);
 }
 
 /* ── Project metric tone colors ──────────────────────────────────────── */
@@ -837,6 +837,11 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
 .kanban-column__dot[data-level="done"] { background: var(--color-text-tertiary); }
 
 /* ── Activity dot / pill colors ──────────────────────────────────────── */
+
+/* Base fallbacks for null / unknown activity states */
+.activity-dot { background: var(--color-text-tertiary); }
+.activity-pill { background: var(--color-tint-neutral); }
+.activity-pill__text { color: var(--color-text-muted); }
 
 .activity-dot[data-activity="active"] { background: var(--color-status-working); }
 .activity-dot[data-activity="ready"] { background: var(--color-status-ready); }
