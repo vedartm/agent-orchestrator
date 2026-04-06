@@ -130,11 +130,14 @@ function deriveReviewDecisionGraphqlFromReviews(reviewsUnknown: unknown): string
   const rows = reviewsUnknown as RestReviewRow[];
   if (rows.length === 0) return "REVIEW_REQUIRED";
 
-  const decisiveStates = new Set(["APPROVED", "CHANGES_REQUESTED"]);
+  // Track APPROVED, CHANGES_REQUESTED, and DISMISSED per user. DISMISSED must
+  // override a prior CHANGES_REQUESTED (GitHub clears the blocking review when
+  // it is dismissed), so we keep the latest entry among these three states.
+  const trackableStates = new Set(["APPROVED", "CHANGES_REQUESTED", "DISMISSED"]);
   const byUser = new Map<string, RestReviewRow>();
   for (const r of rows) {
     const login = r.user?.login ?? "";
-    if (!decisiveStates.has((r.state ?? "").toUpperCase())) continue;
+    if (!trackableStates.has((r.state ?? "").toUpperCase())) continue;
     const prev = byUser.get(login);
     const t = r.submitted_at ? Date.parse(r.submitted_at) : 0;
     const pt = prev?.submitted_at ? Date.parse(prev.submitted_at) : 0;
@@ -413,7 +416,7 @@ export async function ghRestFallback(args: string[]): Promise<string> {
 
   let url = `https://api.github.com/${endpoint}`;
   if (queryParts.length > 0) {
-    url += "?" + queryParts.join("&");
+    url += (endpoint.includes("?") ? "&" : "?") + queryParts.join("&");
   }
 
   const curlArgs = [
