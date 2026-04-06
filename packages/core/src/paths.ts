@@ -9,16 +9,26 @@
  */
 
 import { createHash } from "node:crypto";
-import { dirname, basename, join } from "node:path";
+import { dirname, basename, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { realpathSync, existsSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
 
 /**
  * Generate a 12-character hash from a config directory path.
  * Always resolves symlinks before hashing to ensure consistency.
+ *
+ * @deprecated Use generateProjectPathHash() for new code.
+ * This function is kept for backwards compatibility with existing storage directories.
  */
 export function generateConfigHash(configPath: string): string {
-  const resolved = realpathSync(configPath);
+  let resolved: string;
+  try {
+    resolved = realpathSync(configPath);
+  } catch {
+    // Path doesn't exist — fall back to resolve() which expands relative segments
+    // without requiring the file to exist on disk.
+    resolved = resolve(configPath);
+  }
   const configDir = dirname(resolved);
   const hash = createHash("sha256").update(configDir).digest("hex");
   return hash.slice(0, 12);
@@ -53,6 +63,9 @@ export function generateInstanceId(configPath: string, projectPath: string): str
  * 4. Single word: first 3 chars (integrator → int)
  */
 export function generateSessionPrefix(projectId: string): string {
+  if (!projectId || projectId.length === 0) {
+    return "proj";
+  }
   if (projectId.length <= 4) {
     return projectId.toLowerCase();
   }
@@ -66,11 +79,13 @@ export function generateSessionPrefix(projectId: string): string {
   // kebab-case or snake_case: use initials
   if (projectId.includes("-") || projectId.includes("_")) {
     const separator = projectId.includes("-") ? "-" : "_";
-    return projectId
+    const prefix = projectId
       .split(separator)
+      .filter((word) => word.length > 0)
       .map((word) => word[0])
       .join("")
       .toLowerCase();
+    return prefix || projectId.slice(0, 3).toLowerCase();
   }
 
   // Single word: first 3 characters
@@ -101,6 +116,31 @@ export function getObservabilityBaseDir(configPath: string): string {
  */
 export function getSessionsDir(configPath: string, projectPath: string): string {
   return join(getProjectBaseDir(configPath, projectPath), "sessions");
+}
+
+/**
+ * Resolve the config path used for session directory hashing for a project.
+ *
+ * Mirrors the session-manager's `getEffectiveConfigPath` so every part of the
+ * system computes the same storage hash for a given project:
+ *
+ *  1. `effectiveConfigPath` — set when a local `agent-orchestrator.yaml` exists
+ *     (hybrid mode); preserves the per-project hash derived from the project dir.
+ *  2. Synthesized path — in multi-project mode with no local config, we construct
+ *     `join(projectPath, "agent-orchestrator.yaml")` so that
+ *     `generateConfigHash` hashes `projectPath` and keeps same-basename projects
+ *     in distinct directories.
+ *  3. `fallbackConfigPath` — legacy single-file mode; `config.configPath`.
+ */
+export function resolveProjectConfigPath(
+  projectPath: string,
+  effectiveConfigPath: string | undefined,
+  globalConfigPath: string | undefined,
+  fallbackConfigPath: string,
+): string {
+  if (effectiveConfigPath) return effectiveConfigPath;
+  if (globalConfigPath) return join(projectPath, "agent-orchestrator.yaml");
+  return fallbackConfigPath;
 }
 
 /**
@@ -189,7 +229,14 @@ export function expandHome(filepath: string): string {
  */
 export function validateAndStoreOrigin(configPath: string, projectPath: string): void {
   const originPath = getOriginFilePath(configPath, projectPath);
-  const resolvedConfigPath = realpathSync(configPath);
+  // Use the same fallback as generateConfigHash: configPath may not exist yet
+  // (e.g. pending registration), so realpathSync would throw.
+  let resolvedConfigPath: string;
+  try {
+    resolvedConfigPath = realpathSync(configPath);
+  } catch {
+    resolvedConfigPath = resolve(configPath);
+  }
 
   if (existsSync(originPath)) {
     const stored = readFileSync(originPath, "utf-8").trim();

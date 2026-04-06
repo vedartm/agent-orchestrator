@@ -10,11 +10,6 @@ describe("normalizeOrchestratorSessionStrategy", () => {
     expect(normalizeOrchestratorSessionStrategy("reuse")).toBe("reuse");
     expect(normalizeOrchestratorSessionStrategy("delete")).toBe("delete");
     expect(normalizeOrchestratorSessionStrategy("ignore")).toBe("ignore");
-  });
-
-  it("maps legacy aliases to canonical values", () => {
-    expect(normalizeOrchestratorSessionStrategy("kill-previous")).toBe("delete");
-    expect(normalizeOrchestratorSessionStrategy("delete-new")).toBe("delete");
-    expect(normalizeOrchestratorSessionStrategy("ignore-new")).toBe("ignore");
+    expect(normalizeOrchestratorSessionStrategy("new")).toBe("new");
   });
 });

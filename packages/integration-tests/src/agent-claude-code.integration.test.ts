@@ -149,6 +149,7 @@ describe.skipIf(!realProject)("path encoding & JSONL reading (real Claude data)"
         "file-history-snapshot",
         "queue-operation",
         "pr-link",
+        "permission-mode",
       ];
       expect(knownTypes).toContain(entry.lastType);
     }

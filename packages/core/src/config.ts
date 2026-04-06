@@ -11,12 +11,14 @@
  */
 
 import { readFileSync, existsSync } from "node:fs";
-import { resolve, join, basename } from "node:path";
+import { resolve, basename } from "node:path";
 import { homedir } from "node:os";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import { ConfigNotFoundError, type ExternalPluginEntryRef, type OrchestratorConfig } from "./types.js";
-import { generateSessionPrefix } from "./paths.js";
+import { generateSessionPrefix, expandHome } from "./paths.js";
+import { loadGlobalConfig, findGlobalConfigPath, findLocalConfigUpwards, OrchestratorSessionStrategySchema, DEFAULT_NOTIFICATION_ROUTING } from "./global-config.js";
+import { buildEffectiveConfig } from "./migration.js";
 
 function inferScmPlugin(project: {
   repo: string;
@@ -200,10 +202,7 @@ const ProjectConfigSchema = z.object({
   agentRules: z.string().optional(),
   agentRulesFile: z.string().optional(),
   orchestratorRules: z.string().optional(),
-  orchestratorSessionStrategy: z
-    .enum(["reuse", "delete", "ignore", "delete-new", "ignore-new", "kill-previous"])
-    .optional(),
-  opencodeIssueSessionStrategy: z.enum(["reuse", "delete", "ignore"]).optional(),
+  orchestratorSessionStrategy: OrchestratorSessionStrategySchema,
   decomposer: DecomposerConfigSchema.optional(),
 });
 
@@ -243,6 +242,7 @@ const InstalledPluginConfigSchema = z
     }
   });
 
+
 const OrchestratorConfigSchema = z.object({
   port: z.number().default(3000),
   terminalPort: z.number().optional(),
@@ -255,12 +255,7 @@ const OrchestratorConfigSchema = z.object({
     ProjectConfigSchema,
   ),
   notifiers: z.record(NotifierConfigSchema).default({}),
-  notificationRouting: z.record(z.array(z.string())).default({
-    urgent: ["desktop", "composio"],
-    action: ["desktop", "composio"],
-    warning: ["composio"],
-    info: ["composio"],
-  }),
+  notificationRouting: z.record(z.array(z.string())).default(DEFAULT_NOTIFICATION_ROUTING),
   reactions: z.record(ReactionConfigSchema).default({}),
 });
 
@@ -268,27 +263,18 @@ const OrchestratorConfigSchema = z.object({
 // CONFIG LOADING
 // =============================================================================
 
-/** Expand ~ to home directory */
-function expandHome(filepath: string): string {
-  if (filepath.startsWith("~/")) {
-    return join(homedir(), filepath.slice(2));
-  }
-  return filepath;
-}
-
 /** Expand all path fields in the config */
 function expandPaths(config: OrchestratorConfig): OrchestratorConfig {
-  for (const project of Object.values(config.projects)) {
-    project.path = expandHome(project.path);
+  const projects: typeof config.projects = {};
+  for (const [id, project] of Object.entries(config.projects)) {
+    projects[id] = { ...project, path: expandHome(project.path) };
   }
 
-  for (const plugin of config.plugins ?? []) {
-    if (plugin.path) {
-      plugin.path = expandHome(plugin.path);
-    }
-  }
+  const plugins = config.plugins?.map((plugin) =>
+    plugin.path ? { ...plugin, path: expandHome(plugin.path) } : plugin,
+  );
 
-  return config;
+  return { ...config, projects, ...(plugins !== undefined ? { plugins } : {}) };
 }
 
 /**
@@ -329,38 +315,46 @@ function generateTempPluginName(pkg?: string, path?: string): string {
   return "unknown";
 }
 
+interface ProcessedExternalPlugin {
+  entry: ExternalPluginEntryRef;
+  resolvedPlugin: string;
+  resolvedPath: string | undefined;
+}
+
 /**
  * Helper to process a single external plugin config entry.
- * Expands home paths, generates temp plugin name if needed, and returns the entry ref.
+ * Expands home paths, generates temp plugin name if needed, and returns the entry ref
+ * along with resolved values — without mutating the input.
  */
 function processExternalPluginConfig(
   pluginConfig: { plugin?: string; package?: string; path?: string },
   source: string,
   location: ExternalPluginEntryRef["location"],
   slot: ExternalPluginEntryRef["slot"],
-): ExternalPluginEntryRef | null {
+): ProcessedExternalPlugin | null {
   if (!pluginConfig.package && !pluginConfig.path) return null;
 
   // Expand home paths (~/...) for consistency with config.plugins
-  if (pluginConfig.path) {
-    pluginConfig.path = expandHome(pluginConfig.path);
-  }
+  const resolvedPath = pluginConfig.path ? expandHome(pluginConfig.path) : pluginConfig.path;
 
   // Track if user explicitly specified plugin name (for validation)
   const userSpecifiedPlugin = pluginConfig.plugin;
 
   // If plugin name not specified, generate a temporary one from package/path
-  if (!pluginConfig.plugin) {
-    pluginConfig.plugin = generateTempPluginName(pluginConfig.package, pluginConfig.path);
-  }
+  const resolvedPlugin =
+    pluginConfig.plugin ?? generateTempPluginName(pluginConfig.package, resolvedPath);
 
   return {
-    source,
-    location,
-    slot,
-    package: pluginConfig.package,
-    path: pluginConfig.path,
-    expectedPluginName: userSpecifiedPlugin,
+    entry: {
+      source,
+      location,
+      slot,
+      package: pluginConfig.package,
+      path: resolvedPath,
+      expectedPluginName: userSpecifiedPlugin,
+    },
+    resolvedPlugin,
+    resolvedPath,
   };
 }
 
@@ -374,54 +368,99 @@ function processExternalPluginConfig(
  * IMPORTANT: Only sets expectedPluginName when user explicitly specified `plugin`.
  * When plugin is auto-generated, expectedPluginName is left undefined so that
  * any manifest.name is accepted and the config is updated with it.
+ *
+ * Returns both the collected entries and an updated config with resolved plugin
+ * names and paths applied immutably (no mutation of shared nested objects).
  */
-export function collectExternalPluginConfigs(config: OrchestratorConfig): ExternalPluginEntryRef[] {
+export function collectExternalPluginConfigs(config: OrchestratorConfig): {
+  entries: ExternalPluginEntryRef[];
+  updatedConfig: OrchestratorConfig;
+} {
   const entries: ExternalPluginEntryRef[] = [];
+  const updatedProjects = { ...config.projects };
 
   // Collect from project tracker and scm configs
   for (const [projectId, project] of Object.entries(config.projects)) {
+    let updatedProject = project;
+
     if (project.tracker) {
-      const entry = processExternalPluginConfig(
+      const result = processExternalPluginConfig(
         project.tracker,
         `projects.${projectId}.tracker`,
         { kind: "project", projectId, configType: "tracker" },
         "tracker",
       );
-      if (entry) entries.push(entry);
+      if (result) {
+        entries.push(result.entry);
+        updatedProject = {
+          ...updatedProject,
+          tracker: { ...project.tracker, plugin: result.resolvedPlugin, path: result.resolvedPath },
+        };
+      }
     }
 
     if (project.scm) {
-      const entry = processExternalPluginConfig(
+      const result = processExternalPluginConfig(
         project.scm,
         `projects.${projectId}.scm`,
         { kind: "project", projectId, configType: "scm" },
         "scm",
       );
-      if (entry) entries.push(entry);
+      if (result) {
+        entries.push(result.entry);
+        updatedProject = {
+          ...updatedProject,
+          scm: { ...project.scm, plugin: result.resolvedPlugin, path: result.resolvedPath },
+        };
+      }
+    }
+
+    if (updatedProject !== project) {
+      updatedProjects[projectId] = updatedProject;
     }
   }
 
-  // Collect from global notifier configs
+  // Collect from global notifier configs.
+  // Lazy copy: start with the original reference and only create a new object
+  // when a notifier actually needs updating. This avoids a spurious new object
+  // identity (and downstream re-renders) when no notifiers have external plugins.
+  let updatedNotifiers: OrchestratorConfig["notifiers"] = config.notifiers;
   for (const [notifierId, notifierConfig] of Object.entries(config.notifiers ?? {})) {
     if (notifierConfig) {
-      const entry = processExternalPluginConfig(
+      const result = processExternalPluginConfig(
         notifierConfig,
         `notifiers.${notifierId}`,
         { kind: "notifier", notifierId },
         "notifier",
       );
-      if (entry) entries.push(entry);
+      if (result) {
+        entries.push(result.entry);
+        if (updatedNotifiers === config.notifiers) {
+          updatedNotifiers = { ...config.notifiers };
+        }
+        updatedNotifiers![notifierId] = {
+          ...notifierConfig,
+          plugin: result.resolvedPlugin,
+          path: result.resolvedPath,
+        };
+      }
     }
   }
 
-  return entries;
+  const updatedConfig: OrchestratorConfig = {
+    ...config,
+    projects: updatedProjects,
+    notifiers: updatedNotifiers,
+  };
+
+  return { entries, updatedConfig };
 }
 
 /**
  * Generate InstalledPluginConfig entries from external plugin entries.
  * Merges with existing plugins, avoiding duplicates by package/path.
  */
-function mergeExternalPlugins(
+export function mergeExternalPlugins(
   existingPlugins: OrchestratorConfig["plugins"],
   externalEntries: ExternalPluginEntryRef[],
 ): OrchestratorConfig["plugins"] {
@@ -445,7 +484,8 @@ function mergeExternalPlugins(
           (entry.path && p.path === entry.path),
       );
       if (existingPlugin && existingPlugin.enabled === false) {
-        existingPlugin.enabled = true;
+        const idx = plugins.indexOf(existingPlugin);
+        plugins[idx] = { ...existingPlugin, enabled: true };
       }
       continue;
     }
@@ -468,60 +508,24 @@ function mergeExternalPlugins(
 
 /** Apply defaults to project configs */
 function applyProjectDefaults(config: OrchestratorConfig): OrchestratorConfig {
+  const projects: typeof config.projects = {};
   for (const [id, project] of Object.entries(config.projects)) {
-    // Derive name from project ID if not set
-    if (!project.name) {
-      project.name = id;
-    }
-
-    // Derive session prefix from project path basename if not set
-    if (!project.sessionPrefix) {
-      const projectId = basename(project.path);
-      project.sessionPrefix = generateSessionPrefix(projectId);
-    }
-
+    const name = project.name ?? id;
+    const sessionPrefix = project.sessionPrefix || generateSessionPrefix(basename(project.path));
     const inferredPlugin = inferScmPlugin(project);
-
-    // Infer SCM from repo if not set
-    if (!project.scm && project.repo.includes("/")) {
-      project.scm = { plugin: inferredPlugin };
-    }
-
-    // Infer tracker from repo if not set (default to github issues)
-    if (!project.tracker) {
-      project.tracker = { plugin: inferredPlugin };
-    }
+    const scm = project.scm ?? (project.repo && project.repo.includes("/") ? { plugin: inferredPlugin } : undefined);
+    const tracker = project.tracker ?? { plugin: inferredPlugin };
+    projects[id] = { ...project, name, sessionPrefix, tracker, ...(scm !== undefined ? { scm } : {}) };
   }
 
-  return config;
+  return { ...config, projects };
 }
 
 /** Validate project uniqueness and session prefix collisions */
 function validateProjectUniqueness(config: OrchestratorConfig): void {
-  // Check for duplicate project IDs (basenames)
-  const projectIds = new Set<string>();
-  const projectIdToPaths: Record<string, string[]> = {};
-
-  for (const [_configKey, project] of Object.entries(config.projects)) {
-    const projectId = basename(project.path);
-
-    if (!projectIdToPaths[projectId]) {
-      projectIdToPaths[projectId] = [];
-    }
-    projectIdToPaths[projectId].push(project.path);
-
-    if (projectIds.has(projectId)) {
-      const paths = projectIdToPaths[projectId].join(", ");
-      throw new Error(
-        `Duplicate project ID detected: "${projectId}"\n` +
-          `Multiple projects have the same directory basename:\n` +
-          `  ${paths}\n\n` +
-          `To fix this, ensure each project path has a unique directory name.\n` +
-          `Alternatively, you can use the config key as a unique identifier.`,
-      );
-    }
-    projectIds.add(projectId);
-  }
+  // Project IDs (config map keys) are inherently unique — no need to check them.
+  // Basename uniqueness is NOT enforced: two projects can legitimately share the
+  // same directory name (e.g. /client1/app and /client2/app).
 
   // Check for duplicate session prefixes
   const prefixes = new Set<string>();
@@ -622,9 +626,7 @@ function applyDefaultReactions(config: OrchestratorConfig): OrchestratorConfig {
   };
 
   // Merge defaults with user-specified reactions (user wins)
-  config.reactions = { ...defaults, ...config.reactions };
-
-  return config;
+  return { ...config, reactions: { ...defaults, ...config.reactions } };
 }
 
 /**
@@ -645,28 +647,11 @@ export function findConfigFile(startDir?: string): string | null {
     }
   }
 
-  // 2. Search up directory tree from CWD (like git)
-  const searchUpTree = (dir: string): string | null => {
-    const configFiles = ["agent-orchestrator.yaml", "agent-orchestrator.yml"];
-
-    for (const filename of configFiles) {
-      const configPath = resolve(dir, filename);
-      if (existsSync(configPath)) {
-        return configPath;
-      }
-    }
-
-    const parent = resolve(dir, "..");
-    if (parent === dir) {
-      // Reached root
-      return null;
-    }
-
-    return searchUpTree(parent);
-  };
-
+  // 2. Search up directory tree from CWD (like git).
+  // Delegates to findLocalConfigUpwards in global-config.ts, the single
+  // implementation of this walk shared with the multi-project registration path.
   const cwd = process.cwd();
-  const foundInTree = searchUpTree(cwd);
+  const foundInTree = findLocalConfigUpwards(cwd)?.configPath ?? null;
   if (foundInTree) {
     return foundInTree;
   }
@@ -707,24 +692,132 @@ export function findConfig(startDir?: string): string | null {
   return findConfigFile(startDir);
 }
 
-/** Load and validate config from a YAML file */
-export function loadConfig(configPath?: string): OrchestratorConfig {
-  // Priority: 1. Explicit param, 2. Search (including AO_CONFIG_PATH env var)
-  // findConfigFile handles AO_CONFIG_PATH validation, so delegate to it
-  const path = configPath ?? findConfigFile();
+/**
+ * Apply the shared post-build pipeline to a raw effective config.
+ *
+ * Steps: expandPaths → applyProjectDefaults → applyDefaultReactions →
+ *        collectExternalPluginConfigs/mergeExternalPlugins → validateProjectUniqueness
+ *
+ * Both `loadFromGlobalConfig` and `resolveMultiProjectStart` run the same
+ * pipeline — this function is the single source of truth so they stay in sync.
+ */
+export function applyGlobalConfigPipeline(raw: OrchestratorConfig): OrchestratorConfig {
+  let effective = expandPaths(raw);
+  effective = applyProjectDefaults(effective);
+  effective = applyDefaultReactions(effective);
+  const { entries: externalPluginEntries, updatedConfig } = collectExternalPluginConfigs(effective);
+  // Always apply updatedConfig — it contains resolved plugin names/paths even when
+  // no external plugin entries are found (e.g. inline package/path references).
+  effective = updatedConfig;
+  if (externalPluginEntries.length > 0) {
+    effective = {
+      ...effective,
+      plugins: mergeExternalPlugins(effective.plugins, externalPluginEntries),
+      _externalPluginEntries: externalPluginEntries,
+    };
+  }
+  validateProjectUniqueness(effective);
+  return effective;
+}
 
+/**
+ * Returns true for errors that should be swallowed when falling back from
+ * global config to local config.
+ *
+ * Covers:
+ * - Raw ZodError (direct schema validation failure)
+ * - YAMLParseError (malformed YAML)
+ * - Plain Error wrapping a ZodError — loadGlobalConfig wraps schema errors in
+ *   `new Error("Invalid global config …", { cause: zodErr })` to include a
+ *   human-readable path. That Error has name "Error" and cause instanceof
+ *   z.ZodError, so `instanceof z.ZodError` alone would miss it.
+ */
+function isParseOrSchemaError(err: unknown): boolean {
+  return (
+    err instanceof z.ZodError ||
+    (err instanceof Error && err.name === "YAMLParseError") ||
+    (err instanceof Error && err.cause instanceof z.ZodError)
+  );
+}
+
+/**
+ * Build effective config from global registry + local project configs.
+ * Shared pipeline used by all multi-project loading paths.
+ */
+function loadFromGlobalConfig(): OrchestratorConfig | null {
+  const globalConfig = loadGlobalConfig();
+  if (!globalConfig) return null;
+
+  const globalPath = findGlobalConfigPath();
+  const warnings: string[] = [];
+  const config = buildEffectiveConfig(globalConfig, globalPath, warnings);
+  for (const w of warnings) {
+    console.warn(`[ao] Warning: ${w}`);
+  }
+  return applyGlobalConfigPipeline(config);
+}
+
+/**
+ * Load config with multi-project support.
+ *
+ * Resolution order:
+ * 1. If explicit configPath is provided, use it (old-format compat)
+ * 2. Try global config at ~/.agent-orchestrator/config.yaml
+ *    → If found, build effective config from global + local configs
+ * 3. Fall back to local config search (old single-file format)
+ */
+export function loadConfig(configPath?: string): OrchestratorConfig {
+  // 1. Explicit param — try old single-file format first, then global config
+  if (configPath) {
+    try {
+      return loadConfigFromFile(configPath);
+    } catch (err) {
+      // Only fall back to global config on schema validation errors
+      // (e.g., flat local config or global config passed as configPath).
+      // Re-throw I/O errors immediately.
+      if (!(err instanceof z.ZodError)) throw err;
+
+      try {
+        const effective = loadFromGlobalConfig();
+        if (effective && Object.keys(effective.projects).length > 0) return effective;
+      } catch (globalErr) {
+        // Only swallow parse/schema errors (broken or schema-invalid global config file,
+        // including wrapped ZodErrors from loadGlobalConfig). Re-throw actionable errors
+        // (e.g. session prefix collisions) so users see a meaningful message.
+        if (!isParseOrSchemaError(globalErr)) throw globalErr;
+      }
+      // No global config (or empty registry) — re-throw the original validation error
+      throw err;
+    }
+  }
+
+  // 2. Try global config (multi-project mode)
+  try {
+    const effective = loadFromGlobalConfig();
+    if (effective && Object.keys(effective.projects).length > 0) return effective;
+  } catch (err) {
+    // Only swallow parse/schema errors (broken or schema-invalid global config file,
+    // including wrapped ZodErrors from loadGlobalConfig). Re-throw actionable errors
+    // (e.g. session prefix collisions) so users see a meaningful message rather than
+    // a misleading ConfigNotFoundError.
+    if (!isParseOrSchemaError(err)) throw err;
+  }
+
+  // 3. Fall back to local config search
+  const path = findConfigFile();
   if (!path) {
     throw new ConfigNotFoundError();
   }
 
+  return loadConfigFromFile(path);
+}
+
+/** Load config from a specific file (old single-file format) */
+function loadConfigFromFile(path: string): OrchestratorConfig {
   const raw = readFileSync(path, "utf-8");
   const parsed = parseYaml(raw);
   const config = validateConfig(parsed);
-
-  // Set the config path in the config object for hash generation
-  config.configPath = path;
-
-  return config;
+  return { ...config, configPath: path };
 }
 
 /** Load config and return both config and resolved path */
@@ -732,44 +825,62 @@ export function loadConfigWithPath(configPath?: string): {
   config: OrchestratorConfig;
   path: string;
 } {
+  // Try global config (multi-project mode). Short-circuit when:
+  // 1. No explicit path — caller wants the default config source.
+  // 2. Explicit path IS the global config — avoid an unnecessary ZodError cycle
+  //    since global config doesn't match OrchestratorConfigSchema (single-file format).
+  const globalPath = findGlobalConfigPath();
+  // Track whether we already tried the global pipeline so the ZodError fallback
+  // below does not make a redundant second call when the result would be identical.
+  const alreadyTriedGlobal = !configPath || configPath === globalPath;
+  if (alreadyTriedGlobal) {
+    try {
+      const effective = loadFromGlobalConfig();
+      if (effective && Object.keys(effective.projects).length > 0) {
+        return { config: effective, path: globalPath };
+      }
+    } catch (err) {
+      // Only swallow parse/schema errors (broken or schema-invalid global config file,
+      // including wrapped ZodErrors from loadGlobalConfig). Re-throw actionable errors
+      // (e.g. session prefix collisions) so users see a meaningful message.
+      if (!isParseOrSchemaError(err)) throw err;
+    }
+  }
+
   const path = configPath ?? findConfigFile();
 
   if (!path) {
     throw new ConfigNotFoundError();
   }
 
-  const raw = readFileSync(path, "utf-8");
-  const parsed = parseYaml(raw);
-  const config = validateConfig(parsed);
+  try {
+    const config = loadConfigFromFile(path);
+    return { config, path };
+  } catch (err) {
+    // Same ZodError fallback as loadConfig — flat local configs or global config
+    // paths need the multi-project pipeline.
+    if (!(err instanceof z.ZodError)) throw err;
 
-  // Set the config path in the config object for hash generation
-  config.configPath = path;
-
-  return { config, path };
+    // Only retry the global pipeline when we haven't already checked it above.
+    // If alreadyTriedGlobal is true, the result would be identical (nothing changed).
+    if (!alreadyTriedGlobal) {
+      try {
+        const effective = loadFromGlobalConfig();
+        if (effective && Object.keys(effective.projects).length > 0) {
+          return { config: effective, path: globalPath };
+        }
+      } catch (globalErr) {
+        if (!isParseOrSchemaError(globalErr)) throw globalErr;
+      }
+    }
+    throw err;
+  }
 }
 
 /** Validate a raw config object */
 export function validateConfig(raw: unknown): OrchestratorConfig {
-  const validated = OrchestratorConfigSchema.parse(raw);
-
-  let config = validated as OrchestratorConfig;
-  config = expandPaths(config);
-  config = applyProjectDefaults(config);
-  config = applyDefaultReactions(config);
-
-  // Collect external plugin configs from inline tracker/scm/notifier configs
-  // and merge them into config.plugins for loading
-  const externalPluginEntries = collectExternalPluginConfigs(config);
-  if (externalPluginEntries.length > 0) {
-    config.plugins = mergeExternalPlugins(config.plugins, externalPluginEntries);
-    // Store entries for manifest validation during plugin loading
-    config._externalPluginEntries = externalPluginEntries;
-  }
-
-  // Validate project uniqueness and prefix collisions
-  validateProjectUniqueness(config);
-
-  return config;
+  const validated = OrchestratorConfigSchema.parse(raw) as OrchestratorConfig;
+  return applyGlobalConfigPipeline(validated);
 }
 
 /** Get the default config (useful for `ao init`) */

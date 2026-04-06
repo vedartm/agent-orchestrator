@@ -16,7 +16,36 @@ export {
   getDefaultConfig,
   findConfig,
   findConfigFile,
+  applyGlobalConfigPipeline,
 } from "./config.js";
+
+// Global config — multi-project registry
+export {
+  findGlobalConfigPath,
+  loadGlobalConfig,
+  saveGlobalConfig,
+  scaffoldGlobalConfig,
+  registerProject,
+  unregisterProject,
+  findLocalConfigPath,
+  findLocalConfigUpwards,
+  loadLocalProjectConfig,
+  matchProjectByCwd,
+  findProjectByPath,
+} from "./global-config.js";
+export type {
+  ConfigMode,
+  GlobalConfig,
+  GlobalProjectEntry,
+  LocalProjectConfig,
+} from "./global-config.js";
+
+// Effective config builder — merges global registry + local config files
+export { buildEffectiveConfig } from "./migration.js";
+
+// Multi-project start — registration, sync, config building
+export { resolveMultiProjectStart, registerNewProject, validateAndCommitRegistration } from "./multi-project-start.js";
+export type { MultiProjectStartResult, RegisterNewProjectOpts, RegisterNewProjectResult } from "./multi-project-start.js";
 
 // Plugin registry
 export {

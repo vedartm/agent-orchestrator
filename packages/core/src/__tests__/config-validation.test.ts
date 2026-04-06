@@ -6,53 +6,30 @@ import { describe, it, expect } from "vitest";
 import { validateConfig } from "../config.js";
 
 describe("Config Validation - Project Uniqueness", () => {
-  it("rejects duplicate project IDs (same basename)", () => {
+  it("allows projects with the same directory basename (multi-project use case)", () => {
+    // /client1/app and /client2/app share the basename "app" — this is a
+    // legitimate multi-project setup and must not be rejected.
     const config = {
       projects: {
-        proj1: {
-          path: "/repos/integrator",
-          repo: "org/integrator",
+        client1: {
+          path: "/work/client1/app",
+          repo: "org/client1-app",
           defaultBranch: "main",
+          sessionPrefix: "c1",
         },
-        proj2: {
-          path: "/other/integrator", // Same basename!
-          repo: "org/integrator",
+        client2: {
+          path: "/work/client2/app",
+          repo: "org/client2-app",
           defaultBranch: "main",
+          sessionPrefix: "c2",
         },
       },
     };
 
-    expect(() => validateConfig(config)).toThrow(/Duplicate project ID/);
-    expect(() => validateConfig(config)).toThrow(/integrator/);
+    expect(() => validateConfig(config)).not.toThrow();
   });
 
-  it("error message shows conflicting paths", () => {
-    const config = {
-      projects: {
-        proj1: {
-          path: "/repos/integrator",
-          repo: "org/integrator",
-          defaultBranch: "main",
-        },
-        proj2: {
-          path: "/other/integrator",
-          repo: "org/integrator",
-          defaultBranch: "main",
-        },
-      },
-    };
-
-    try {
-      validateConfig(config);
-      expect.fail("Should have thrown");
-    } catch (err) {
-      const message = (err as Error).message;
-      expect(message).toContain("/repos/integrator");
-      expect(message).toContain("/other/integrator");
-    }
-  });
-
-  it("accepts unique basenames", () => {
+  it("accepts projects with unique paths", () => {
     const config = {
       projects: {
         proj1: {
@@ -1085,5 +1062,36 @@ describe("External Plugin Name Generation", () => {
 
     // Should extract "azure-devops" not just "devops"
     expect(config.projects.proj1.scm?.plugin).toBe("azure-devops");
+  });
+});
+
+describe("mergeExternalPlugins — immutability (C-1)", () => {
+  it("does not mutate the original plugins array when re-enabling a disabled plugin", () => {
+    // validateConfig routes through applyGlobalConfigPipeline → mergeExternalPlugins.
+    // A disabled plugin declared in config.plugins + a tracker that references it
+    // should re-enable it WITHOUT mutating the input array elements.
+    const raw = {
+      projects: {
+        app: {
+          path: "/tmp/app",
+          repo: "org/app",
+          defaultBranch: "main",
+          tracker: { plugin: "npm:my-tracker" },
+        },
+      },
+      plugins: [
+        { name: "my-tracker", source: "npm", package: "npm:my-tracker", enabled: false },
+      ],
+    };
+
+    // Capture the original plugin object reference
+    const originalPlugin = raw.plugins[0];
+    const originalEnabled = originalPlugin.enabled;
+
+    validateConfig(raw);
+
+    // The original object must NOT have been mutated
+    expect(originalPlugin.enabled).toBe(originalEnabled);
+    expect(originalPlugin.enabled).toBe(false);
   });
 });

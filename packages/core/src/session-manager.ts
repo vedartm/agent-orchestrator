@@ -60,6 +60,7 @@ import {
   getProjectBaseDir,
   generateTmuxName,
   validateAndStoreOrigin,
+  resolveProjectConfigPath,
 } from "./paths.js";
 import { asValidOpenCodeSessionId } from "./opencode-session-id.js";
 import { normalizeOrchestratorSessionStrategy } from "./orchestrator-session-strategy.js";
@@ -272,10 +273,28 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
   }
 
   /**
+   * Get the effective config path for a project, preferring the per-project
+   * effectiveConfigPath (set in hybrid mode to preserve backward-compatible hashes)
+   * over the global configPath.
+   *
+   * When a project has no local config (effectiveConfigPath is undefined), we
+   * synthesize a virtual config path from the project directory rather than
+   * falling back to the global config path. This ensures two projects that share
+   * a basename but live in different directories (e.g. /client1/app and
+   * /client2/app) always get distinct storage directories, even when neither has
+   * a local agent-orchestrator.yaml. generateConfigHash uses dirname(configPath),
+   * so join(project.path, "agent-orchestrator.yaml") → hash(project.path) — unique
+   * per project.
+   */
+  function getEffectiveConfigPath(project: ProjectConfig): string {
+    return resolveProjectConfigPath(project.path, project.effectiveConfigPath, config.globalConfigPath, config.configPath);
+  }
+
+  /**
    * Get the sessions directory for a project.
    */
   function getProjectSessionsDir(project: ProjectConfig): string {
-    return getSessionsDir(config.configPath, project.path);
+    return getSessionsDir(getEffectiveConfigPath(project), project.path);
   }
 
   function normalizePath(path: string): string {
@@ -289,7 +308,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
   }
 
   function getManagedWorkspaceRoots(project: ProjectConfig, projectId?: string): string[] {
-    const roots = [getWorktreesDir(config.configPath, project.path)];
+    const roots = [getWorktreesDir(getEffectiveConfigPath(project), project.path)];
     const legacyIds = new Set<string>();
     if (projectId) {
       legacyIds.add(projectId);
@@ -662,8 +681,9 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     );
     for (let attempts = 0; attempts < 10_000; attempts++) {
       const sessionId = `${project.sessionPrefix}-${num}`;
-      const tmuxName = config.configPath
-        ? generateTmuxName(config.configPath, project.sessionPrefix, num)
+      const effectivePath = getEffectiveConfigPath(project);
+      const tmuxName = effectivePath
+        ? generateTmuxName(effectivePath, project.sessionPrefix, num)
         : undefined;
 
       if (!usedNumbers.has(num) && reserveSessionId(sessionsDir, sessionId)) {
@@ -686,6 +706,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
   function reserveNextOrchestratorIdentity(
     project: ProjectConfig,
     sessionsDir: string,
+    forcedSuffix?: number,
   ): { num: number; sessionId: string; tmuxName: string | undefined } {
     const orchestratorPrefix = `${project.sessionPrefix}-orchestrator`;
     const usedNumbers = new Set<number>();
@@ -720,12 +741,31 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       }
     }
 
+    // When the caller has pre-computed a specific suffix (e.g. the CLI computed
+    // it from the live session list before calling spawnOrchestrator), honour it
+    // directly so the spawned session ID matches what the CLI expected.
+    if (forcedSuffix !== undefined) {
+      const sessionId = `${orchestratorPrefix}-${forcedSuffix}`;
+      const effectivePath = getEffectiveConfigPath(project);
+      const tmuxName = effectivePath
+        ? generateTmuxName(effectivePath, orchestratorPrefix, forcedSuffix)
+        : undefined;
+      if (!reserveSessionId(sessionsDir, sessionId)) {
+        throw new Error(
+          `Orchestrator session ID "${sessionId}" is already in use. ` +
+            `This can happen if two processes try to spawn an orchestrator concurrently.`,
+        );
+      }
+      return { num: forcedSuffix, sessionId, tmuxName };
+    }
+
     let num = 1;
     for (let attempts = 0; attempts < 10_000; attempts++) {
       if (!usedNumbers.has(num)) {
         const sessionId = `${orchestratorPrefix}-${num}`;
-        const tmuxName = config.configPath
-          ? generateTmuxName(config.configPath, orchestratorPrefix, num)
+        const effectivePath = getEffectiveConfigPath(project);
+        const tmuxName = effectivePath
+          ? generateTmuxName(effectivePath, orchestratorPrefix, num)
           : undefined;
         if (reserveSessionId(sessionsDir, sessionId)) {
           return { num, sessionId, tmuxName };
@@ -972,7 +1012,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
     // Validate and store .origin file (new architecture only)
     if (config.configPath) {
-      validateAndStoreOrigin(config.configPath, project.path);
+      validateAndStoreOrigin(getEffectiveConfigPath(project), project.path);
     }
 
     // Determine session ID — atomically reserve to prevent concurrent collisions
@@ -1061,13 +1101,13 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     });
 
     // Get agent launch config and create runtime — clean up workspace on failure
-    const opencodeIssueSessionStrategy = project.opencodeIssueSessionStrategy ?? "reuse";
+    const orchestratorStrategy = project.orchestratorSessionStrategy ?? "reuse";
     const reusedOpenCodeSessionId =
       plugins.agent.name === "opencode" && spawnConfig.issueId
         ? await resolveOpenCodeSessionReuse({
             sessionsDir,
             criteria: { issueId: spawnConfig.issueId },
-            strategy: opencodeIssueSessionStrategy,
+            strategy: orchestratorStrategy === "new" ? "ignore" : orchestratorStrategy,
           })
         : undefined;
     const agentLaunchConfig = {
@@ -1167,7 +1207,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
       if (
         plugins.agent.name === "opencode" &&
-        opencodeIssueSessionStrategy === "reuse" &&
+        orchestratorStrategy === "reuse" &&
         !session.metadata["opencodeSessionId"]
       ) {
         const discovered = await discoverOpenCodeSessionIdByTitle(
@@ -1281,12 +1321,17 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     // Validate and store .origin file before reserving any identity so that
     // a validation failure does not leave an orphaned metadata entry.
     if (config.configPath) {
-      validateAndStoreOrigin(config.configPath, project.path);
+      validateAndStoreOrigin(getEffectiveConfigPath(project), project.path);
     }
 
-    // Reserve a new unique orchestrator identity (e.g. {prefix}-orchestrator-1, -2, …).
-    // Each spawnOrchestrator call gets its own numbered session and isolated worktree.
-    const identity = reserveNextOrchestratorIdentity(project, sessionsDir);
+    // Reserve an orchestrator identity. If the caller pre-computed a specific
+    // suffix (e.g. the CLI scanned the live session list and chose it), honour
+    // it so the spawned session ID matches what was displayed to the user.
+    const identity = reserveNextOrchestratorIdentity(
+      project,
+      sessionsDir,
+      orchestratorConfig.forcedSuffix,
+    );
     const sessionId = identity.sessionId;
     const tmuxName = identity.tmuxName;
 
@@ -1361,7 +1406,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     let systemPromptFile: string | undefined;
     if (orchestratorConfig.systemPrompt) {
       try {
-        const baseDir = getProjectBaseDir(config.configPath, project.path);
+        const baseDir = getProjectBaseDir(getEffectiveConfigPath(project), project.path);
         mkdirSync(baseDir, { recursive: true });
         systemPromptFile = join(baseDir, `orchestrator-prompt-${sessionId}.md`);
         writeFileSync(systemPromptFile, orchestratorConfig.systemPrompt, "utf-8");
