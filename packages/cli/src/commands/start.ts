@@ -1618,11 +1618,21 @@ export function registerStart(program: Command): void {
                 console.log(chalk.dim(`  ✓ Saved to ${config.configPath}\n`));
               }
             }
+            // Capture any transient strategy override before the reload — it is
+            // not persisted to disk so the reloaded config won't have it.
+            // Example: orchestratorSessionStrategy: "new" set when the user
+            // picked "Start new orchestrator" in the already-running prompt.
+            const transientStrategy = project?.orchestratorSessionStrategy;
             // Pass configPath so loadConfig() reads from the same source we
             // just wrote to, instead of preferring the global config which
             // wouldn't have the just-saved agent overrides.
             config = loadConfig(config.configPath);
             project = config.projects[projectId];
+            // Re-apply the transient strategy: the reload replaces `project`
+            // with the on-disk version, silently dropping the runtime override.
+            if (transientStrategy !== undefined && project) {
+              project = { ...project, orchestratorSessionStrategy: transientStrategy };
+            }
           }
 
           const actualPort = await runStartup(
