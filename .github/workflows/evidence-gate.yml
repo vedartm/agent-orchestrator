@@ -161,9 +161,9 @@ jobs:
               echo "Recommended for integration/pipeline-e2e claims:"
               echo "  - **Terminal test output**: fenced code block with a concrete test command"
               echo "    (e.g. \`\`\` block containing: pnpm test, npm test, vitest, jest, etc.)"
+            else
+              echo "Strong evidence standard PASS for $CLAIM"
             fi
-
-            echo "Strong evidence standard PASS for $CLAIM"
           else
             echo "Strong artifact check not required for claim class: $CLAIM"
           fi
