@@ -408,7 +408,12 @@ export function DirectTerminal({
         const handleResize = () => {
           const currentWs = ws.current;
           if (fit && currentWs?.readyState === WebSocket.OPEN) {
-            try { fit.fit(); } catch { /* dimensions not ready yet */ }
+            try {
+              fit.fit();
+            } catch {
+              // Skip resize event if dimensions could not be recalculated.
+              return;
+            }
             currentWs.send(
               JSON.stringify({
                 type: "resize",
@@ -621,7 +626,12 @@ export function DirectTerminal({
 
       // Container is at target size, now resize terminal
       terminal.refresh(0, terminal.rows - 1);
-      try { fit.fit(); } catch { /* dimensions not ready yet */ }
+      try {
+        fit.fit();
+      } catch {
+        // Skip refresh + resize event if dimensions could not be recalculated.
+        return;
+      }
       terminal.refresh(0, terminal.rows - 1);
 
       // Send new size to server (use ws.current in case WebSocket reconnected)
