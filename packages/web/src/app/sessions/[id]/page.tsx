@@ -119,6 +119,7 @@ export default function SessionPage() {
 
   // Fetch session data (memoized to avoid recreating on every render)
   const fetchSession = useCallback(async () => {
+    let keepLoadingForRetry = false;
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
       if (res.status === 404) {
@@ -146,12 +147,16 @@ export default function SessionPage() {
         // For network errors (e.g. proxy misconfiguration, offline), give the
         // polling loop a few attempts before surfacing a fatal error — the
         // failure may be transient.
-        if (!isNetworkError || fetchFailCountRef.current >= 3) {
+        if (isNetworkError && fetchFailCountRef.current < 3) {
+          keepLoadingForRetry = true;
+        } else {
           setRouteError(err instanceof Error ? err : new Error("Failed to load session"));
         }
       }
     } finally {
-      setLoading(false);
+      if (!keepLoadingForRetry) {
+        setLoading(false);
+      }
     }
   }, [id]);
 
