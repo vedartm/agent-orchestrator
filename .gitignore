@@ -68,3 +68,4 @@ agent-orchestrator.yaml
 .DS_Store
 Thumbs.db
 .gstack/
+.gstack-report/
