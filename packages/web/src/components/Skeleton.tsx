@@ -21,7 +21,7 @@ export function EmptyState({
         <path d="M6 9l4 3-4 3M13 15h5" />
       </svg>
       <p className="text-[13px] text-[var(--color-text-muted)]">
-        {message ?? "No active worker sessions right now. Use the main orchestrator button in the header to review queued work or spawn the next session."}
+        {message ?? "No active sessions"}
       </p>
     </div>
   );
