@@ -23,12 +23,7 @@ export function EmptyState({
       </svg>
       <p className="text-[13px] text-[var(--color-text-muted)]">
         {isDefault ? (
-          <>
-            No sessions running. Start one with{" "}
-            <code className="font-[var(--font-mono)] text-[var(--color-text-secondary)]">
-              ao start
-            </code>
-          </>
+          "No sessions running"
         ) : (
           message
         )}
