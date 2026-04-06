@@ -1653,9 +1653,16 @@ export function registerStart(program: Command): void {
           // and add this project to running.json so `ao stop` can find us.
           // When the daemon does cover the project, the timer stays unreffed and
           // the process exits naturally.
-          if (attachToRunning && running && !running.projects.includes(projectId)) {
-            pinLifecycleWorker(projectId);
-            await addProjectToRunning(projectId);
+          //
+          // Re-read running.json here rather than using the snapshot captured
+          // before the interactive prompts: arbitrary time may have elapsed and
+          // another ao start process could have updated running.json in the interim.
+          if (attachToRunning) {
+            const freshRunning = await getRunning();
+            if (freshRunning && !freshRunning.projects.includes(projectId)) {
+              pinLifecycleWorker(projectId);
+              await addProjectToRunning(projectId);
+            }
           }
 
           // ── Register in running.json (Step 11) ──

@@ -775,16 +775,16 @@ export function applyGlobalConfigPipeline(raw: OrchestratorConfig): Orchestrator
   effective = applyProjectDefaults(effective);
   effective = applyDefaultReactions(effective);
   const { entries: externalPluginEntries, updatedConfig } = collectExternalPluginConfigs(effective);
-  // Always apply updatedConfig — it contains resolved plugin names/paths even when
-  // no external plugin entries are found (e.g. inline package/path references).
-  effective = updatedConfig;
-  if (externalPluginEntries.length > 0) {
-    effective = {
-      ...effective,
-      plugins: mergeExternalPlugins(effective.plugins, externalPluginEntries),
-      _externalPluginEntries: externalPluginEntries,
-    };
-  }
+  // Merge in one step: updatedConfig carries resolved plugin names/paths from
+  // inline package/path references (always needed); externalPluginEntries and
+  // merged plugins are only added when there are external entries.
+  effective = externalPluginEntries.length > 0
+    ? {
+        ...updatedConfig,
+        plugins: mergeExternalPlugins(updatedConfig.plugins, externalPluginEntries),
+        _externalPluginEntries: externalPluginEntries,
+      }
+    : updatedConfig;
   validateProjectUniqueness(effective);
   return effective;
 }
