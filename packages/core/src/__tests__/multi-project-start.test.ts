@@ -2,13 +2,18 @@
  * Tests for resolveMultiProjectStart — core multi-project registration logic.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
 
-import { resolveMultiProjectStart, registerNewProject, validateAndCommitRegistration } from "../multi-project-start.js";
+import {
+  resolveMultiProjectStart,
+  registerNewProject,
+  validateAndCommitRegistration,
+} from "../multi-project-start.js";
 import { loadGlobalConfig, scaffoldGlobalConfig, findGlobalConfigPath } from "../global-config.js";
+import * as globalConfigModule from "../global-config.js";
 import { createGlobalConfigEnv, setupGlobalConfig } from "./helpers.js";
 
 const env = createGlobalConfigEnv("ao-mps");
@@ -82,7 +87,10 @@ describe("resolveMultiProjectStart", () => {
     const newDir = join(testDir, "backend");
     mkdirSync(existingDir, { recursive: true });
     mkdirSync(newDir, { recursive: true });
-    writeFileSync(join(newDir, "agent-orchestrator.yaml"), stringifyYaml({ repo: "org/backend", defaultBranch: "main" }));
+    writeFileSync(
+      join(newDir, "agent-orchestrator.yaml"),
+      stringifyYaml({ repo: "org/backend", defaultBranch: "main" }),
+    );
 
     // Pre-occupy the "backend" ID with a different path.
     setupGlobalConfig({ backend: { name: "Existing", path: existingDir } });
@@ -136,7 +144,9 @@ describe("resolveMultiProjectStart", () => {
     mkdirSync(dir1, { recursive: true });
     mkdirSync(dir2, { recursive: true });
 
-    const gc2 = registerNewProject(scaffoldGlobalConfig(), dir1, { explicitId: "my-id" }).updatedGlobalConfig;
+    const gc2 = registerNewProject(scaffoldGlobalConfig(), dir1, {
+      explicitId: "my-id",
+    }).updatedGlobalConfig;
     expect(() => registerNewProject(gc2, dir2, { explicitId: "my-id" })).toThrow(/already in use/);
   });
 
@@ -208,5 +218,36 @@ describe("validateAndCommitRegistration", () => {
     expect(loadGlobalConfig()!.projects["proj-b"]).toBeUndefined();
     // proj-a's registration must still be intact
     expect(loadGlobalConfig()!.projects["proj-a"]).toBeDefined();
+  });
+
+  it("returns effective config from the final merged global state", () => {
+    const alphaDir = join(testDir, "alpha-app");
+    const betaDir = join(testDir, "beta-app");
+    mkdirSync(alphaDir, { recursive: true });
+    mkdirSync(betaDir, { recursive: true });
+    writeFileSync(
+      join(alphaDir, "agent-orchestrator.yaml"),
+      "repo: org/alpha\ndefaultBranch: main\n",
+    );
+    writeFileSync(
+      join(betaDir, "agent-orchestrator.yaml"),
+      "repo: org/beta\ndefaultBranch: main\n",
+    );
+
+    const gc = setupGlobalConfig({});
+    const reg = registerNewProject(gc, alphaDir, { explicitId: "alpha" });
+    const concurrentGc = registerNewProject(gc, betaDir, {
+      explicitId: "beta",
+    }).updatedGlobalConfig;
+    const loadSpy = vi.spyOn(globalConfigModule, "loadGlobalConfig");
+    loadSpy.mockReturnValueOnce(concurrentGc).mockReturnValue(concurrentGc);
+
+    const effective = validateAndCommitRegistration(reg, findGlobalConfigPath());
+    loadSpy.mockRestore();
+
+    expect(effective.projects.alpha).toBeDefined();
+    expect(effective.projects.beta).toBeDefined();
+    expect(loadGlobalConfig()!.projects.alpha).toBeDefined();
+    expect(loadGlobalConfig()!.projects.beta).toBeDefined();
   });
 });

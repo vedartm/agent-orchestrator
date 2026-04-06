@@ -78,9 +78,7 @@ export function registerNewProject(
       : resolve(expandedConflicting);
     if (resolvedConflicting !== resolvedProjectPath) {
       if (opts?.explicitId) {
-        throw new Error(
-          `Project ID "${projectId}" is already in use by ${conflicting.path}.`,
-        );
+        throw new Error(`Project ID "${projectId}" is already in use by ${conflicting.path}.`);
       }
       let suffix = 2;
       let altId = `${projectId}${suffix}`;
@@ -123,9 +121,6 @@ export function validateAndCommitRegistration(
   globalConfigPath: string,
   warnings?: string[],
 ): ReturnType<typeof applyGlobalConfigPipeline> {
-  const built = buildEffectiveConfig(reg.updatedGlobalConfig, globalConfigPath, warnings);
-  const effectiveConfig = applyGlobalConfigPipeline(built);
-
   // Final re-read — shrinks the TOCTOU window to the rename(2) syscall duration.
   const latestGc = loadGlobalConfig();
   let configToSave = reg.updatedGlobalConfig;
@@ -143,6 +138,8 @@ export function validateAndCommitRegistration(
     }
   }
 
+  const built = buildEffectiveConfig(configToSave, globalConfigPath, warnings);
+  const effectiveConfig = applyGlobalConfigPipeline(built);
   saveGlobalConfig(configToSave);
   return effectiveConfig;
 }
@@ -164,9 +161,7 @@ export interface MultiProjectStartResult {
  * Returns null if no global config exists (caller should fall back to
  * legacy single-file flow).
  */
-export function resolveMultiProjectStart(
-  workingDir: string,
-): MultiProjectStartResult | null {
+export function resolveMultiProjectStart(workingDir: string): MultiProjectStartResult | null {
   const resolvedDir = resolve(workingDir);
   let messages: MultiProjectStartResult["messages"] = [];
 
@@ -197,7 +192,10 @@ export function resolveMultiProjectStart(
       // Track index so we can roll back all registration messages on concurrent detection.
       const regMessagesStart = messages.length;
       messages.push(...reg.messages);
-      messages.push({ level: "success", text: `Registered project "${projectId}" (${reg.configMode} mode)` });
+      messages.push({
+        level: "success",
+        text: `Registered project "${projectId}" (${reg.configMode} mode)`,
+      });
 
       // Re-read config before committing to detect concurrent registrations
       // from another process that may have registered while we were computing.
