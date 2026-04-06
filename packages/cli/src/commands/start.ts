@@ -1021,30 +1021,23 @@ async function runStartup(
     );
 
     if (existingOrchestrators.length > 0) {
-      // Existing orchestrators found
-      if (opts?.dashboard === false) {
-        // No dashboard — auto-select the most recently active orchestrator
-        const sortedOrchestrators = [...existingOrchestrators].sort(
-          (a, b) => (b.lastActivityAt?.getTime() ?? 0) - (a.lastActivityAt?.getTime() ?? 0),
-        );
-        const selected = sortedOrchestrators[0];
-        selectedOrchestratorId = selected.id;
-        // Use runtimeHandle.id if available, otherwise fall back to the session ID
-        tmuxTarget = selected.runtimeHandle?.id ?? selected.id;
-        spinner.succeed(
-          `Using existing orchestrator session: ${selected.id}` +
-            (existingOrchestrators.length > 1
-              ? ` (${existingOrchestrators.length - 1} other session(s) available)`
-              : ""),
-        );
-      } else {
-        // Dashboard available — let the user select
+      // Existing orchestrators found — auto-select the most recently active one.
+      // When the dashboard is available, additional sessions can be reached from within it.
+      const sortedOrchestrators = [...existingOrchestrators].sort(
+        (a, b) => (b.lastActivityAt?.getTime() ?? 0) - (a.lastActivityAt?.getTime() ?? 0),
+      );
+      const selected = sortedOrchestrators[0];
+      selectedOrchestratorId = selected.id;
+      // Use runtimeHandle.id if available, otherwise fall back to the session ID
+      tmuxTarget = selected.runtimeHandle?.id ?? selected.id;
+      if (opts?.dashboard !== false) {
         hasExistingOrchestrators = true;
-        spinner.info(
-          `Found ${existingOrchestrators.length} existing orchestrator session(s). ` +
-            `Open the dashboard to select or start a new one.`,
-        );
       }
+      spinner.succeed(
+        `Using existing orchestrator session: ${selected.id}` +
+          (existingOrchestrators.length > 1
+            ? ` (${existingOrchestrators.length - 1} other session(s) available)` : ""),
+      );
     } else {
       // No existing orchestrators — spawn a new one
       try {
@@ -1090,7 +1083,7 @@ async function runStartup(
   if (hasExistingOrchestrators) {
     console.log(
       chalk.cyan("Orchestrator:"),
-      "existing sessions found — select one in the dashboard",
+      `opening session ${selectedOrchestratorId ?? sessionId}`,
     );
   } else if (opts?.orchestrator !== false && !reused) {
     console.log(chalk.cyan("Orchestrator:"), `tmux attach -t ${tmuxTarget}`);
@@ -1110,16 +1103,15 @@ async function runStartup(
     }
   }
 
-  // Auto-open browser to orchestrator session page (or selection page) once the server is ready.
+  // Auto-open browser to the orchestrator session page once the server is ready.
+  // Always navigates directly to the session page (most recently active when multiple exist).
   // Polls the port instead of using a fixed delay — deterministic and works regardless of
   // how long Next.js takes to compile. AbortController cancels polling on early exit.
   let openAbort: AbortController | undefined;
   if (opts?.dashboard !== false) {
     openAbort = new AbortController();
-    // If existing orchestrators found, open the selection page; otherwise open the session page
-    const orchestratorUrl = hasExistingOrchestrators
-      ? `http://localhost:${port}/orchestrators?project=${projectId}`
-      : `http://localhost:${port}/sessions/${selectedOrchestratorId ?? sessionId}`;
+    // Always open the orchestrator session page directly (most recently active when multiple exist)
+    const orchestratorUrl = `http://localhost:${port}/sessions/${selectedOrchestratorId ?? sessionId}`;
     void waitForPortAndOpen(port, orchestratorUrl, openAbort.signal);
   }
 

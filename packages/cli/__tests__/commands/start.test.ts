@@ -889,7 +889,7 @@ describe("start command — orchestrator session strategy display", () => {
     expect(mockSessionManager.spawnOrchestrator).not.toHaveBeenCalled();
   });
 
-  it("shows dashboard selection message when existing orchestrators found with dashboard enabled", async () => {
+  it("auto-selects most recently active orchestrator and opens session page when dashboard enabled", async () => {
     mockConfigRef.current = makeConfig({ "my-app": makeProject() });
 
     // Mock findWebDir
@@ -917,8 +917,9 @@ describe("start command — orchestrator session strategy display", () => {
     await program.parseAsync(["node", "test", "start"]);
 
     const output = getLoggedOutput();
-    // When dashboard is enabled, shows selection message
-    expect(output).toContain("existing sessions found — select one in the dashboard");
+    // When dashboard is enabled, auto-selects the most recently active orchestrator
+    // and navigates directly to the session page (not the orchestrators selection page)
+    expect(output).toContain("opening session app-orchestrator");
 
     // Should NOT spawn a new orchestrator when existing ones exist
     expect(mockSessionManager.spawnOrchestrator).not.toHaveBeenCalled();
