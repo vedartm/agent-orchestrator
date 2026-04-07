@@ -1,6 +1,6 @@
 import type { OrchestratorConfig, PluginRegistry, Runtime, Workspace } from "../types.js";
 import { updateMetadata, deleteMetadata } from "../metadata.js";
-import { getSessionsDir } from "../paths.js";
+import { getSessionsDir, resolveProjectConfigPath } from "../paths.js";
 import { validateStatus } from "../utils/validation.js";
 import { sessionFromMetadata } from "../utils/session-from-metadata.js";
 import type { RecoveryAssessment, RecoveryResult, RecoveryContext } from "./types.js";
@@ -39,7 +39,13 @@ export async function recoverSession(
     const preservedStatus = validateStatus(rawMetadata["status"]);
 
     const project = config.projects[projectId];
-    const sessionsDir = getSessionsDir(project.effectiveConfigPath ?? config.configPath, project.path);
+    const configPathForHash = resolveProjectConfigPath(
+      project.path,
+      project.effectiveConfigPath,
+      config.globalConfigPath,
+      config.configPath,
+    );
+    const sessionsDir = getSessionsDir(configPathForHash, project.path);
 
     if (recoveryCount > context.recoveryConfig.maxRecoveryAttempts) {
       updateMetadata(sessionsDir, sessionId, {
@@ -135,7 +141,13 @@ export async function cleanupSession(
       }
     }
 
-    const sessionsDir = getSessionsDir(project.effectiveConfigPath ?? config.configPath, project.path);
+    const configPathForHash = resolveProjectConfigPath(
+      project.path,
+      project.effectiveConfigPath,
+      config.globalConfigPath,
+      config.configPath,
+    );
+    const sessionsDir = getSessionsDir(configPathForHash, project.path);
 
     updateMetadata(sessionsDir, sessionId, {
       status: "terminated",
@@ -180,7 +192,13 @@ export async function escalateSession(
 
   try {
     const project = config.projects[projectId];
-    const sessionsDir = getSessionsDir(project.effectiveConfigPath ?? config.configPath, project.path);
+    const configPathForHash = resolveProjectConfigPath(
+      project.path,
+      project.effectiveConfigPath,
+      config.globalConfigPath,
+      config.configPath,
+    );
+    const sessionsDir = getSessionsDir(configPathForHash, project.path);
 
     updateMetadata(sessionsDir, sessionId, {
       status: "stuck",
