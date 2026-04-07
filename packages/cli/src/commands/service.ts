@@ -147,12 +147,12 @@ WantedBy=default.target
 // Path helpers
 // ---------------------------------------------------------------------------
 
-function getLaunchdPath(projectId: string): string {
+export function getLaunchdPath(projectId: string): string {
   const safeId = sanitizeProjectId(projectId);
   return join(homedir(), "Library", "LaunchAgents", `com.composio.ao-lifecycle.${safeId}.plist`);
 }
 
-function getSystemdPath(projectId: string): string {
+export function getSystemdPath(projectId: string): string {
   const safeId = sanitizeProjectId(projectId);
   return join(homedir(), ".config", "systemd", "user", `ao-lifecycle-${safeId}.service`);
 }
@@ -167,7 +167,7 @@ interface InstallResult {
   activated: boolean;
 }
 
-function installService(
+export function installService(
   projectId: string,
   config: OrchestratorConfig,
 ): InstallResult {
@@ -228,7 +228,7 @@ function installService(
   throw new Error(`Unsupported platform: ${os}. Only macOS (launchd) and Linux (systemd) are supported.`);
 }
 
-function uninstallService(projectId: string): { removed: boolean; servicePath: string } {
+export function uninstallService(projectId: string): { removed: boolean; servicePath: string } {
   const os = platform();
 
   if (os === "darwin") {
@@ -276,7 +276,7 @@ function uninstallService(projectId: string): { removed: boolean; servicePath: s
   throw new Error(`Unsupported platform: ${os}`);
 }
 
-function getServiceStatus(projectId: string): { installed: boolean; running: boolean; servicePath: string } {
+export function getServiceStatus(projectId: string): { installed: boolean; running: boolean; servicePath: string } {
   const os = platform();
 
   if (os === "darwin") {
