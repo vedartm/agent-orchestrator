@@ -22,7 +22,7 @@ export async function runAttachCommand(
   const args = info?.program
     ? (info.args ?? [])
     : info?.command
-      ? ["-lc", info.command]
+      ? ["-c", info.command]
       : fallback.args;
 
   await new Promise<void>((resolve, reject) => {
