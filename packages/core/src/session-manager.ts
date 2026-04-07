@@ -171,7 +171,7 @@ async function discoverOpenCodeSessionIdByTitle(
 }
 
 /** Escape regex metacharacters in a string. */
-function escapeRegex(str: string): string {
+export function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 

@@ -287,7 +287,10 @@ export function getServiceStatus(projectId: string): { installed: boolean; runni
     let running = false;
     try {
       const output = execFileSync("launchctl", ["list"], { encoding: "utf-8" });
-      running = output.includes(`com.composio.ao-lifecycle.${safeId}`);
+      // Use line-boundary matching to avoid false positives from substring matches
+      // (e.g. "my-app" matching "my-app-v2")
+      const label = `com.composio.ao-lifecycle.${safeId}`;
+      running = new RegExp(`(^|\\s)${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`, "m").test(output);
     } catch {
       // Can't determine status
     }

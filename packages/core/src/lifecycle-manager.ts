@@ -40,6 +40,7 @@ import {
 } from "./types.js";
 import { updateMetadata, listMetadata, readMetadataRaw, deleteMetadata } from "./metadata.js";
 import { getSessionsDir } from "./paths.js";
+import { escapeRegex } from "./session-manager.js";
 import { createCorrelationId, createProjectObserver } from "./observability.js";
 import { resolveAgentSelection, resolveSessionRole } from "./agent-selection.js";
 
@@ -1441,7 +1442,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         if (raw["role"] === "orchestrator" || sessionId.endsWith("-orchestrator")) continue;
         // Also skip prefix-orchestrator-N pattern (e.g., "web-orchestrator-1") when sessionPrefix is configured
         const sessionPrefix = project.sessionPrefix;
-        if (sessionPrefix && new RegExp(`^${sessionPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-orchestrator-\\d+$`).test(sessionId)) continue;
+        if (sessionPrefix && new RegExp(`^${escapeRegex(sessionPrefix)}-orchestrator-\\d+$`).test(sessionId)) continue;
 
         // Resolve agent plugin for isProcessRunning
         const agentName = raw["agent"] ?? config.defaults.agent;
