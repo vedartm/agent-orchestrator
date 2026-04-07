@@ -7,7 +7,10 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => "/projects/ao",
   useSearchParams: () => new URLSearchParams(),
-  notFound: () => { mockNotFound(); throw new Error("NEXT_NOT_FOUND"); },
+  notFound: () => {
+    mockNotFound();
+    throw new Error("NEXT_NOT_FOUND");
+  },
 }));
 
 vi.mock("next/link", () => ({
@@ -40,8 +43,8 @@ beforeEach(() => {
   mockNotFound.mockReset();
 });
 
-// eslint-disable-next-line @typescript-eslint/consistent-type-imports
 const loadPage = () => import("../projects/[id]/page.js").then((m) => m.default);
+const loadModule = () => import("../projects/[id]/page.js");
 
 describe("ProjectPage", () => {
   it("renders Dashboard for a known project", async () => {
@@ -59,8 +62,8 @@ describe("ProjectPage", () => {
     const el = await ProjectPage({ params: Promise.resolve({ id: "ao" }) });
     render(el as React.ReactElement);
 
-    expect(screen.getByTestId("dashboard")).toBeInTheDocument();
-    expect(screen.getByText("ao")).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard")).toBeTruthy();
+    expect(screen.getByText("ao")).toBeTruthy();
   });
 
   it("calls notFound for an unknown project ID", async () => {
@@ -70,5 +73,14 @@ describe("ProjectPage", () => {
     await expect(ProjectPage({ params: Promise.resolve({ id: "unknown" }) })).rejects.toThrow();
 
     expect(mockNotFound).toHaveBeenCalled();
+  });
+
+  it("generateMetadata returns project-specific title", async () => {
+    mockGetDashboardProjectName.mockReturnValue("My Project");
+
+    const { generateMetadata } = await loadModule();
+    const metadata = await generateMetadata({ params: Promise.resolve({ id: "ao" }) });
+
+    expect(metadata.title).toEqual({ absolute: "ao | My Project" });
   });
 });

@@ -102,6 +102,36 @@ describe("resolveMultiProjectStart", () => {
     expect(result!.messages.some((m) => m.text.includes("taken"))).toBe(true);
   });
 
+  it("keeps incrementing the suffix across multiple collisions", () => {
+    const existingDir = join(testDir, "some-other-backend");
+    const existingDir2 = join(testDir, "another-backend");
+    const existingDir3 = join(testDir, "third-backend");
+    const newDir = join(testDir, "backend");
+    mkdirSync(existingDir, { recursive: true });
+    mkdirSync(existingDir2, { recursive: true });
+    mkdirSync(existingDir3, { recursive: true });
+    mkdirSync(newDir, { recursive: true });
+    writeFileSync(
+      join(newDir, "agent-orchestrator.yaml"),
+      stringifyYaml({ repo: "org/backend", defaultBranch: "main" }),
+    );
+
+    setupGlobalConfig({
+      backend: { name: "Backend", path: existingDir },
+      backend2: { name: "Backend 2", path: existingDir2 },
+      backend3: { name: "Backend 3", path: existingDir3 },
+    });
+
+    const result = resolveMultiProjectStart(newDir);
+
+    expect(result).not.toBeNull();
+    expect(result!.projectId).toBe("backend4");
+    expect(result!.config.projects["backend"].path).toBe(existingDir);
+    expect(result!.config.projects["backend2"].path).toBe(existingDir2);
+    expect(result!.config.projects["backend3"].path).toBe(existingDir3);
+    expect(result!.config.projects["backend4"].path).toBe(newDir);
+  });
+
   it("finds local config from subdirectory", () => {
     const projectDir = join(testDir, "sub-test");
     const subDir = join(projectDir, "src", "lib");

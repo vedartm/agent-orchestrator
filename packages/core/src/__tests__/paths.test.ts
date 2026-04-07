@@ -225,6 +225,14 @@ describe("Session Prefix Generation", () => {
   });
 
   describe("edge cases", () => {
+    it("returns 'proj' for empty string", () => {
+      expect(generateSessionPrefix("")).toBe("proj");
+    });
+
+    it("returns 'proj' for undefined-ish input", () => {
+      expect(Reflect.apply(generateSessionPrefix, undefined, [undefined])).toBe("proj");
+    });
+
     it("handles single character", () => {
       expect(generateSessionPrefix("a")).toBe("a");
     });

@@ -2,8 +2,9 @@
  * Unit tests for global-config.ts — multi-project registry.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import * as os from "node:os";
+import { mkdirSync, writeFileSync, existsSync, rmSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
@@ -19,6 +20,7 @@ import {
   unregisterProject,
   matchProjectByCwd,
   findProjectByPath,
+  loadLocalProjectConfig,
   type GlobalConfig,
 } from "../global-config.js";
 
@@ -39,6 +41,8 @@ afterEach(() => {
   } else {
     delete process.env["AO_GLOBAL_CONFIG_PATH"];
   }
+  delete process.env["XDG_CONFIG_HOME"];
+  vi.restoreAllMocks();
   rmSync(testDir, { recursive: true, force: true });
 });
 
@@ -50,6 +54,21 @@ describe("findGlobalConfigPath", () => {
   it("uses AO_GLOBAL_CONFIG_PATH when set", () => {
     const path = findGlobalConfigPath();
     expect(path).toBe(join(testDir, "config.yaml"));
+  });
+
+  it("uses XDG_CONFIG_HOME when AO_GLOBAL_CONFIG_PATH is unset", () => {
+    delete process.env["AO_GLOBAL_CONFIG_PATH"];
+    const xdgDir = join(testDir, "xdg-home");
+    process.env["XDG_CONFIG_HOME"] = xdgDir;
+
+    expect(findGlobalConfigPath()).toBe(join(xdgDir, "agent-orchestrator", "config.yaml"));
+  });
+
+  it("falls back to homedir when env vars are unset", () => {
+    delete process.env["AO_GLOBAL_CONFIG_PATH"];
+    delete process.env["XDG_CONFIG_HOME"];
+
+    expect(findGlobalConfigPath()).toBe(join(os.homedir(), ".agent-orchestrator", "config.yaml"));
   });
 });
 
@@ -85,6 +104,61 @@ describe("loadGlobalConfig / saveGlobalConfig", () => {
     const loaded = loadGlobalConfig();
     expect(loaded!.port).toBe(4000);
     expect(loaded!.projects["test"].name).toBe("Test");
+  });
+
+  it("contracts project paths under homedir to ~/ when saving", () => {
+    const projectPath = join(os.homedir(), `.ao-home-${randomBytes(6).toString("hex")}`);
+    mkdirSync(projectPath, { recursive: true });
+
+    try {
+      const config: GlobalConfig = {
+        port: 4000,
+        readyThresholdMs: 300000,
+        defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
+        projects: { homeproj: { name: "Home Project", path: projectPath } },
+      };
+
+      saveGlobalConfig(config);
+
+      const saved = readFileSync(join(testDir, "config.yaml"), "utf-8");
+      expect(saved).toContain(`path: ~/${projectPath.slice(os.homedir().length + 1)}`);
+      expect(saved).not.toContain(`path: ${projectPath}`);
+    } finally {
+      rmSync(projectPath, { recursive: true, force: true });
+    }
+  });
+
+  it("rethrows rename failures after best-effort temp cleanup", async () => {
+    const renameError = new Error("rename failed");
+    const unlinkSpy = vi.fn(() => {
+      throw new Error("unlink failed");
+    });
+    vi.resetModules();
+    vi.doMock("node:fs", async () => {
+      const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+      return {
+        ...actual,
+        renameSync: () => {
+          throw renameError;
+        },
+        unlinkSync: unlinkSpy,
+      };
+    });
+
+    const { saveGlobalConfig: saveGlobalConfigWithMock } = await import("../global-config.js");
+
+    const config: GlobalConfig = {
+      port: 4000,
+      readyThresholdMs: 300000,
+      defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
+      projects: { test: { name: "Test", path: "/tmp/test" } },
+    };
+
+    expect(() => saveGlobalConfigWithMock(config)).toThrow(renameError);
+    expect(unlinkSpy).toHaveBeenCalledOnce();
+
+    vi.doUnmock("node:fs");
+    vi.resetModules();
   });
 });
 
@@ -156,12 +230,29 @@ describe("registerProject / unregisterProject", () => {
     expect(updated.projects["ao"]).toBeUndefined();
     expect(config.projects["ao"]).toBeDefined(); // immutable
   });
+
+  it("removes unregistered projects from projectOrder", () => {
+    const config: GlobalConfig = {
+      port: 3000,
+      readyThresholdMs: 300000,
+      defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
+      projects: {
+        ao: { name: "AO", path: "/tmp/ao" },
+        other: { name: "Other", path: "/tmp/other" },
+      },
+      projectOrder: ["ao", "other"],
+    };
+
+    const updated = unregisterProject(config, "ao");
+    expect(updated.projectOrder).toEqual(["other"]);
+  });
 });
 
 describe("matchProjectByCwd", () => {
   it("matches exact path", () => {
     const config: GlobalConfig = {
-      port: 3000, readyThresholdMs: 300000,
+      port: 3000,
+      readyThresholdMs: 300000,
       defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
       projects: { ao: { name: "AO", path: testDir } },
     };
@@ -172,7 +263,8 @@ describe("matchProjectByCwd", () => {
     const subDir = join(testDir, "src");
     mkdirSync(subDir, { recursive: true });
     const config: GlobalConfig = {
-      port: 3000, readyThresholdMs: 300000,
+      port: 3000,
+      readyThresholdMs: 300000,
       defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
       projects: { ao: { name: "AO", path: testDir } },
     };
@@ -183,7 +275,8 @@ describe("matchProjectByCwd", () => {
     const subDir = join(testDir, "packages", "sub");
     mkdirSync(subDir, { recursive: true });
     const config: GlobalConfig = {
-      port: 3000, readyThresholdMs: 300000,
+      port: 3000,
+      readyThresholdMs: 300000,
       defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
       projects: {
         parent: { name: "Parent", path: testDir },
@@ -195,7 +288,8 @@ describe("matchProjectByCwd", () => {
 
   it("returns null for unmatched path", () => {
     const config: GlobalConfig = {
-      port: 3000, readyThresholdMs: 300000,
+      port: 3000,
+      readyThresholdMs: 300000,
       defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
       projects: { ao: { name: "AO", path: "/some/other/path" } },
     };
@@ -206,7 +300,8 @@ describe("matchProjectByCwd", () => {
 describe("findProjectByPath", () => {
   it("returns the matching project by exact path", () => {
     const config: GlobalConfig = {
-      port: 3000, readyThresholdMs: 300000,
+      port: 3000,
+      readyThresholdMs: 300000,
       defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
       projects: { ao: { name: "AO", path: testDir } },
     };
@@ -218,7 +313,8 @@ describe("findProjectByPath", () => {
   it("matches after expanding ~ in stored path", () => {
     const home = process.env["HOME"] ?? "";
     const config: GlobalConfig = {
-      port: 3000, readyThresholdMs: 300000,
+      port: 3000,
+      readyThresholdMs: 300000,
       defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
       projects: { ao: { name: "AO", path: testDir.replace(home, "~") } },
     };
@@ -229,10 +325,21 @@ describe("findProjectByPath", () => {
 
   it("returns null when path does not match any project", () => {
     const config: GlobalConfig = {
-      port: 3000, readyThresholdMs: 300000,
+      port: 3000,
+      readyThresholdMs: 300000,
       defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
       projects: { ao: { name: "AO", path: "/some/other/path" } },
     };
     expect(findProjectByPath(config, testDir)).toBeNull();
+  });
+});
+
+describe("loadLocalProjectConfig", () => {
+  it("throws a readable error when the local config file cannot be read", () => {
+    const missingPath = join(testDir, "missing", "agent-orchestrator.yaml");
+
+    expect(() => loadLocalProjectConfig(missingPath)).toThrow(
+      `Cannot read local project config at ${missingPath}`,
+    );
   });
 });

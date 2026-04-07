@@ -83,6 +83,18 @@ describe("start / stop", () => {
     // Should not throw on double stop
     lm.stop();
   });
+
+  it("allows pin() after start() without throwing", () => {
+    const lm = createLifecycleManager({
+      config,
+      registry: mockRegistry,
+      sessionManager: mockSessionManager,
+    });
+
+    lm.start(60_000);
+    expect(() => lm.pin()).not.toThrow();
+    lm.stop();
+  });
 });
 
 describe("check (single session)", () => {
@@ -830,9 +842,9 @@ describe("reactions", () => {
 
     const mockSCM = createMockSCM({
       getCISummary: vi.fn().mockResolvedValue("failing"),
-      getCIChecks: vi.fn().mockResolvedValue([
-        { name: "lint", status: "failed", conclusion: "FAILURE" },
-      ]),
+      getCIChecks: vi
+        .fn()
+        .mockResolvedValue([{ name: "lint", status: "failed", conclusion: "FAILURE" }]),
     });
     const registry = createMockRegistry({
       runtime: plugins.runtime,
@@ -878,9 +890,9 @@ describe("reactions", () => {
       },
     };
 
-    const getCIChecksMock = vi.fn().mockResolvedValue([
-      { name: "lint", status: "failed", conclusion: "FAILURE" },
-    ]);
+    const getCIChecksMock = vi
+      .fn()
+      .mockResolvedValue([{ name: "lint", status: "failed", conclusion: "FAILURE" }]);
     const mockSCM = createMockSCM({
       getCISummary: vi.fn().mockResolvedValue("failing"),
       getCIChecks: getCIChecksMock,
@@ -932,9 +944,9 @@ describe("reactions", () => {
 
     const mockSCM = createMockSCM({
       getCISummary: vi.fn().mockResolvedValue("failing"),
-      getCIChecks: vi.fn().mockResolvedValue([
-        { name: "lint", status: "failed", conclusion: "FAILURE" },
-      ]),
+      getCIChecks: vi
+        .fn()
+        .mockResolvedValue([{ name: "lint", status: "failed", conclusion: "FAILURE" }]),
     });
     const registry = createMockRegistry({
       runtime: plugins.runtime,
@@ -972,9 +984,9 @@ describe("reactions", () => {
     };
 
     const getCISummaryMock = vi.fn().mockResolvedValue("failing");
-    const getCIChecksMock = vi.fn().mockResolvedValue([
-      { name: "lint", status: "failed", conclusion: "FAILURE" },
-    ]);
+    const getCIChecksMock = vi
+      .fn()
+      .mockResolvedValue([{ name: "lint", status: "failed", conclusion: "FAILURE" }]);
     const mockSCM = createMockSCM({
       getCISummary: getCISummaryMock,
       getCIChecks: getCIChecksMock,
@@ -1032,9 +1044,9 @@ describe("reactions", () => {
 
     const mockSCM = createMockSCM({
       getCISummary: vi.fn().mockResolvedValue("failing"),
-      getCIChecks: vi.fn().mockResolvedValue([
-        { name: "lint", status: "failed", conclusion: "FAILURE" },
-      ]),
+      getCIChecks: vi
+        .fn()
+        .mockResolvedValue([{ name: "lint", status: "failed", conclusion: "FAILURE" }]),
     });
 
     const registry: PluginRegistry = {
@@ -1420,13 +1432,13 @@ describe("pollAll terminal status accounting", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     // all-complete should NOT have fired — "working" is still active
-    const allCompleteNotifications = vi.mocked(notifier.notify).mock.calls.filter(
-      (call: unknown[]) => {
+    const allCompleteNotifications = vi
+      .mocked(notifier.notify)
+      .mock.calls.filter((call: unknown[]) => {
         const event = call[0] as Record<string, unknown> | undefined;
         const data = event?.data as Record<string, unknown> | undefined;
         return event?.type === "reaction.triggered" && data?.reactionKey === "all-complete";
-      },
-    );
+      });
     expect(allCompleteNotifications).toHaveLength(0);
 
     lm.stop();
@@ -1570,7 +1582,12 @@ describe("rate limiting optimizations", () => {
               mergeable: false,
               hasConflicts: false,
               ciChecks: [
-                { name: "lint", status: "failed" as const, conclusion: "FAILURE", url: "https://example.com/lint" },
+                {
+                  name: "lint",
+                  status: "failed" as const,
+                  conclusion: "FAILURE",
+                  url: "https://example.com/lint",
+                },
                 { name: "test", status: "passed" as const, conclusion: "SUCCESS" },
               ],
             },

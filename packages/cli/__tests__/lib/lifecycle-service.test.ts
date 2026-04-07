@@ -5,16 +5,25 @@ import type { LifecycleManager, OrchestratorConfig } from "@composio/ao-core";
 // Hoisted mocks
 // ---------------------------------------------------------------------------
 
-const { mockLifecycleStart, mockLifecycleStop, mockGetLifecycleManager } = vi.hoisted(() => {
-  const mockLifecycleStart = vi.fn();
-  const mockLifecycleStop = vi.fn();
-  const mockInstance: LifecycleManager = {
-    start: mockLifecycleStart,
-    stop: mockLifecycleStop,
-  } as unknown as LifecycleManager;
-  const mockGetLifecycleManager = vi.fn().mockResolvedValue(mockInstance);
-  return { mockLifecycleStart, mockLifecycleStop, mockGetLifecycleManager, mockInstance };
-});
+const { mockLifecycleStart, mockLifecycleStop, mockLifecyclePin, mockGetLifecycleManager } =
+  vi.hoisted(() => {
+    const mockLifecycleStart = vi.fn();
+    const mockLifecycleStop = vi.fn();
+    const mockLifecyclePin = vi.fn();
+    const mockInstance: LifecycleManager = {
+      start: mockLifecycleStart,
+      stop: mockLifecycleStop,
+      pin: mockLifecyclePin,
+    } as unknown as LifecycleManager;
+    const mockGetLifecycleManager = vi.fn().mockResolvedValue(mockInstance);
+    return {
+      mockLifecycleStart,
+      mockLifecycleStop,
+      mockLifecyclePin,
+      mockGetLifecycleManager,
+      mockInstance,
+    };
+  });
 
 vi.mock("../../src/lib/create-session-manager.js", () => ({
   getLifecycleManager: mockGetLifecycleManager,
@@ -47,6 +56,7 @@ describe("lifecycle-service (in-process)", () => {
   beforeEach(() => {
     mockLifecycleStart.mockReset();
     mockLifecycleStop.mockReset();
+    mockLifecyclePin.mockReset();
     mockGetLifecycleManager.mockClear();
   });
 
@@ -121,6 +131,50 @@ describe("lifecycle-service (in-process)", () => {
         pid: null,
       });
     });
+
+    it("returns started=false for a concurrent caller when creation succeeds", async () => {
+      const { ensureLifecycleWorker } = await freshModule();
+      let resolveManager: ((value: LifecycleManager) => void) | undefined;
+      mockGetLifecycleManager.mockImplementationOnce(
+        () =>
+          new Promise<LifecycleManager>((resolve) => {
+            resolveManager = resolve;
+          }),
+      );
+
+      const firstCall = ensureLifecycleWorker(config, "my-project");
+      const secondCall = ensureLifecycleWorker(config, "my-project");
+
+      resolveManager?.({
+        start: mockLifecycleStart,
+        stop: mockLifecycleStop,
+        pin: mockLifecyclePin,
+      } as unknown as LifecycleManager);
+
+      await expect(firstCall).resolves.toEqual({
+        running: true,
+        started: true,
+        pid: process.pid,
+      });
+      await expect(secondCall).resolves.toEqual({
+        running: true,
+        started: false,
+        pid: process.pid,
+      });
+      expect(mockGetLifecycleManager).toHaveBeenCalledTimes(1);
+    });
+
+    it("propagates the start error when stop also fails during cleanup", async () => {
+      const { ensureLifecycleWorker } = await freshModule();
+      mockLifecycleStart.mockImplementation(() => {
+        throw new Error("start failed");
+      });
+      mockLifecycleStop.mockImplementation(() => {
+        throw new Error("stop also failed");
+      });
+
+      await expect(ensureLifecycleWorker(config, "my-project")).rejects.toThrow("start failed");
+    });
   });
 
   describe("stopLifecycleWorker", () => {
@@ -167,6 +221,24 @@ describe("lifecycle-service (in-process)", () => {
       expect(status.running).toBe(true);
       expect(status.started).toBe(true);
       expect(status.pid).toBe(process.pid);
+    });
+  });
+
+  describe("pinLifecycleWorker", () => {
+    it("calls pin on an active lifecycle manager", async () => {
+      const { ensureLifecycleWorker, pinLifecycleWorker } = await freshModule();
+
+      await ensureLifecycleWorker(config, "my-project");
+      pinLifecycleWorker("my-project");
+
+      expect(mockLifecyclePin).toHaveBeenCalledTimes(1);
+    });
+
+    it("is a no-op when no manager is active", async () => {
+      const { pinLifecycleWorker } = await freshModule();
+
+      expect(() => pinLifecycleWorker("nonexistent")).not.toThrow();
+      expect(mockLifecyclePin).not.toHaveBeenCalled();
     });
   });
 });

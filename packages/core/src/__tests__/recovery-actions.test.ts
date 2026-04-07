@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { readMetadataRaw } from "../metadata.js";
+import { readMetadataRaw, writeMetadata } from "../metadata.js";
 import { getSessionsDir, getProjectBaseDir } from "../paths.js";
 import { cleanupSession, escalateSession, recoverSession } from "../recovery/actions.js";
 import { runRecovery } from "../recovery/manager.js";
@@ -251,6 +251,43 @@ describe("escalateSession", () => {
     expect(result.success).toBe(true);
     expect(result.action).toBe("escalate");
     expect(result.reason).toBe("Workspace exists but runtime is missing");
+  });
+
+  it("updates session metadata during non-dry-run escalation", async () => {
+    rootDir = join(tmpdir(), `ao-recovery-${randomUUID()}`);
+    mkdirSync(rootDir, { recursive: true });
+    const projectDir = join(rootDir, "project");
+    mkdirSync(projectDir, { recursive: true });
+    const effectiveConfigPath = join(projectDir, "agent-orchestrator.yaml");
+    writeFileSync(join(rootDir, "agent-orchestrator.yaml"), "projects: {}\n", "utf-8");
+    writeFileSync(effectiveConfigPath, "repo: org/repo\n", "utf-8");
+
+    const config = makeConfig(rootDir);
+    config.projects.app = {
+      ...config.projects.app,
+      effectiveConfigPath,
+    };
+    const assessment = makeAssessment({
+      action: "escalate",
+      reason: "Agent is stuck",
+    });
+    const context = makeContext(rootDir, { dryRun: false });
+    const sessionsDir = getSessionsDir(effectiveConfigPath, projectDir);
+    writeMetadata(sessionsDir, assessment.sessionId, {
+      worktree: join(rootDir, "worktree"),
+      branch: "feat/test",
+      status: "working",
+      project: "app",
+    });
+
+    const result = await escalateSession(assessment, config, makeRegistry(), context);
+    const metadata = readMetadataRaw(sessionsDir, assessment.sessionId);
+
+    expect(result.success).toBe(true);
+    expect(result.action).toBe("escalate");
+    expect(metadata?.["status"]).toBe("stuck");
+    expect(metadata?.["escalatedAt"]).toBeDefined();
+    expect(metadata?.["escalationReason"]).toBe("Agent is stuck");
   });
 });
 

@@ -25,8 +25,13 @@ const {
   const pendingGc = {
     port: 3000,
     readyThresholdMs: 300_000,
-    defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: ["composio", "desktop"] },
-    projects: { "ma": { name: "my-app", path: "/home/user/my-app" } },
+    defaults: {
+      runtime: "tmux",
+      agent: "claude-code",
+      workspace: "worktree",
+      notifiers: ["composio", "desktop"],
+    },
+    projects: { ma: { name: "my-app", path: "/home/user/my-app" } },
   };
   const defaultRegisterResult = {
     projectId: "ma",
@@ -80,7 +85,8 @@ vi.mock("@composio/ao-core", async (importOriginal) => {
 });
 
 vi.mock("../../src/lib/create-session-manager.js", () => ({
-  getSessionManager: async (): Promise<SessionManager> => mockSessionManager as unknown as SessionManager,
+  getSessionManager: async (): Promise<SessionManager> =>
+    mockSessionManager as unknown as SessionManager,
 }));
 
 vi.mock("../../src/lib/running-state.js", () => ({
@@ -105,9 +111,7 @@ import { registerProjectCommand } from "../../src/commands/project.js";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeGlobalConfig(
-  projectIds: string[] = ["my-project"],
-): GlobalConfig {
+function makeGlobalConfig(projectIds: string[] = ["my-project"]): GlobalConfig {
   const projects: GlobalConfig["projects"] = {};
   for (const id of projectIds) {
     projects[id] = { name: id, path: `/home/user/${id}` } as GlobalConfig["projects"][string];
@@ -115,7 +119,12 @@ function makeGlobalConfig(
   return {
     port: 3000,
     readyThresholdMs: 300_000,
-    defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: ["composio", "desktop"] },
+    defaults: {
+      runtime: "tmux",
+      agent: "claude-code",
+      workspace: "worktree",
+      notifiers: ["composio", "desktop"],
+    },
     projects,
   } as GlobalConfig;
 }
@@ -269,6 +278,28 @@ describe("ao project add", () => {
     void warnings;
     expect(output).toContain("Some non-fatal warning");
   });
+
+  it("prints the validation error and exits when commit fails", async () => {
+    mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig([]));
+    mockValidateAndCommitRegistration.mockImplementation(() => {
+      throw new Error("session prefix collision");
+    });
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`process.exit(${code})`);
+    });
+
+    await expect(runCommand(["project", "add", "/home/user/my-app"])).rejects.toThrow(
+      "process.exit(1)",
+    );
+
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("session prefix collision"));
+    expect(exitSpy).toHaveBeenCalledWith(1);
+
+    errorSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -302,7 +333,9 @@ describe("ao project remove", () => {
 
   it("exits with error when global config is not found", async () => {
     mockLoadGlobalConfig.mockReturnValue(null);
-    const mockExit = vi.spyOn(process, "exit").mockImplementation(() => { throw new Error("exit"); });
+    const mockExit = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("exit");
+    });
 
     await expect(runCommand(["project", "remove", "nonexistent", "--force"])).rejects.toThrow();
     expect(mockExit).toHaveBeenCalledWith(1);
@@ -312,7 +345,9 @@ describe("ao project remove", () => {
 
   it("exits with error when project ID is not in global config", async () => {
     mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig(["other-project"]));
-    const mockExit = vi.spyOn(process, "exit").mockImplementation(() => { throw new Error("exit"); });
+    const mockExit = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("exit");
+    });
 
     await expect(runCommand(["project", "remove", "nonexistent", "--force"])).rejects.toThrow();
     expect(mockExit).toHaveBeenCalledWith(1);
@@ -322,7 +357,10 @@ describe("ao project remove", () => {
 
   it("shows active sessions and includes orphan warning in prompt", async () => {
     mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig(["my-project"]));
-    mockSessionManager.list.mockResolvedValue([{ id: "my-project-session-1" }, { id: "my-project-session-2" }]);
+    mockSessionManager.list.mockResolvedValue([
+      { id: "my-project-session-1" },
+      { id: "my-project-session-2" },
+    ]);
     mockIsHumanCaller.mockReturnValue(true);
     mockPromptConfirm.mockResolvedValue(true);
 
@@ -356,7 +394,13 @@ describe("ao project remove", () => {
 
   it("warns when ao start daemon is running after removal", async () => {
     mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig(["my-project"]));
-    mockGetRunning.mockResolvedValue({ pid: 12345, configPath: "/tmp/config.yaml", port: 3000, startedAt: "", projects: ["my-project"] });
+    mockGetRunning.mockResolvedValue({
+      pid: 12345,
+      configPath: "/tmp/config.yaml",
+      port: 3000,
+      startedAt: "",
+      projects: ["my-project"],
+    });
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     await runCommand(["project", "remove", "my-project", "--force"]);
@@ -377,7 +421,9 @@ describe("ao project remove", () => {
 
   it("proceeds when session manager throws", async () => {
     mockLoadGlobalConfig.mockReturnValue(makeGlobalConfig(["my-project"]));
-    mockLoadConfig.mockImplementation(() => { throw new Error("no config"); });
+    mockLoadConfig.mockImplementation(() => {
+      throw new Error("no config");
+    });
 
     await runCommand(["project", "remove", "my-project", "--force"]);
 

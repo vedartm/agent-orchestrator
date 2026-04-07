@@ -172,7 +172,9 @@ describe("buildEffectiveConfig", () => {
       stringifyYaml({ repo: "org/nameless" }),
     );
     // Build a GlobalConfig where the entry has no .name field
-    const gc = makeGlobalConfig({ "nameless-app": { name: undefined as unknown as string, path: projectDir } });
+    const gc = makeGlobalConfig({
+      "nameless-app": { name: undefined as unknown as string, path: projectDir },
+    });
     saveGlobalConfig(gc);
 
     const result = buildEffectiveConfig(gc, join(testDir, ".ao", "config.yaml"));
@@ -183,10 +185,7 @@ describe("buildEffectiveConfig", () => {
   it("notificationRouting includes DEFAULT_NOTIFICATION_ROUTING keys when no routing is set", () => {
     const projectDir = join(testDir, "my-app");
     mkdirSync(projectDir);
-    writeFileSync(
-      join(projectDir, "agent-orchestrator.yaml"),
-      stringifyYaml({ repo: "org/app" }),
-    );
+    writeFileSync(join(projectDir, "agent-orchestrator.yaml"), stringifyYaml({ repo: "org/app" }));
     const gc = makeGlobalConfig({ app: { name: "App", path: projectDir } });
     // No notificationRouting set on global config
     saveGlobalConfig(gc);
@@ -197,5 +196,32 @@ describe("buildEffectiveConfig", () => {
     expect(result.notificationRouting).toHaveProperty("action");
     expect(result.notificationRouting).toHaveProperty("warning");
     expect(result.notificationRouting).toHaveProperty("info");
+  });
+
+  it("filters invalid plugin entries from the effective config", () => {
+    const projectDir = join(testDir, "plugins-app");
+    mkdirSync(projectDir);
+    writeFileSync(
+      join(projectDir, "agent-orchestrator.yaml"),
+      stringifyYaml({ repo: "org/plugins-app" }),
+    );
+    const gc = makeGlobalConfig({ app: { name: "App", path: projectDir } });
+    gc.plugins = [
+      { name: "valid-plugin", source: "npm:@scope/plugin" },
+      42,
+      null,
+      { name: "missing-source" },
+      { source: "npm:@scope/missing-name" },
+      { name: "wrong-source", source: 123 },
+      { name: "another-valid", source: "./plugins/local.js" },
+    ] as unknown as NonNullable<typeof gc.plugins>;
+    saveGlobalConfig(gc);
+
+    const result = buildEffectiveConfig(gc, join(testDir, ".ao", "config.yaml"));
+
+    expect(result.plugins).toEqual([
+      { name: "valid-plugin", source: "npm:@scope/plugin" },
+      { name: "another-valid", source: "./plugins/local.js" },
+    ]);
   });
 });
