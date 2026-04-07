@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as os from "node:os";
 import { mkdirSync, writeFileSync, existsSync, rmSync, readFileSync } from "node:fs";
+import type * as fs from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
@@ -135,7 +136,7 @@ describe("loadGlobalConfig / saveGlobalConfig", () => {
     });
     vi.resetModules();
     vi.doMock("node:fs", async () => {
-      const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+      const actual = await vi.importActual<typeof fs>("node:fs");
       return {
         ...actual,
         renameSync: () => {
