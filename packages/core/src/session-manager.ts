@@ -1931,12 +1931,6 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
   async function send(sessionId: SessionId, message: string): Promise<void> {
     const { raw, sessionsDir, project, projectId } = requireSessionRecord(sessionId);
-    const pause = getProjectPause(project);
-    if (pause && !isOrchestratorSessionRecord(sessionId, raw, project.sessionPrefix)) {
-      throw new Error(
-        `Project is paused due to model rate limit until ${pause.until.toISOString()} (${pause.reason}; source: ${pause.sourceSessionId})`,
-      );
-    }
 
     const selection = resolveSelectionForSession(project, sessionId, raw);
     const selectedAgent = selection.agentName;

@@ -76,7 +76,11 @@ import { detectOpenClawInstallation } from "../lib/openclaw-probe.js";
 import { applyOpenClawCredentials } from "../lib/credential-resolver.js";
 import { findProjectForDirectory } from "../lib/project-resolution.js";
 import { formatAttachCommand } from "../lib/attach.js";
-import { appendStringOption, resolveRuntimeOverride } from "../lib/runtime-overrides.js";
+import {
+  appendStringOption,
+  resolveRuntimeOverride,
+  type RuntimeOverrideFlagOptions,
+} from "../lib/runtime-overrides.js";
 
 import { DEFAULT_PORT } from "../lib/constants.js";
 const IS_TTY = Boolean(process.stdin.isTTY && process.stdout.isTTY);
