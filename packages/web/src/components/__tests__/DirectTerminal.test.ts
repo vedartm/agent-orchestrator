@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildTerminalThemes } from "@/components/DirectTerminal";
+import { buildTerminalThemes, safeFit } from "@/components/DirectTerminal";
+import type { FitAddon as FitAddonType } from "@xterm/addon-fit";
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 const ANSI_KEYS = [
@@ -84,5 +85,19 @@ describe("buildTerminalThemes", () => {
   it("selection colors differ between dark and light themes", () => {
     const { dark, light } = buildTerminalThemes("agent");
     expect(dark.selectionBackground).not.toBe(light.selectionBackground);
+  });
+});
+
+describe("safeFit", () => {
+  it("returns true when fit() succeeds", () => {
+    const addon = { fit: () => {} } as unknown as FitAddonType;
+    expect(safeFit(addon)).toBe(true);
+  });
+
+  it("returns false when fit() throws (dimensions not ready)", () => {
+    const addon = {
+      fit: () => { throw new TypeError("Cannot read properties of undefined (reading 'dimensions')"); },
+    } as unknown as FitAddonType;
+    expect(safeFit(addon)).toBe(false);
   });
 });

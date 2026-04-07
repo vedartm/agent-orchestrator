@@ -13,6 +13,19 @@ import "xterm/css/xterm.css";
 import type { ITheme, Terminal as TerminalType } from "xterm";
 import type { FitAddon as FitAddonType } from "@xterm/addon-fit";
 
+/**
+ * Call fit.fit() and return true on success, false if the terminal's render
+ * service hasn't initialised its dimensions yet (xterm race condition).
+ */
+export function safeFit(fit: FitAddonType): boolean {
+  try {
+    fit.fit();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 interface DirectTerminalProps {
   sessionId: string;
   startFullscreen?: boolean;
@@ -266,7 +279,7 @@ export function DirectTerminal({
         terminalInstance.current = terminal;
 
         // Fit terminal to container
-        try { fit.fit(); } catch { /* dimensions not ready yet */ }
+        safeFit(fit);
 
         // ── Preserve selection while terminal receives output ────────
         // xterm.js clears the selection on every terminal.write(). We
@@ -348,7 +361,7 @@ export function DirectTerminal({
         // Handle window resize
         const handleResize = () => {
           if (fit) {
-            try { fit.fit(); } catch { /* dimensions not ready yet */ }
+            if (!safeFit(fit)) return; // dimensions not ready — skip sending stale size
             resizeTerminalMux(sessionId, terminal.cols, terminal.rows);
           }
         };
@@ -439,7 +452,7 @@ export function DirectTerminal({
 
       // Container is at target size, now resize terminal
       terminal.refresh(0, terminal.rows - 1);
-      try { fit.fit(); } catch { /* dimensions not ready yet */ }
+      if (!safeFit(fit)) return; // dimensions not ready — skip sending stale size
       terminal.refresh(0, terminal.rows - 1);
 
       // Send new size to server via mux
