@@ -135,6 +135,10 @@ describe("quoteSystemdValue", () => {
     expect(quoteSystemdValue("$HOME/bin")).toBe('"$$HOME/bin"');
   });
 
+  it("escapes percent signs for systemd", () => {
+    expect(quoteSystemdValue("path/with%percent/ao")).toBe('"path/with%%percent/ao"');
+  });
+
   it("handles paths with spaces", () => {
     expect(quoteSystemdValue("/path/with spaces/ao")).toBe('"/path/with spaces/ao"');
   });

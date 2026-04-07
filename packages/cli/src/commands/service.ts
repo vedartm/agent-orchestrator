@@ -38,12 +38,13 @@ export function escapeXml(str: string): string {
 
 /**
  * Quote a value for systemd unit files.
- * Wraps in double quotes and escapes internal backslashes, quotes, and dollar signs.
+ * Wraps in double quotes and escapes internal backslashes, quotes, percent signs, and dollar signs.
  */
 export function quoteSystemdValue(str: string): string {
   const escaped = str
     .replace(/\\/g, "\\\\")
     .replace(/"/g, '\\"')
+    .replace(/%/g, "%%") // systemd uses %% for literal %
     .replace(/\$/g, "$$$$"); // systemd uses $$ for literal $
   return `"${escaped}"`;
 }
