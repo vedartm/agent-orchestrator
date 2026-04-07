@@ -174,6 +174,27 @@ describe("recoverDeadSessions", () => {
     expect(results).toHaveLength(0);
   });
 
+  it("skips orchestrator sessions with prefix-orchestrator-N pattern", async () => {
+    // Update config to have a sessionPrefix
+    (config.projects["my-app"] as ProjectConfig).sessionPrefix = "web";
+    writeMetadata(env.sessionsDir, "web-orchestrator-1", {
+      worktree: "/tmp/ws",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+      runtimeHandle: JSON.stringify({ id: "rt-orch", runtimeName: "mock", data: {} }),
+    });
+
+    vi.mocked(plugins.runtime.isAlive).mockResolvedValue(false);
+
+    const lm = createLifecycle({ projectId: "my-app", configOverride: config });
+    const results = await lm.recoverDeadSessions();
+
+    expect(results).toHaveLength(0);
+    // Session should still be in active metadata (not archived)
+    expect(readMetadataRaw(env.sessionsDir, "web-orchestrator-1")).not.toBeNull();
+  });
+
   it("handles spawn failure gracefully", async () => {
     writeMetadata(env.sessionsDir, "app-fail", {
       worktree: "/tmp/ws",

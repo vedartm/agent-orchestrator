@@ -1436,6 +1436,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
 
         // Skip orchestrator sessions — they manage themselves
         if (raw["role"] === "orchestrator" || sessionId.endsWith("-orchestrator")) continue;
+        // Also skip prefix-orchestrator-N pattern (e.g., "web-orchestrator-1") when sessionPrefix is configured
+        const sessionPrefix = project.sessionPrefix;
+        if (sessionPrefix && new RegExp(`^${sessionPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-orchestrator-\\d+$`).test(sessionId)) continue;
 
         // Resolve agent plugin for isProcessRunning
         const agentName = raw["agent"] ?? config.defaults.agent;
