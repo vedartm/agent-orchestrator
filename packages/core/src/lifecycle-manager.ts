@@ -16,6 +16,7 @@ import {
   PR_STATE,
   CI_STATUS,
   TERMINAL_STATUSES,
+  PR_MANAGED_STATUSES,
   type LifecycleManager,
   type SessionManager,
   type SessionId,
@@ -1431,8 +1432,10 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         if (!raw) continue;
 
         const status = raw["status"] as SessionStatus | undefined;
-        // Only check non-terminal sessions (working, spawning, pr_open, etc.)
+        // Skip terminal statuses (done, killed, terminated, etc.)
         if (status && TERMINAL_STATUSES.has(status)) continue;
+        // Skip PR-managed statuses — lifecycle poll tracks these via PR state, not running agent
+        if (status && PR_MANAGED_STATUSES.has(status)) continue;
 
         // Skip orchestrator sessions — they manage themselves
         if (raw["role"] === "orchestrator" || sessionId.endsWith("-orchestrator")) continue;

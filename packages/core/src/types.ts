@@ -119,6 +119,20 @@ export const TERMINAL_STATUSES: ReadonlySet<SessionStatus> = new Set([
   "merged",
 ]);
 
+/**
+ * Statuses where the session is actively managed by the lifecycle poll via PR state.
+ * The agent process doesn't need to be running — the lifecycle poll monitors PR status,
+ * CI, reviews, and mergeability. Archiving these sessions would break PR tracking.
+ */
+export const PR_MANAGED_STATUSES: ReadonlySet<SessionStatus> = new Set([
+  "pr_open",
+  "ci_failed",
+  "review_pending",
+  "changes_requested",
+  "approved",
+  "mergeable",
+]);
+
 /** Activity states that indicate the session is no longer running. */
 export const TERMINAL_ACTIVITIES: ReadonlySet<ActivityState> = new Set(["exited"]);
 

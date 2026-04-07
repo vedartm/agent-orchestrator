@@ -297,7 +297,7 @@ describe("recoverDeadSessions", () => {
     writeMetadata(env.sessionsDir, "app-b", {
       worktree: "/tmp/ws-b",
       branch: "feat/b",
-      status: "pr_open",
+      status: "working",
       project: "my-app",
       agent: "mock-agent",
       runtimeHandle: JSON.stringify({ id: "rt-b", runtimeName: "mock", data: {} }),
@@ -317,6 +317,37 @@ describe("recoverDeadSessions", () => {
     // app-b has no issueId, should not be respawned
     const resultB = results.find((r) => r.sessionId === "app-b");
     expect(resultB?.respawned).toBe(false);
+  });
+
+  it("skips PR-managed statuses (pr_open, ci_failed, review_pending, changes_requested, approved, mergeable)", async () => {
+    // Create sessions in PR-managed states - these should not be recovered
+    const prManagedStatuses = ["pr_open", "ci_failed", "review_pending", "changes_requested", "approved", "mergeable"] as const;
+
+    for (const [i, status] of prManagedStatuses.entries()) {
+      writeMetadata(env.sessionsDir, `app-pr-${i}`, {
+        worktree: `/tmp/ws-pr-${i}`,
+        branch: `feat/pr-${i}`,
+        status,
+        project: "my-app",
+        agent: "mock-agent",
+        runtimeHandle: JSON.stringify({ id: `rt-pr-${i}`, runtimeName: "mock", data: {} }),
+      });
+    }
+
+    // Runtime says all these sessions are dead
+    vi.mocked(plugins.runtime.isAlive).mockResolvedValue(false);
+    vi.mocked(plugins.agent.isProcessRunning).mockResolvedValue(false);
+
+    const lm = createLifecycle({ projectId: "my-app" });
+    const results = await lm.recoverDeadSessions();
+
+    // None of the PR-managed sessions should be recovered
+    expect(results).toHaveLength(0);
+
+    // All PR-managed sessions should still exist in metadata (not archived)
+    for (const [i] of prManagedStatuses.entries()) {
+      expect(readMetadataRaw(env.sessionsDir, `app-pr-${i}`)).not.toBeNull();
+    }
   });
 
   it("returns empty array when no sessions exist", async () => {
