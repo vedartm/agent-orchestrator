@@ -1021,8 +1021,11 @@ async function runStartup(
     );
 
     if (existingOrchestrators.length > 0) {
-      // Existing orchestrators found — auto-select the most recently active one.
-      // When the dashboard is available, additional sessions can be reached from within it.
+      // Existing orchestrators found — always auto-select the most recently active one.
+      // With a single orchestrator, navigate directly to its session page.
+      // With multiple orchestrators, keep the selection page so the user can choose or spawn a
+      // new one — the dashboard only links to one orchestrator per project, so the selection page
+      // is the only startup path for multi-orchestrator projects.
       const sortedOrchestrators = [...existingOrchestrators].sort(
         (a, b) => (b.lastActivityAt?.getTime() ?? 0) - (a.lastActivityAt?.getTime() ?? 0),
       );
@@ -1030,7 +1033,7 @@ async function runStartup(
       selectedOrchestratorId = selected.id;
       // Use runtimeHandle.id if available, otherwise fall back to the session ID
       tmuxTarget = selected.runtimeHandle?.id ?? selected.id;
-      if (opts?.dashboard !== false) {
+      if (opts?.dashboard !== false && existingOrchestrators.length > 1) {
         hasExistingOrchestrators = true;
       }
       spinner.succeed(
@@ -1083,7 +1086,7 @@ async function runStartup(
   if (hasExistingOrchestrators) {
     console.log(
       chalk.cyan("Orchestrator:"),
-      `opening session ${selectedOrchestratorId ?? sessionId}`,
+      "multiple sessions found — select one in the dashboard",
     );
   } else if (opts?.orchestrator !== false && !reused) {
     console.log(chalk.cyan("Orchestrator:"), `tmux attach -t ${tmuxTarget}`);
@@ -1103,15 +1106,18 @@ async function runStartup(
     }
   }
 
-  // Auto-open browser to the orchestrator session page once the server is ready.
-  // Always navigates directly to the session page (most recently active when multiple exist).
+  // Auto-open browser once the server is ready.
+  // With a single orchestrator (or a newly created one), navigate directly to the session page.
+  // With multiple existing orchestrators, open the selection page so the user can choose or
+  // spawn a new one — the dashboard only links one orchestrator per project.
   // Polls the port instead of using a fixed delay — deterministic and works regardless of
   // how long Next.js takes to compile. AbortController cancels polling on early exit.
   let openAbort: AbortController | undefined;
   if (opts?.dashboard !== false) {
     openAbort = new AbortController();
-    // Always open the orchestrator session page directly (most recently active when multiple exist)
-    const orchestratorUrl = `http://localhost:${port}/sessions/${selectedOrchestratorId ?? sessionId}`;
+    const orchestratorUrl = hasExistingOrchestrators
+      ? `http://localhost:${port}/orchestrators?project=${projectId}`
+      : `http://localhost:${port}/sessions/${selectedOrchestratorId ?? sessionId}`;
     void waitForPortAndOpen(port, orchestratorUrl, openAbort.signal);
   }
 
