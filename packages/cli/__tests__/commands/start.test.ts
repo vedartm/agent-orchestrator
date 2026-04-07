@@ -978,7 +978,9 @@ describe("start command — orchestrator session strategy display", () => {
         .mocked(console.error)
         .mock.calls.map((c) => c.join(" "))
         .join("\n");
-      throw new Error(`${String(error)}\n${errors}`);
+      throw new Error(`${String(error)}\n${errors}`, {
+        cause: error,
+      });
     }
 
     const output = getLoggedOutput();
