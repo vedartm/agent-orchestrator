@@ -1512,6 +1512,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
             if (!otherRaw) continue;
             const otherStatus = otherRaw["status"] as SessionStatus | undefined;
             if (otherStatus && TERMINAL_STATUSES.has(otherStatus)) continue;
+            // Skip orchestrator sessions — matches spawn()'s isOrchestratorSessionRecord logic
+            if (otherRaw["role"] === "orchestrator" || otherId.endsWith("-orchestrator")) continue;
+            if (sessionPrefix && new RegExp(`^${escapeRegex(sessionPrefix)}-orchestrator-\\d+$`).test(otherId)) continue;
             const otherAgent = otherRaw["agent"] ?? config.defaults.agent;
             if (otherRaw["issue"] === raw["issue"] && otherAgent === resolvedAgent) {
               existingSessionForIssue = otherId;

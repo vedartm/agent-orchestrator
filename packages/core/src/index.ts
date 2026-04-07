@@ -50,7 +50,7 @@ export {
 } from "./tmux.js";
 
 // Session manager — session CRUD
-export { createSessionManager, escapeRegex } from "./session-manager.js";
+export { createSessionManager } from "./session-manager.js";
 export type { SessionManagerDeps } from "./session-manager.js";
 
 // Lifecycle manager — state machine + reaction engine
