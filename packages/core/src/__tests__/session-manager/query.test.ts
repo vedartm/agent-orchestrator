@@ -171,36 +171,6 @@ describe("list", () => {
     expect(sessions[0].activity).toBe("exited");
   });
 
-  it("revives terminal sessions when the runtime and agent process are still alive", async () => {
-    const agentWithLiveProcess: Agent = {
-      ...mockAgent,
-      getActivityState: vi.fn().mockResolvedValue(null),
-      isProcessRunning: vi.fn().mockResolvedValue(true),
-    };
-    const registryWithLiveTerminal: PluginRegistry = {
-      ...mockRegistry,
-      get: vi.fn().mockImplementation((slot: string) => {
-        if (slot === "runtime") return mockRuntime;
-        if (slot === "agent") return agentWithLiveProcess;
-        return null;
-      }),
-    };
-
-    writeMetadata(sessionsDir, "app-1", {
-      worktree: "/tmp",
-      branch: "a",
-      status: "killed",
-      project: "my-app",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
-    });
-
-    const sm = createSessionManager({ config, registry: registryWithLiveTerminal });
-    const sessions = await sm.list();
-
-    expect(sessions[0].status).toBe("working");
-    expect(agentWithLiveProcess.isProcessRunning).toHaveBeenCalled();
-  });
-
   it("detects activity using agent-native mechanism", async () => {
     const agentWithState: Agent = {
       ...mockAgent,

@@ -923,10 +923,8 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     plugins: ReturnType<typeof resolvePlugins>,
     handleFromMetadata: boolean,
   ): Promise<void> {
-    const wasTerminalStatus = TERMINAL_SESSION_STATUSES.has(session.status);
-
     // Skip all subprocess/IO work for sessions already known to be terminal.
-    if (wasTerminalStatus && !session.runtimeHandle) {
+    if (TERMINAL_SESSION_STATUSES.has(session.status)) {
       session.activity = "exited";
       return;
     }
@@ -973,27 +971,6 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         }
       } catch {
         // Can't get session info — keep existing values
-      }
-
-      if (wasTerminalStatus && session.runtimeHandle) {
-        try {
-          const processAlive = await plugins.agent.isProcessRunning(session.runtimeHandle);
-          if (processAlive) {
-            if (session.activity === "waiting_input") {
-              session.status = "needs_input";
-            } else if (session.activity === "blocked") {
-              session.status = "stuck";
-            } else if (session.pr) {
-              session.status = "pr_open";
-            } else {
-              session.status = "working";
-            }
-          } else {
-            session.activity = "exited";
-          }
-        } catch {
-          session.activity = "exited";
-        }
       }
     }
   }
