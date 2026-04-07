@@ -46,6 +46,12 @@ vi.mock("node:os", async (importOriginal) => {
 
 vi.mock("@composio/ao-core", () => ({
   loadConfig: () => mockLoadConfig(),
+  sanitizeProjectId: (id: string) =>
+    id
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .replace(/-{2,}/g, "-"),
 }));
 
 import {
@@ -87,17 +93,25 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("sanitizeProjectId", () => {
-  it("passes through valid alphanumeric IDs", () => {
+  it("passes through valid lowercase alphanumeric IDs", () => {
     expect(sanitizeProjectId("my-app")).toBe("my-app");
     expect(sanitizeProjectId("app_v2")).toBe("app_v2");
-    expect(sanitizeProjectId("TestProject123")).toBe("TestProject123");
+  });
+
+  it("lowercases the input", () => {
+    expect(sanitizeProjectId("TestProject123")).toBe("testproject123");
   });
 
   it("replaces special characters with hyphens", () => {
     expect(sanitizeProjectId("my app")).toBe("my-app");
     expect(sanitizeProjectId("foo/bar")).toBe("foo-bar");
     expect(sanitizeProjectId("a.b.c")).toBe("a-b-c");
-    expect(sanitizeProjectId("hello@world!")).toBe("hello-world-");
+    expect(sanitizeProjectId("hello@world!")).toBe("hello-world");
+  });
+
+  it("collapses consecutive hyphens and strips edges", () => {
+    expect(sanitizeProjectId("my--app")).toBe("my-app");
+    expect(sanitizeProjectId("-my-app-")).toBe("my-app");
   });
 });
 

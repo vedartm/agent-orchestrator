@@ -15,16 +15,14 @@ import { homedir, platform } from "node:os";
 import { join, resolve } from "node:path";
 import chalk from "chalk";
 import type { Command } from "commander";
-import { loadConfig, type OrchestratorConfig } from "@composio/ao-core";
+import { loadConfig, sanitizeProjectId, type OrchestratorConfig } from "@composio/ao-core";
+
+// Re-export canonical sanitizeProjectId from core so existing test imports work
+export { sanitizeProjectId };
 
 // ---------------------------------------------------------------------------
 // Escaping helpers
 // ---------------------------------------------------------------------------
-
-/** Sanitize a projectId to a safe filename component. */
-export function sanitizeProjectId(projectId: string): string {
-  return projectId.replace(/[^a-zA-Z0-9_-]/g, "-");
-}
 
 /** Escape a string for safe inclusion in XML text content. */
 export function escapeXml(str: string): string {

@@ -48,6 +48,12 @@ vi.mock("node:os", async (importOriginal) => {
 
 vi.mock("@composio/ao-core", () => ({
   loadConfig: () => mockLoadConfig(),
+  sanitizeProjectId: (id: string) =>
+    id
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .replace(/-{2,}/g, "-"),
 }));
 
 import { registerService } from "../../src/commands/service.js";
