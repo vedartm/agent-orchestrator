@@ -123,6 +123,7 @@ export default function SessionPage() {
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
       if (res.status === 404) {
+        fetchFailCountRef.current = 0;
         if (!hasLoadedSessionRef.current) {
           setSessionMissing(true);
         }
@@ -147,7 +148,7 @@ export default function SessionPage() {
         // polling loop a few attempts before surfacing a fatal error — the
         // failure may be transient. Keep loading=true so the render shows the
         // spinner instead of hitting the final throw guard.
-        if (isNetworkError && fetchFailCountRef.current < 3) {
+        if (isNetworkError && fetchFailCountRef.current < 4) {
           keepLoading = true;
         } else {
           setRouteError(err instanceof Error ? err : new Error("Failed to load session"));
