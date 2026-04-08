@@ -227,6 +227,12 @@ export async function stopLifecycleWorker(
     return false;
   }
 
+  // Process has a PID on file but is already dead — clear the stale entry
+  if (!isProcessRunning(status.pid)) {
+    clearLifecycleWorkerPid(config, projectId, status.pid);
+    return false;
+  }
+
   await killProcessTree(status.pid, "SIGTERM");
 
   const deadline = Date.now() + STOP_TIMEOUT_MS;

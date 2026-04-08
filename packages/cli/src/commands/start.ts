@@ -1141,6 +1141,23 @@ async function runStartup(
 
   // Keep dashboard process alive if it was started
   if (dashboardProcess) {
+    const pid = dashboardProcess.pid;
+
+    // On Unix the dashboard is spawned with detached:true (own process group)
+    // so Ctrl+C only reaches AO's process group, not the dashboard's. Forward
+    // SIGINT/SIGTERM so the dashboard group is also cleaned up on exit.
+    if (!isWindows() && pid) {
+      const forward = (): void => {
+        void killProcessTree(pid, "SIGTERM");
+      };
+      process.once("SIGINT", forward);
+      process.once("SIGTERM", forward);
+      dashboardProcess.once("exit", () => {
+        process.off("SIGINT", forward);
+        process.off("SIGTERM", forward);
+      });
+    }
+
     dashboardProcess.on("exit", (code) => {
       if (openAbort) openAbort.abort();
       if (code !== 0 && code !== null) {
