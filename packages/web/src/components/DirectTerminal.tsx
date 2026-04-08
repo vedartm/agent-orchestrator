@@ -609,6 +609,17 @@ export function DirectTerminal({
     terminal.options.fontSize = settings.fontSize;
     terminal.options.cursorStyle = settings.cursorStyle;
     fitAddon.current?.fit();
+    // Send updated dimensions to the server so the PTY rewraps correctly
+    const currentWs = ws.current;
+    if (currentWs?.readyState === WebSocket.OPEN) {
+      currentWs.send(
+        JSON.stringify({
+          type: "resize",
+          cols: terminal.cols,
+          rows: terminal.rows,
+        }),
+      );
+    }
   }, [settings.fontSize, settings.cursorStyle]);
 
   // Re-fit terminal when fullscreen changes
