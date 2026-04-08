@@ -109,6 +109,8 @@ function OrchestratorStatusStrip({
   activityColor,
   crumbHref,
   crumbLabel,
+  branch,
+  pr,
 }: {
   zones: OrchestratorZones;
   createdAt: string;
@@ -117,6 +119,8 @@ function OrchestratorStatusStrip({
   activityColor: string;
   crumbHref: string;
   crumbLabel: string;
+  branch?: string;
+  pr?: DashboardPR;
 }) {
   const [uptime, setUptime] = useState<string>("");
 
@@ -172,6 +176,32 @@ function OrchestratorStatusStrip({
         >
           orchestrator
         </span>
+        {branch ? (
+          pr ? (
+            <a
+              href={buildGitHubBranchUrl(pr)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="session-detail-link-pill session-detail-link-pill--link font-[var(--font-mono)] text-[10px] hover:no-underline"
+            >
+              {branch}
+            </a>
+          ) : (
+            <span className="session-detail-link-pill font-[var(--font-mono)] text-[10px]">
+              {branch}
+            </span>
+          )
+        ) : null}
+        {pr ? (
+          <a
+            href={pr.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="session-detail-link-pill session-detail-link-pill--link session-detail-link-pill--accent hover:no-underline"
+          >
+            PR #{pr.number}
+          </a>
+        ) : null}
       </div>
       {/* Compact status bar */}
       <div
@@ -293,6 +323,8 @@ export function SessionDetail({
           activityColor={activity.color}
           crumbHref={crumbHref}
           crumbLabel={crumbLabel}
+          branch={session.branch ?? undefined}
+          pr={pr ?? undefined}
         />
       )}
 

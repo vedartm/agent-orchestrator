@@ -139,7 +139,9 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
     const el = replyTextareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+    const capped = Math.min(el.scrollHeight, 120);
+    el.style.height = `${capped}px`;
+    el.style.overflowY = el.scrollHeight > 120 ? "auto" : "hidden";
   }, [replyText]);
 
   useEffect(() => {
@@ -717,7 +719,7 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
             }}
             rows={1}
             disabled={sendingQuickReply !== null}
-            style={{ overflow: "hidden", resize: "none" }}
+            style={{ resize: "none" }}
           />
         </div>
       )}

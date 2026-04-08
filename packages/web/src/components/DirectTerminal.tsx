@@ -91,7 +91,7 @@ export function buildTerminalThemes(variant: TerminalVariant): { dark: ITheme; l
   const orchAccent = agentAccent;
   const accent = variant === "orchestrator" ? orchAccent : agentAccent;
 
-  const githubDark = THEME_PRESETS[0].dark;
+  const githubDark = getThemePreset("github-dark")?.dark ?? THEME_PRESETS[0].dark;
   const dark: ITheme = {
     ...githubDark,
     cursor: accent.cursor,
@@ -180,6 +180,7 @@ export function DirectTerminal({
   const [reloading, setReloading] = useState(false);
   const [reloadError, setReloadError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [reconnectCount, setReconnectCount] = useState(0);
   const settingsPanelRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -195,7 +196,7 @@ export function DirectTerminal({
     router.replace(newUrl, { scroll: false });
   }, [fullscreen, pathname, router, searchParams]);
 
-  // Close settings panel on click outside
+  // Close settings panel on click outside or scroll
   useEffect(() => {
     if (!showSettings) return;
     function handleClick(e: MouseEvent) {
@@ -207,8 +208,15 @@ export function DirectTerminal({
         setShowSettings(false);
       }
     }
+    function handleScroll() {
+      setShowSettings(false);
+    }
     document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    window.addEventListener("scroll", handleScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      window.removeEventListener("scroll", handleScroll, true);
+    };
   }, [showSettings]);
 
   async function handleReload(): Promise<void> {
@@ -449,6 +457,7 @@ export function DirectTerminal({
 
           websocket.onopen = () => {
             reconnectAttemptRef.current = 0;
+            setReconnectCount(0);
             setStatus("connected");
             setError(null);
             websocket.send(
@@ -486,6 +495,7 @@ export function DirectTerminal({
             const attempt = reconnectAttemptRef.current;
             const delay = Math.min(1000 * Math.pow(2, attempt), MAX_RECONNECT_DELAY);
             reconnectAttemptRef.current = attempt + 1;
+            setReconnectCount(attempt + 1);
             setStatus("connecting");
             setError(null);
             reconnectTimerRef.current = setTimeout(() => {
@@ -647,12 +657,9 @@ export function DirectTerminal({
         statusBarBg: "#f0f3f6",
         text: "#1f2328",
         textMuted: "#656d76",
-        divider: "#d1d9e0",
         btnBg: "rgba(0,0,0,0.04)",
         btnBorder: "#d1d9e0",
-        btnHoverBg: "rgba(0,0,0,0.08)",
         btnText: "#656d76",
-        btnHoverText: "#1f2328",
         containerBorder: "#d1d9e0",
         shadow: "0 4px 12px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04)",
         prLinkColor: "#0969da",
@@ -670,12 +677,9 @@ export function DirectTerminal({
         statusBarBg: "#161b22",
         text: "#e6edf3",
         textMuted: "#8b949e",
-        divider: "#484f58",
         btnBg: "rgba(255,255,255,0.06)",
         btnBorder: "#30363d",
-        btnHoverBg: "rgba(255,255,255,0.1)",
         btnText: "#8b949e",
-        btnHoverText: "#e6edf3",
         containerBorder: "#21262d",
         shadow: "0 8px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04)",
         prLinkColor: "#58a6ff",
@@ -703,7 +707,7 @@ export function DirectTerminal({
   const dotAnimation = status === "connected" ? "terminal-dot-pulse 2s ease-in-out infinite" : "none";
 
   // Badge
-  const isReconnecting = status === "connecting" && reconnectAttemptRef.current > 0;
+  const isReconnecting = status === "connecting" && reconnectCount > 0;
   const badgeText =
     status === "connected"
       ? "CONNECTED"

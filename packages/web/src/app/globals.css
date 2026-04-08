@@ -2703,8 +2703,8 @@ html.light .terminal-topbar-btn:hover {
     margin-top: 6px;
   }
 
-  /* Terminal: reduce border-radius and shadow on mobile */
-  .terminal-container {
+  /* Terminal: reduce border-radius and shadow on mobile (skip fullscreen) */
+  .terminal-container:not(.fixed) {
     border-radius: 6px !important;
     box-shadow: none !important;
   }
