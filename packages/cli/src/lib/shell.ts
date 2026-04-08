@@ -64,12 +64,14 @@ export async function getTmuxSessions(): Promise<string[]> {
  * handlers registered. Cleans up automatically when the child exits normally.
  */
 export function forwardSignalsToChild(pid: number, child: ChildProcess): void {
+  let fallback: ReturnType<typeof setTimeout> | undefined;
+
   const forward = (): void => {
     process.off("SIGINT", forward);
     process.off("SIGTERM", forward);
     void killProcessTree(pid, "SIGTERM");
     // If the child ignores SIGTERM, force-kill after 5 s so the parent exits.
-    const fallback = setTimeout(() => {
+    fallback = setTimeout(() => {
       void killProcessTree(pid, "SIGKILL").finally(() => process.exit(1));
     }, 5000);
     fallback.unref();
@@ -79,6 +81,7 @@ export function forwardSignalsToChild(pid: number, child: ChildProcess): void {
   child.once("exit", () => {
     process.off("SIGINT", forward);
     process.off("SIGTERM", forward);
+    if (fallback !== undefined) clearTimeout(fallback);
   });
 }
 
