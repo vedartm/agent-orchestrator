@@ -692,7 +692,7 @@ export function DirectTerminal({
       clearTimeout(timer1);
       clearTimeout(timer2);
     };
-  }, [fullscreen]);
+  }, [fullscreen, showSearch]);
 
   const accentColor = "var(--color-accent)";
 
@@ -733,7 +733,7 @@ export function DirectTerminal({
   return (
     <div
       className={cn(
-        "terminal-container overflow-hidden border border-[#21262d]",
+        "terminal-container overflow-hidden border border-[var(--color-border-default)]",
         fullscreen && "fixed inset-0 z-50 rounded-none border-0",
       )}
       style={{
@@ -746,9 +746,8 @@ export function DirectTerminal({
     >
       {/* ── Top bar chrome ──────────────────────────────────────────── */}
       <div
-        className="flex items-center gap-2 border-b border-[#21262d] px-3 py-2"
+        className="flex items-center gap-2 border-b border-[var(--color-border-subtle)] bg-[var(--color-bg-elevated)] px-3 py-2"
         style={{
-          background: "rgba(22, 27, 34, 0.8)",
           backdropFilter: "blur(12px)",
           WebkitBackdropFilter: "blur(12px)",
         }}
@@ -889,7 +888,7 @@ export function DirectTerminal({
 
       {/* ── Search bar ──────────────────────────────────────────────── */}
       {showSearch ? (
-        <div className="flex items-center gap-2 border-b border-[#21262d] bg-[rgba(22,27,34,0.9)] px-3 py-1.5">
+        <div className="flex items-center gap-2 border-b border-[var(--color-border-subtle)] bg-[var(--color-bg-elevated)] px-3 py-1.5">
           <svg className="h-3.5 w-3.5 shrink-0 text-[var(--color-text-tertiary)]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
             <circle cx="11" cy="11" r="8" />
             <path d="m21 21-4.35-4.35" />
@@ -957,10 +956,7 @@ export function DirectTerminal({
       />
 
       {/* ── Status bar ──────────────────────────────────────────────── */}
-      <div
-        className="flex items-center justify-between border-t border-[#21262d] px-3 py-1.5"
-        style={{ background: "#161b22" }}
-      >
+      <div className="flex items-center justify-between border-t border-[var(--color-border-subtle)] bg-[var(--color-bg-elevated)] px-3 py-1.5">
         <div className="flex items-center gap-3">
           <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-text-tertiary)]">
             {settings.fontSize}px

@@ -213,34 +213,36 @@ export const THEME_PRESETS: ThemePreset[] = [
 
 // ── Hook ─────────────────────────────────────────────────────────────
 
-export function useTerminalSettings(): [TerminalSettings, (s: Partial<TerminalSettings>) => void] {
-  const [settings, setSettings] = useState<TerminalSettings>(DEFAULT_SETTINGS);
+function loadPersistedSettings(): TerminalSettings {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_SETTINGS;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return DEFAULT_SETTINGS;
+    const obj = parsed as Record<string, unknown>;
+    return {
+      fontSize:
+        typeof obj.fontSize === "number" && VALID_FONT_SIZES.has(obj.fontSize)
+          ? obj.fontSize
+          : DEFAULT_SETTINGS.fontSize,
+      cursorStyle:
+        typeof obj.cursorStyle === "string" && VALID_CURSOR_STYLES.has(obj.cursorStyle)
+          ? (obj.cursorStyle as TerminalSettings["cursorStyle"])
+          : DEFAULT_SETTINGS.cursorStyle,
+      themeName:
+        typeof obj.themeName === "string" && THEME_PRESETS.some((t) => t.name === obj.themeName)
+          ? obj.themeName
+          : DEFAULT_SETTINGS.themeName,
+    };
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed: unknown = JSON.parse(raw);
-        if (typeof parsed !== "object" || parsed === null) return;
-        const obj = parsed as Record<string, unknown>;
-        const validated: Partial<TerminalSettings> = {};
-        if (typeof obj.fontSize === "number" && VALID_FONT_SIZES.has(obj.fontSize)) {
-          validated.fontSize = obj.fontSize;
-        }
-        if (typeof obj.cursorStyle === "string" && VALID_CURSOR_STYLES.has(obj.cursorStyle)) {
-          validated.cursorStyle = obj.cursorStyle as TerminalSettings["cursorStyle"];
-        }
-        if (typeof obj.themeName === "string" && THEME_PRESETS.some((t) => t.name === obj.themeName)) {
-          validated.themeName = obj.themeName;
-        }
-        if (Object.keys(validated).length > 0) {
-          setSettings((prev) => ({ ...prev, ...validated }));
-        }
-      }
-    } catch {
-      // Ignore invalid JSON
-    }
-  }, []);
+export function useTerminalSettings(): [TerminalSettings, (s: Partial<TerminalSettings>) => void] {
+  // Synchronous initializer — settings are available on first render,
+  // avoiding an async race with the terminal initialization effect.
+  const [settings, setSettings] = useState<TerminalSettings>(loadPersistedSettings);
 
   const updateSettings = useCallback((partial: Partial<TerminalSettings>) => {
     setSettings((prev) => {
@@ -299,7 +301,7 @@ export function TerminalSettingsPanel({
   return (
     <div
       ref={panelRef}
-      className="absolute right-0 top-full z-50 mt-1 w-64 border border-[var(--color-border-default)] bg-[#161b22] shadow-lg"
+      className="absolute right-0 top-full z-50 mt-1 w-64 border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] shadow-lg"
       style={{ borderRadius: "8px" }}
     >
       <div className="p-3">
