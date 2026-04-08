@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import chalk from "chalk";
 import type { Command } from "commander";
-import { killProcessTree, loadConfig } from "@composio/ao-core";
+import { isWindows, killProcessTree, loadConfig } from "@composio/ao-core";
 import { findWebDir, buildDashboardEnv, waitForPortAndOpen } from "../lib/web-dir.js";
 import {
   findRunningDashboardPid,
@@ -67,6 +67,7 @@ export function registerDashboard(program: Command): void {
       const child = spawn("node", [startScript], {
         cwd: webDir,
         stdio: ["inherit", "inherit", "pipe"],
+        detached: !isWindows(),
         env,
       });
 
