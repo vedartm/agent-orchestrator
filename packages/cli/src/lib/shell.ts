@@ -62,8 +62,14 @@ export async function getTmuxSessions(): Promise<string[]> {
  * Sends SIGTERM immediately, then escalates to SIGKILL after 5 s if the child
  * has not exited — prevents the parent from hanging indefinitely with no signal
  * handlers registered. Cleans up automatically when the child exits normally.
+ *
+ * Idempotent: calling with the same child object more than once is a no-op.
  */
+const _signalForwardedChildren = new WeakSet<ChildProcess>();
+
 export function forwardSignalsToChild(pid: number, child: ChildProcess): void {
+  if (_signalForwardedChildren.has(child)) return;
+  _signalForwardedChildren.add(child);
   let fallback: ReturnType<typeof setTimeout> | undefined;
 
   const forward = (): void => {
