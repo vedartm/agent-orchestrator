@@ -8,7 +8,7 @@ import { CI_STATUS } from "@composio/ao-core/types";
 import { cn } from "@/lib/cn";
 import dynamic from "next/dynamic";
 import { getSessionTitle } from "@/lib/format";
-import { CICheckList } from "./CIBadge";
+
 import { MobileBottomNav } from "./MobileBottomNav";
 
 const DirectTerminal = dynamic(
@@ -87,8 +87,9 @@ function SessionTopStrip({
   isOrchestrator = false,
   crumbHref,
   crumbLabel,
-  mobileSimple = false,
   rightSlot,
+  onMessage,
+  onKill,
 }: {
   headline: string;
   activityLabel: string;
@@ -98,12 +99,14 @@ function SessionTopStrip({
   isOrchestrator?: boolean;
   crumbHref: string;
   crumbLabel: string;
-  mobileSimple?: boolean;
   rightSlot?: ReactNode;
+  onMessage?: () => void;
+  onKill?: () => void;
 }) {
   return (
-    <section className={`session-page-header${mobileSimple ? " session-page-header--mobile" : ""}`}>
-      <div className="session-page-header__crumbs">
+    <div>
+      {/* Breadcrumbs */}
+      <div className="flex items-center gap-1.5 pb-3">
         <a
           href={crumbHref}
           className="flex items-center gap-1 text-[11px] font-medium text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text-primary)] hover:no-underline"
@@ -119,22 +122,22 @@ function SessionTopStrip({
           </svg>
           {crumbLabel}
         </a>
-        <span className="text-[var(--color-border-strong)]">/</span>
-        {!mobileSimple ? (
-          <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-text-tertiary)]">
-            {headline}
-          </span>
-        ) : null}
-        {isOrchestrator && !mobileSimple ? (
+        <span className="text-[10px] text-[var(--color-border-strong)]">/</span>
+        <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-text-tertiary)]">
+          {headline}
+        </span>
+        {isOrchestrator ? (
           <span className="session-page-header__mode">orchestrator</span>
         ) : null}
       </div>
-      <div className="session-page-header__main">
-        <div className="session-page-header__identity">
+
+      {/* Identity strip */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
           <h1 className="truncate text-[17px] font-semibold tracking-[-0.03em] text-[var(--color-text-primary)]">
             {headline}
           </h1>
-          <div className="session-page-header__meta">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             <div
               className={cn(
                 "session-detail-status-pill flex items-center gap-1.5 border px-2.5 py-1",
@@ -179,11 +182,48 @@ function SessionTopStrip({
                 PR #{pr.number}
               </a>
             ) : null}
+            {pr && (pr.additions > 0 || pr.deletions > 0) ? (
+              <span className="session-detail-link-pill font-[var(--font-mono)] text-[10px]">
+                <span className="session-detail-diff--add">+{pr.additions}</span>
+                {" "}
+                <span className="session-detail-diff--del">-{pr.deletions}</span>
+              </span>
+            ) : null}
           </div>
         </div>
-        {rightSlot ? <div className="session-page-header__side">{rightSlot}</div> : null}
+
+        {rightSlot ? (
+          <div className="flex flex-wrap items-center gap-3 lg:justify-end">{rightSlot}</div>
+        ) : (
+          <div className="flex shrink-0 items-center gap-2">
+            {onMessage ? (
+              <button
+                type="button"
+                className="session-detail-action-btn"
+                onClick={onMessage}
+              >
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                Message
+              </button>
+            ) : null}
+            {onKill ? (
+              <button
+                type="button"
+                className="session-detail-action-btn session-detail-action-btn--danger"
+                onClick={onKill}
+              >
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+                Kill
+              </button>
+            ) : null}
+          </div>
+        )}
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -389,9 +429,16 @@ export function SessionDetail({
               isOrchestrator={isOrchestrator}
               crumbHref={crumbHref}
               crumbLabel={crumbLabel}
-              mobileSimple={isMobile}
+              onMessage={() => {}}
+              onKill={() => {}}
             />
           )}
+
+          {pr ? (
+            <section id="session-pr-section" className="mt-5">
+              <SessionDetailPRCard pr={pr} sessionId={session.id} metadata={session.metadata} />
+            </section>
+          ) : null}
 
           <section className="mt-5">
             <div id="session-terminal-section" aria-hidden="true" />
@@ -421,12 +468,6 @@ export function SessionDetail({
               />
             )}
           </section>
-
-          {pr ? (
-            <section id="session-pr-section" className="mt-6">
-              <SessionDetailPRCard pr={pr} sessionId={session.id} metadata={session.metadata} />
-            </section>
-          ) : null}
         </main>
       </div>
       {isMobile ? (
@@ -516,62 +557,45 @@ function SessionDetailPRCard({ pr, sessionId, metadata }: { pr: DashboardPR; ses
   };
 
   const allGreen = isPRMergeReady(pr);
-
-  const failedChecks = pr.ciChecks.filter((c) => c.status === "failed");
-
-  const borderColor = allGreen
-    ? "rgba(63,185,80,0.4)"
-    : pr.state === "merged"
-      ? "rgba(163,113,247,0.3)"
-      : "var(--color-border-default)";
+  const blockerIssues = buildBlockerChips(pr, metadata);
+  const fileCount = pr.changedFiles ?? 0;
 
   return (
-    <div className="detail-card mb-6 overflow-hidden border" style={{ borderColor }}>
-      {/* Title row */}
-      <div className="border-b border-[var(--color-border-subtle)] px-5 py-3.5">
+    <div className={cn("session-detail-pr-card", allGreen && "session-detail-pr-card--green")}>
+      {/* Row 1: Title + diff stats */}
+      <div className="session-detail-pr-card__row">
         <a
           href={pr.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-[13px] font-semibold text-[var(--color-text-primary)] transition-colors hover:text-[var(--color-accent)] hover:no-underline"
+          className="session-detail-pr-card__title-link"
         >
           PR #{pr.number}: {pr.title}
         </a>
-        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
-          <span>
-            <span className="text-[var(--color-status-ready)]">+{pr.additions}</span>{" "}
-            <span className="text-[var(--color-status-error)]">-{pr.deletions}</span>
+        <span className="session-detail-pr-card__diff-stats">
+          <span className="session-detail-diff--add">+{pr.additions}</span>{" "}
+          <span className="session-detail-diff--del">-{pr.deletions}</span>
+        </span>
+        {fileCount > 0 && (
+          <span className="session-detail-pr-card__diff-label">
+            {fileCount} file{fileCount !== 1 ? "s" : ""}
           </span>
-          {pr.isDraft && (
-            <>
-              <span className="text-[var(--color-text-tertiary)]">&middot;</span>
-              <span className="font-medium text-[var(--color-text-tertiary)]">Draft</span>
-            </>
-          )}
-          {pr.state === "merged" && (
-            <>
-              <span className="text-[var(--color-text-tertiary)]">&middot;</span>
-              <span
-                className="px-2 py-0.5 text-[10px] font-semibold"
-                style={{
-                  color: "var(--color-text-secondary)",
-                  background: "var(--color-chip-bg)",
-                }}
-              >
-                Merged
-              </span>
-            </>
-          )}
-        </div>
+        )}
+        {pr.isDraft && (
+          <span className="session-detail-pr-card__diff-label">Draft</span>
+        )}
+        {pr.state === "merged" && (
+          <span className="session-detail-pr-card__diff-label">Merged</span>
+        )}
       </div>
 
-      {/* Body */}
-      <div className="px-5 py-4">
-        {/* Ready-to-merge banner */}
+      {/* Row 2: Blocker chips + CI chips inline */}
+      <div className="session-detail-pr-card__details">
         {allGreen ? (
-          <div className="flex items-center gap-2 border border-[rgba(63,185,80,0.25)] bg-[rgba(63,185,80,0.07)] px-3.5 py-2.5">
+          <div className="session-detail-merge-banner">
             <svg
-              className="h-4 w-4 shrink-0 text-[var(--color-status-ready)]"
+              width="11"
+              height="11"
               fill="none"
               stroke="currentColor"
               strokeWidth="2.5"
@@ -579,44 +603,78 @@ function SessionDetailPRCard({ pr, sessionId, metadata }: { pr: DashboardPR; ses
             >
               <path d="M20 6L9 17l-5-5" />
             </svg>
-            <span className="text-[13px] font-semibold text-[var(--color-status-ready)]">
-              Ready to merge
-            </span>
+            Ready to merge
           </div>
         ) : (
-          <IssuesList pr={pr} metadata={metadata} />
+          blockerIssues.map((issue) => (
+            <span
+              key={issue.text}
+              className={cn(
+                "session-detail-blocker-chip",
+                issue.variant === "fail" && "session-detail-blocker-chip--fail",
+                issue.variant === "warn" && "session-detail-blocker-chip--warn",
+                issue.variant === "muted" && "session-detail-blocker-chip--muted",
+              )}
+            >
+              {issue.icon} {issue.text}
+              {issue.notified && (
+                <span className="session-detail-blocker-chip__note">· notified</span>
+              )}
+            </span>
+          ))
         )}
 
-        {/* CI Checks */}
+        {/* Separator between blockers and CI chips */}
         {pr.ciChecks.length > 0 && (
-          <div className="mt-4 border-t border-[var(--color-border-subtle)] pt-4">
-            <CICheckList
-              checks={pr.ciChecks}
-              layout={failedChecks.length > 0 ? "expanded" : "inline"}
-            />
-          </div>
-        )}
-
-        {/* Unresolved comments */}
-        {pr.unresolvedComments.length > 0 && (
-          <div className="mt-4 border-t border-[var(--color-border-subtle)] pt-4">
-            <h4 className="mb-2.5 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">
-              Unresolved Comments
+          <>
+            <div className="session-detail-pr-sep" />
+            {pr.ciChecks.map((check) => (
               <span
-                className="px-1.5 py-0.5 text-[10px] font-bold normal-case tracking-normal"
-                style={{ color: "#f85149", background: "rgba(248,81,73,0.12)" }}
+                key={check.name}
+                className={cn(
+                  "session-detail-ci-chip",
+                  check.status === "passed" && "session-detail-ci-chip--pass",
+                  check.status === "failed" && "session-detail-ci-chip--fail",
+                  check.status === "pending" && "session-detail-ci-chip--pending",
+                  check.status !== "passed" && check.status !== "failed" && check.status !== "pending" && "session-detail-ci-chip--queued",
+                )}
               >
-                {pr.unresolvedThreads}
+                {check.status === "passed" ? "\u2713" : check.status === "failed" ? "\u2717" : check.status === "pending" ? "\u25CF" : "\u25CB"}{" "}
+                {check.name}
               </span>
-            </h4>
-            <div className="space-y-1">
-              {pr.unresolvedComments.map((c) => {
-                const { title, description } = cleanBugbotComment(c.body);
-                return (
-                  <details key={c.url} className="group">
-                    <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 text-[12px] transition-colors hover:bg-[rgba(255,255,255,0.04)]">
+            ))}
+          </>
+        )}
+      </div>
+
+      {/* Row 3: Collapsible unresolved comments */}
+      {pr.unresolvedComments.length > 0 && (
+        <details className="session-detail-comments-strip">
+          <summary>
+            <div className="session-detail-comments-strip__toggle">
+              <svg
+                className="session-detail-comments-strip__chevron"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                viewBox="0 0 24 24"
+              >
+                <path d="M9 5l7 7-7 7" />
+              </svg>
+              <span className="session-detail-comments-strip__label">Unresolved Comments</span>
+              <span className="session-detail-comments-strip__count">{pr.unresolvedThreads}</span>
+              <span className="session-detail-comments-strip__hint">click to expand</span>
+            </div>
+          </summary>
+          <div className="session-detail-comments-strip__body">
+            {pr.unresolvedComments.map((c) => {
+              const { title, description } = cleanBugbotComment(c.body);
+              return (
+                <details key={c.url} className="session-detail-comment">
+                  <summary>
+                    <div className="session-detail-comment__row">
                       <svg
-                        className="h-3 w-3 shrink-0 text-[var(--color-text-tertiary)] transition-transform group-open:rotate-90"
+                        className="session-detail-comment__chevron"
                         fill="none"
                         stroke="currentColor"
                         strokeWidth="2"
@@ -624,71 +682,65 @@ function SessionDetailPRCard({ pr, sessionId, metadata }: { pr: DashboardPR; ses
                       >
                         <path d="M9 5l7 7-7 7" />
                       </svg>
-                      <span className="font-medium text-[var(--color-text-secondary)]">
-                        {title}
-                      </span>
-                      <span className="text-[var(--color-text-tertiary)]">· {c.author}</span>
+                      <span className="session-detail-comment__title">{title}</span>
+                      <span className="session-detail-comment__author">· {c.author}</span>
                       <a
                         href={c.url}
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={(e) => e.stopPropagation()}
-                        className="ml-auto text-[10px] text-[var(--color-accent)] hover:underline"
+                        className="session-detail-comment__view"
                       >
-                        view →
+                        view &rarr;
                       </a>
-                    </summary>
-                    <div className="ml-5 mt-1 space-y-1.5 px-2 pb-2">
-                      <div className="font-[var(--font-mono)] text-[10px] text-[var(--color-text-tertiary)]">
-                        {c.path}
-                      </div>
-                      <p className="border-l-2 border-[var(--color-border-default)] pl-3 text-[12px] leading-relaxed text-[var(--color-text-secondary)]">
-                        {description}
-                      </p>
-                      <button
-                        onClick={() => handleAskAgentToFix(c)}
-                        disabled={sendingComments.has(c.url)}
-                        className={cn(
-                          "mt-1.5 px-3 py-1 text-[11px] font-semibold transition-colors duration-150",
-                          sentComments.has(c.url)
-                            ? "bg-[var(--color-status-ready)] text-white"
-                            : errorComments.has(c.url)
-                              ? "bg-[var(--color-status-error)] text-white"
-                              : "bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-50",
-                        )}
-                      >
-                        {sendingComments.has(c.url)
-                          ? "Sending…"
-                          : sentComments.has(c.url)
-                            ? "Sent ✓"
-                            : errorComments.has(c.url)
-                              ? "Failed"
-                              : "Ask Agent to Fix"}
-                      </button>
                     </div>
-                  </details>
-                );
-              })}
-            </div>
+                  </summary>
+                  <div className="session-detail-comment__body">
+                    <div className="session-detail-comment__file">{c.path}</div>
+                    <p className="session-detail-comment__text">{description}</p>
+                    <button
+                      onClick={() => handleAskAgentToFix(c)}
+                      disabled={sendingComments.has(c.url)}
+                      className={cn(
+                        "session-detail-comment__fix-btn",
+                        sentComments.has(c.url) && "session-detail-comment__fix-btn--sent",
+                        errorComments.has(c.url) && "session-detail-comment__fix-btn--error",
+                      )}
+                    >
+                      {sendingComments.has(c.url)
+                        ? "Sending\u2026"
+                        : sentComments.has(c.url)
+                          ? "Sent \u2713"
+                          : errorComments.has(c.url)
+                            ? "Failed"
+                            : "Ask Agent to Fix"}
+                    </button>
+                  </div>
+                </details>
+              );
+            })}
           </div>
-        )}
-      </div>
+        </details>
+      )}
     </div>
   );
 }
 
-// ── Issues list (pre-merge blockers) ─────────────────────────────────
+// ── Blocker chips helper (pre-merge blockers) ───────────────────────
 
-function IssuesList({ pr, metadata }: { pr: DashboardPR; metadata: Record<string, string> }) {
-  const issues: Array<{ icon: string; color: string; text: string; notified?: boolean }> = [];
+interface BlockerChip {
+  icon: string;
+  text: string;
+  variant: "fail" | "warn" | "muted";
+  notified?: boolean;
+}
+
+function buildBlockerChips(pr: DashboardPR, metadata: Record<string, string>): BlockerChip[] {
+  const chips: BlockerChip[] = [];
 
   const ciNotified = Boolean(metadata["lastCIFailureDispatchHash"]);
   const conflictNotified = metadata["lastMergeConflictDispatched"] === "true";
   const reviewNotified = Boolean(metadata["lastPendingReviewDispatchHash"]);
-
-  // The lifecycle manager's status is the most up-to-date source of truth.
-  // PR enrichment data can be stale (5-min cache) or unavailable (rate limit/timeout).
-  // Use lifecycle status as fallback when PR data hasn't caught up yet.
   const lifecycleStatus = metadata["status"];
 
   const ciIsFailing = pr.ciStatus === CI_STATUS.FAILING || lifecycleStatus === "ci_failed";
@@ -698,79 +750,29 @@ function IssuesList({ pr, metadata }: { pr: DashboardPR; metadata: Record<string
 
   if (ciIsFailing) {
     const failCount = pr.ciChecks.filter((c) => c.status === "failed").length;
-    issues.push({
-      icon: "✗",
-      color: "var(--color-status-error)",
-      text:
-        failCount > 0
-          ? `CI failing — ${failCount} check${failCount !== 1 ? "s" : ""} failed`
-          : "CI failing",
+    chips.push({
+      icon: "\u2717",
+      variant: "fail",
+      text: failCount > 0 ? `${failCount} check${failCount !== 1 ? "s" : ""} failing` : "CI failing",
       notified: ciNotified,
     });
   } else if (pr.ciStatus === CI_STATUS.PENDING) {
-    issues.push({ icon: "●", color: "var(--color-status-attention)", text: "CI pending" });
+    chips.push({ icon: "\u25CF", variant: "warn", text: "CI pending" });
   }
 
   if (hasChangesRequested) {
-    issues.push({
-      icon: "✗",
-      color: "var(--color-status-error)",
-      text: "Changes requested",
-      notified: reviewNotified,
-    });
+    chips.push({ icon: "\u2717", variant: "fail", text: "Changes requested", notified: reviewNotified });
   } else if (!pr.mergeability.approved) {
-    issues.push({
-      icon: "○",
-      color: "var(--color-text-tertiary)",
-      text: "Not approved — awaiting reviewer",
-    });
+    chips.push({ icon: "\u25CB", variant: "muted", text: "Awaiting reviewer" });
   }
 
   if (hasConflicts) {
-    issues.push({
-      icon: "✗",
-      color: "var(--color-status-error)",
-      text: "Merge conflicts",
-      notified: conflictNotified,
-    });
-  }
-
-  if (!pr.mergeability.mergeable && issues.length === 0) {
-    issues.push({ icon: "○", color: "var(--color-text-tertiary)", text: "Not mergeable" });
-  }
-
-  if (pr.unresolvedThreads > 0) {
-    issues.push({
-      icon: "●",
-      color: "var(--color-status-attention)",
-      text: `${pr.unresolvedThreads} unresolved comment${pr.unresolvedThreads !== 1 ? "s" : ""}`,
-    });
+    chips.push({ icon: "\u2717", variant: "fail", text: "Merge conflicts", notified: conflictNotified });
   }
 
   if (pr.isDraft) {
-    issues.push({ icon: "○", color: "var(--color-text-tertiary)", text: "Draft PR" });
+    chips.push({ icon: "\u25CB", variant: "muted", text: "Draft" });
   }
 
-  if (issues.length === 0) return null;
-
-  return (
-    <div className="space-y-1.5">
-      <h4 className="mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">
-        Blockers
-      </h4>
-      {issues.map((issue) => (
-        <div key={issue.text} className="flex items-center gap-2.5 text-[12px]">
-          <span className="w-3 shrink-0 text-center text-[11px]" style={{ color: issue.color }}>
-            {issue.icon}
-          </span>
-          <span className="text-[var(--color-text-secondary)]">{issue.text}</span>
-          {issue.notified && (
-            <span className="text-[10px] text-[var(--color-text-tertiary)]">
-              · agent notified
-            </span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
+  return chips;
 }
