@@ -25,7 +25,7 @@ export function LandingNav() {
         href="https://github.com/ComposioHQ/agent-orchestrator"
         target="_blank"
         rel="noopener noreferrer"
-        className="liquid-glass-solid rounded-full px-6 py-2.5 text-sm no-underline transition-transform hover:scale-[1.03]"
+        className="liquid-glass-solid rounded-lg px-4 py-2 text-sm no-underline transition-transform hover:scale-[1.03]"
       >
         GitHub
       </a>

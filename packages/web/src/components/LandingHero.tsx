@@ -5,7 +5,7 @@ export function LandingHero() {
     <div className="relative min-h-screen overflow-hidden">
       <div className="absolute inset-0 z-[1] landing-hero-grid" />
       <section className="relative z-10 flex flex-col items-center justify-center text-center px-6 pt-32 pb-20 min-h-screen">
-        <div className="landing-fade-rise landing-card inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs text-[var(--landing-muted)] mb-8">
+        <div className="landing-fade-rise landing-card inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs text-[var(--landing-muted)] mb-8">
           <span className="w-1.5 h-1.5 rounded-full bg-[rgba(134,239,172,0.7)]" />
           Open Source · MIT Licensed · 5.9k GitHub Stars
         </div>
@@ -20,14 +20,14 @@ export function LandingHero() {
           fixes CI, and addresses reviews autonomously.
         </p>
         <div className="landing-fade-rise-d2 flex items-center gap-3 mt-10 flex-wrap justify-center">
-          <div className="landing-card rounded-full px-8 py-3.5 font-mono text-sm">
+          <div className="landing-card rounded-lg px-6 py-3 font-mono text-sm">
             <span className="text-[var(--landing-muted)] opacity-40">$</span> npx @composio/ao start
           </div>
           <a
             href="https://github.com/ComposioHQ/agent-orchestrator"
             target="_blank"
             rel="noopener noreferrer"
-            className="liquid-glass-solid rounded-full px-8 py-3.5 text-sm no-underline transition-colors"
+            className="liquid-glass-solid rounded-lg px-6 py-3 text-sm no-underline transition-colors"
           >
             View on GitHub
           </a>
