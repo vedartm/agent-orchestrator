@@ -5,20 +5,32 @@ import type { RuntimeHandle } from "@composio/ao-core";
 // ---------------------------------------------------------------------------
 // Hoisted mock — must be set up before import
 // ---------------------------------------------------------------------------
-const { mockSpawn, mockIsWindows, mockKillProcessTree } = vi.hoisted(() => ({
+const { mockSpawn, mockIsWindows, mockKillProcessTree, mockGetShell } = vi.hoisted(() => ({
   mockSpawn: vi.fn(),
   mockIsWindows: vi.fn(() => false),
   mockKillProcessTree: vi.fn().mockResolvedValue(undefined),
+  mockGetShell: vi.fn(() => ({ cmd: "sh", args: (c: string) => ["-c", c] })),
 }));
 
-vi.mock("node:child_process", () => ({
-  spawn: mockSpawn,
-}));
+vi.mock("node:child_process", async (importOriginal) => {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return {
+    ...actual,
+    spawn: mockSpawn,
+  };
+});
 
-vi.mock("@composio/ao-core", () => ({
-  isWindows: mockIsWindows,
-  killProcessTree: mockKillProcessTree,
-}));
+vi.mock("@composio/ao-core", async (importOriginal) => {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+  const actual = await importOriginal<typeof import("@composio/ao-core")>();
+  return {
+    ...actual,
+    getShell: mockGetShell,
+    isWindows: mockIsWindows,
+    killProcessTree: mockKillProcessTree,
+  };
+});
 
 import { create, manifest, default as defaultExport } from "../index.js";
 
@@ -74,6 +86,9 @@ function defaultConfig(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.restoreAllMocks();
+  mockIsWindows.mockReturnValue(false);
+  mockKillProcessTree.mockResolvedValue(undefined);
+  mockSpawn.mockReturnValue(createMockChild());
 });
 
 // =========================================================================
@@ -104,26 +119,35 @@ describe("manifest & exports", () => {
 // runtime.create()
 // =========================================================================
 describe("create()", () => {
-  it("spawns process with shell:true, detached:true on non-Windows, correct cwd and env", async () => {
+  it("spawns process with platform shell, detached:!isWindows(), correct cwd and env", async () => {
     const child = createMockChild();
     mockSpawn.mockReturnValue(child);
 
     const runtime = create();
     await runtime.create(defaultConfig());
 
-    expect(mockSpawn).toHaveBeenCalledWith(
-      "echo hello",
-      expect.objectContaining({
-        cwd: "/tmp/workspace",
-        shell: true,
-        detached: true,
-        stdio: ["pipe", "pipe", "pipe"],
-      }),
-    );
+    // spawn is called as: spawn(shellCmd, shellArgs, options)
+    // shellCmd is the shell binary (a non-empty string), shellArgs is an array
+    // containing the launchCommand, options holds cwd/env/detached/stdio.
+    const [spawnCmd, spawnShellArgs, spawnOpts] = mockSpawn.mock.calls[0] as [
+      string,
+      string[],
+      { cwd: string; env: Record<string, string>; detached: boolean; stdio: unknown },
+    ];
+    expect(typeof spawnCmd).toBe("string");
+    expect(spawnCmd.length).toBeGreaterThan(0);
+    expect(spawnShellArgs).toContain("echo hello");
+
+    // detached mirrors !isWindows() — use the mock's return value, not process.platform
+    const expectedDetached = !mockIsWindows();
+    expect(spawnOpts).toMatchObject({
+      cwd: "/tmp/workspace",
+      detached: expectedDetached,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
 
     // Check the env includes the config environment merged with process.env
-    const callArgs = mockSpawn.mock.calls[0][1] as { env: Record<string, string> };
-    expect(callArgs.env.FOO).toBe("bar");
+    expect(spawnOpts.env.FOO).toBe("bar");
   });
 
   it("returns handle with correct id, runtimeName, and pid in data", async () => {
@@ -296,6 +320,56 @@ describe("destroy()", () => {
     expect(mockKillProcessTree).toHaveBeenCalledWith(12345, "SIGKILL");
 
     vi.useRealTimers();
+  });
+
+  it("uses killProcessTree (not direct process.kill) on Windows and Unix", async () => {
+    mockIsWindows.mockReturnValue(true);
+    const child = createMockChild();
+    mockSpawn.mockReturnValue(child);
+
+    const runtime = create();
+    const handle = await runtime.create(defaultConfig());
+
+    const processKillSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+
+    const destroyPromise = runtime.destroy(handle);
+
+    await new Promise((r) => setTimeout(r, 10));
+    child.exitCode = 0;
+    child.emit("exit", 0, null);
+
+    await destroyPromise;
+
+    // destroy() always delegates to killProcessTree — never calls process.kill directly
+    expect(mockKillProcessTree).toHaveBeenCalledWith(12345, "SIGTERM");
+    expect(processKillSpy).not.toHaveBeenCalledWith(-12345, expect.anything());
+
+    processKillSpy.mockRestore();
+  });
+
+  it("resolves promptly when process exits during async killProcessTree (no 5s delay)", async () => {
+    // Regression test: exit listener must be registered BEFORE await killProcessTree
+    // so that if the process dies during the async kill, destroy() resolves immediately
+    // instead of waiting for the 5-second timeout.
+    const child = createMockChild();
+    mockSpawn.mockReturnValue(child);
+
+    // Make killProcessTree emit exit synchronously mid-await to simulate the race
+    mockKillProcessTree.mockImplementation(async () => {
+      child.exitCode = 0;
+      child.emit("exit", 0, null);
+    });
+
+    const runtime = create();
+    const handle = await runtime.create(defaultConfig());
+
+    const start = Date.now();
+    await runtime.destroy(handle);
+    const elapsed = Date.now() - start;
+
+    // Should resolve well under 5 seconds — exit was caught before the timeout
+    expect(elapsed).toBeLessThan(1000);
+    expect(mockKillProcessTree).toHaveBeenCalledWith(12345, "SIGTERM");
   });
 
   it("falls back to child.kill when pid is undefined", async () => {
@@ -681,12 +755,8 @@ describe("Windows compatibility", () => {
     const runtime = create();
     await runtime.create(defaultConfig({ sessionId: "win-spawn-test" }));
 
-    expect(mockSpawn).toHaveBeenCalledWith(
-      "echo hello",
-      expect.objectContaining({
-        detached: false,
-      }),
-    );
+    const [, , spawnOpts] = mockSpawn.mock.calls[0] as [string, string[], Record<string, unknown>];
+    expect(spawnOpts.detached).toBe(false);
   });
 
   it("sets detached:true on non-Windows", async () => {
@@ -698,12 +768,8 @@ describe("Windows compatibility", () => {
     const runtime = create();
     await runtime.create(defaultConfig({ sessionId: "unix-spawn-test" }));
 
-    expect(mockSpawn).toHaveBeenCalledWith(
-      "echo hello",
-      expect.objectContaining({
-        detached: true,
-      }),
-    );
+    const [, , spawnOpts] = mockSpawn.mock.calls[0] as [string, string[], Record<string, unknown>];
+    expect(spawnOpts.detached).toBe(true);
   });
 
   it("uses killProcessTree instead of process.kill(-pid) on win32", async () => {
