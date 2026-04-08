@@ -39,6 +39,17 @@ interface SessionDetailProps {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+const AGENT_DISPLAY_NAMES: Record<string, string> = {
+  "claude-code": "Claude Code",
+  "opencode": "OpenCode",
+  "codex": "Codex",
+  "aider": "Aider",
+};
+
+function formatAgentName(agent: string): string {
+  return AGENT_DISPLAY_NAMES[agent] ?? agent.charAt(0).toUpperCase() + agent.slice(1);
+}
+
 const activityMeta: Record<string, { label: string; color: string }> = {
   active: { label: "Active", color: "var(--color-status-working)" },
   ready: { label: "Ready", color: "var(--color-status-ready)" },
@@ -411,6 +422,9 @@ export function SessionDetail({
               height={terminalHeight}
               isOpenCodeSession={isOpenCodeSession}
               reloadCommand={isOpenCodeSession ? reloadCommand : undefined}
+              agentName={session.metadata["agent"] ? formatAgentName(session.metadata["agent"]) : undefined}
+              prNumber={pr?.number}
+              prUrl={pr?.url}
             />
           </section>
 

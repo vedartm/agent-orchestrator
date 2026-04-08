@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/cn";
 import {
   useTerminalSettings,
   getThemePreset,
-  TerminalSettingsPanel,
   THEME_PRESETS,
 } from "./TerminalSettings";
 
@@ -17,18 +16,21 @@ import "xterm/css/xterm.css";
 // Dynamically import xterm types for TypeScript
 import type { ITheme, Terminal as TerminalType } from "xterm";
 import type { FitAddon as FitAddonType } from "@xterm/addon-fit";
-import type { SearchAddon as SearchAddonType } from "@xterm/addon-search";
 
 interface DirectTerminalProps {
   sessionId: string;
   startFullscreen?: boolean;
-  /** Visual variant. Orchestrator keeps the same design-system blue accent as the rest of the app. */
   variant?: "agent" | "orchestrator";
-  /** CSS height for the terminal container in normal (non-fullscreen) mode.
-   *  Defaults to "max(440px, calc(100vh - 440px))". */
+  /** CSS height for the terminal container in normal (non-fullscreen) mode. */
   height?: string;
   isOpenCodeSession?: boolean;
   reloadCommand?: string;
+  /** Agent name to show in top bar badge (e.g. "Claude Code") */
+  agentName?: string;
+  /** PR number to show in status bar */
+  prNumber?: number;
+  /** PR URL to link in status bar */
+  prUrl?: string;
 }
 
 interface DirectTerminalLocation {
@@ -88,7 +90,6 @@ export function buildTerminalThemes(variant: TerminalVariant): { dark: ITheme; l
   const orchAccent = agentAccent;
   const accent = variant === "orchestrator" ? orchAccent : agentAccent;
 
-  // Default dark theme uses the GitHub Dark palette (first preset)
   const githubDark = THEME_PRESETS[0].dark;
   const dark: ITheme = {
     ...githubDark,
@@ -104,7 +105,6 @@ export function buildTerminalThemes(variant: TerminalVariant): { dark: ITheme; l
     cursorAccent: "#fafafa",
     selectionBackground: accent.selLight,
     selectionInactiveBackground: "rgba(128, 128, 128, 0.15)",
-    // ANSI colors — darkened for legibility on #fafafa terminal background
     black: "#24292f",
     red: "#b42318",
     green: "#1f7a3d",
@@ -134,7 +134,6 @@ export function buildDirectTerminalWsUrl({
 }: DirectTerminalWsUrlOptions): string {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   if (proxyWsPath) {
-    // Path-based proxy uses host so non-standard ports are preserved.
     return `${protocol}//${location.host}${proxyWsPath}?session=${encodeURIComponent(sessionId)}`;
   }
 
@@ -148,8 +147,6 @@ export function buildDirectTerminalWsUrl({
 
 /**
  * Direct xterm.js terminal with native WebSocket connection.
- * Implements Extended Device Attributes (XDA) handler to enable
- * tmux clipboard support (OSC 52) without requiring iTerm2 attachment.
  */
 export function DirectTerminal({
   sessionId,
@@ -158,18 +155,20 @@ export function DirectTerminal({
   height = "max(440px, calc(100dvh - 440px))",
   isOpenCodeSession = false,
   reloadCommand,
+  agentName,
+  prNumber,
+  prUrl,
 }: DirectTerminalProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { resolvedTheme } = useTheme();
   const terminalThemes = useMemo(() => buildTerminalThemes(variant), [variant]);
-  const [settings, updateSettings] = useTerminalSettings();
+  const [settings] = useTerminalSettings();
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const terminalInstance = useRef<TerminalType | null>(null);
   const fitAddon = useRef<FitAddonType | null>(null);
-  const searchAddon = useRef<SearchAddonType | null>(null);
   const ws = useRef<WebSocket | null>(null);
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -179,23 +178,15 @@ export function DirectTerminal({
   const [error, setError] = useState<string | null>(null);
   const [reloading, setReloading] = useState(false);
   const [reloadError, setReloadError] = useState<string | null>(null);
-  const [showSearch, setShowSearch] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showSettings, setShowSettings] = useState(false);
-  const [rendererType, setRendererType] = useState<"webgl" | "canvas">("canvas");
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const settingsButtonRef = useRef<HTMLButtonElement>(null);
 
   // Update URL when fullscreen changes
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
-
     if (fullscreen) {
       params.set("fullscreen", "true");
     } else {
       params.delete("fullscreen");
     }
-
     const newUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
     router.replace(newUrl, { scroll: false });
   }, [fullscreen, pathname, router, searchParams]);
@@ -206,7 +197,6 @@ export function DirectTerminal({
     setReloading(true);
     try {
       let commandToSend = reloadCommand;
-
       if (!commandToSend) {
         const remapRes = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/remap`, {
           method: "POST",
@@ -223,7 +213,6 @@ export function DirectTerminal({
         }
         commandToSend = `/exit\nopencode --session ${remapData.opencodeSessionId}\n`;
       }
-
       const sendRes = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -239,62 +228,32 @@ export function DirectTerminal({
     }
   }
 
-  // Search handlers
-  const handleSearchToggle = useCallback(() => {
-    setShowSearch((prev) => {
-      if (!prev) {
-        setTimeout(() => searchInputRef.current?.focus(), 50);
-      } else {
-        searchAddon.current?.clearDecorations();
-        setSearchQuery("");
-      }
-      return !prev;
-    });
-  }, []);
-
-  const handleSearchNext = useCallback(() => {
-    if (searchQuery && searchAddon.current) {
-      searchAddon.current.findNext(searchQuery);
-    }
-  }, [searchQuery]);
-
-  const handleSearchPrev = useCallback(() => {
-    if (searchQuery && searchAddon.current) {
-      searchAddon.current.findPrevious(searchQuery);
-    }
-  }, [searchQuery]);
-
   useEffect(() => {
     if (!terminalRef.current) return;
 
-    // Reset state when sessionId changes
     permanentErrorRef.current = false;
     reconnectAttemptRef.current = 0;
-    setRendererType("canvas");
 
-    // Dynamically import xterm.js to avoid SSR issues
     let mounted = true;
     let cleanup: (() => void) | null = null;
     let inputDisposable: { dispose(): void } | null = null;
 
-    const PERMANENT_CLOSE_CODES = new Set([4001, 4004]); // auth failure, session not found
+    const PERMANENT_CLOSE_CODES = new Set([4001, 4004]);
     const MAX_RECONNECT_DELAY = 15_000;
 
     Promise.all([
       import("xterm").then((mod) => mod.Terminal),
       import("@xterm/addon-fit").then((mod) => mod.FitAddon),
       import("@xterm/addon-web-links").then((mod) => mod.WebLinksAddon),
-      import("@xterm/addon-search").then((mod) => mod.SearchAddon),
       import("@xterm/addon-webgl").then((mod) => mod.WebglAddon).catch(() => null),
       document.fonts.ready,
     ])
-      .then(([Terminal, FitAddon, WebLinksAddon, SearchAddon, WebglAddon]) => {
+      .then(([Terminal, FitAddon, WebLinksAddon, WebglAddon]) => {
         if (!mounted || !terminalRef.current) return;
 
         const isDark = resolvedTheme !== "light";
         const activeTheme = isDark ? terminalThemes.dark : terminalThemes.light;
 
-        // Initialize xterm.js Terminal
         const terminal = new Terminal({
           cursorBlink: true,
           fontSize: settings.fontSize,
@@ -310,21 +269,13 @@ export function DirectTerminal({
           scrollSensitivity: 1,
         });
 
-        // Add FitAddon for responsive sizing
         const fit = new FitAddon();
         terminal.loadAddon(fit);
         fitAddon.current = fit;
 
-        // Add WebLinksAddon for clickable links
         const webLinks = new WebLinksAddon();
         terminal.loadAddon(webLinks);
 
-        // Add SearchAddon
-        const search = new SearchAddon();
-        terminal.loadAddon(search);
-        searchAddon.current = search;
-
-        // Register XDA (Extended Device Attributes) handler for tmux clipboard support
         terminal.parser.registerCsiHandler(
           { prefix: ">", final: "q" },
           () => {
@@ -333,7 +284,6 @@ export function DirectTerminal({
           },
         );
 
-        // Register OSC 52 handler for clipboard support
         terminal.parser.registerOscHandler(52, (data) => {
           const parts = data.split(";");
           if (parts.length < 2) return false;
@@ -349,33 +299,27 @@ export function DirectTerminal({
           return true;
         });
 
-        // Open terminal in DOM
         terminal.open(terminalRef.current);
         terminalInstance.current = terminal;
 
-        // Load WebGL addon with canvas fallback
         if (WebglAddon) {
           try {
             terminal.loadAddon(new WebglAddon());
-            setRendererType("webgl");
           } catch {
-            // Canvas fallback — no action needed
+            // Canvas fallback
           }
         }
 
-        // Fit terminal to container
         fit.fit();
 
-        // Runtime WS config cache
         const runtimeConnectionConfig: TerminalConnectionConfig = {};
         let runtimeFetchDone = false;
 
-        // ── Preserve selection while terminal receives output ────────
         const writeBuffer: string[] = [];
         let selectionActive = false;
         let safetyTimer: ReturnType<typeof setTimeout> | null = null;
         let bufferBytes = 0;
-        const MAX_BUFFER_BYTES = 1_048_576; // 1 MB
+        const MAX_BUFFER_BYTES = 1_048_576;
 
         const flushWriteBuffer = () => {
           if (safetyTimer) {
@@ -404,10 +348,8 @@ export function DirectTerminal({
           }
         });
 
-        // Intercept Cmd+C (Mac) and Ctrl+Shift+C (Linux/Win) for copy
         terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
           if (e.type !== "keydown") return true;
-
           const isCopy =
             (e.metaKey && !e.ctrlKey && !e.altKey && e.code === "KeyC") ||
             (e.ctrlKey && e.shiftKey && e.code === "KeyC");
@@ -416,28 +358,21 @@ export function DirectTerminal({
             terminal.clearSelection();
             return false;
           }
-
           return true;
         });
 
-        // Handle window resize
         const handleResize = () => {
           const currentWs = ws.current;
           if (fit && currentWs?.readyState === WebSocket.OPEN) {
             fit.fit();
             currentWs.send(
-              JSON.stringify({
-                type: "resize",
-                cols: terminal.cols,
-                rows: terminal.rows,
-              }),
+              JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }),
             );
           }
         };
 
         window.addEventListener("resize", handleResize);
 
-        // Terminal input → current WebSocket
         inputDisposable = terminal.onData((data) => {
           if (ws.current?.readyState === WebSocket.OPEN) {
             ws.current.send(data);
@@ -449,7 +384,6 @@ export function DirectTerminal({
             proxyWsPath: normalizePathValue(process.env.NEXT_PUBLIC_TERMINAL_WS_PATH),
             directTerminalPort: normalizePortValue(process.env.NEXT_PUBLIC_DIRECT_TERMINAL_PORT),
           };
-
           if (!fromBuild.proxyWsPath && !runtimeFetchDone) {
             runtimeFetchDone = true;
             const controller = new AbortController();
@@ -470,7 +404,6 @@ export function DirectTerminal({
               clearTimeout(fetchTimeout);
             }
           }
-
           return {
             proxyWsPath: runtimeConnectionConfig.proxyWsPath ?? fromBuild.proxyWsPath,
             directTerminalPort:
@@ -480,7 +413,6 @@ export function DirectTerminal({
 
         async function connectWebSocket() {
           if (!mounted) return;
-
           const config = await resolveConnectionConfig();
           if (!mounted) return;
 
@@ -499,13 +431,8 @@ export function DirectTerminal({
             reconnectAttemptRef.current = 0;
             setStatus("connected");
             setError(null);
-
             websocket.send(
-              JSON.stringify({
-                type: "resize",
-                cols: terminal.cols,
-                rows: terminal.rows,
-              }),
+              JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }),
             );
           };
 
@@ -530,21 +457,17 @@ export function DirectTerminal({
 
           websocket.onclose = (event) => {
             if (!mounted) return;
-
             if (PERMANENT_CLOSE_CODES.has(event.code)) {
               permanentErrorRef.current = true;
               setStatus("error");
               setError(event.reason || `Connection refused (${event.code})`);
               return;
             }
-
             const attempt = reconnectAttemptRef.current;
             const delay = Math.min(1000 * Math.pow(2, attempt), MAX_RECONNECT_DELAY);
             reconnectAttemptRef.current = attempt + 1;
-
             setStatus("connecting");
             setError(null);
-
             reconnectTimerRef.current = setTimeout(() => {
               void connectWebSocket();
             }, delay);
@@ -591,11 +514,7 @@ export function DirectTerminal({
     const isDark = resolvedTheme !== "light";
     if (isDark) {
       const preset = getThemePreset(settings.themeName);
-      if (preset) {
-        terminal.options.theme = preset.dark;
-      } else {
-        terminal.options.theme = terminalThemes.dark;
-      }
+      terminal.options.theme = preset ? preset.dark : terminalThemes.dark;
     } else {
       terminal.options.theme = terminalThemes.light;
     }
@@ -609,15 +528,10 @@ export function DirectTerminal({
     terminal.options.fontSize = settings.fontSize;
     terminal.options.cursorStyle = settings.cursorStyle;
     fitAddon.current?.fit();
-    // Send updated dimensions to the server so the PTY rewraps correctly
     const currentWs = ws.current;
     if (currentWs?.readyState === WebSocket.OPEN) {
       currentWs.send(
-        JSON.stringify({
-          type: "resize",
-          cols: terminal.cols,
-          rows: terminal.rows,
-        }),
+        JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }),
       );
     }
   }, [settings.fontSize, settings.cursorStyle]);
@@ -642,28 +556,20 @@ export function DirectTerminal({
     const resizeTerminal = () => {
       if (cancelled) return;
       resizeAttempts++;
-
       const currentHeight = container.getBoundingClientRect().height;
       const settled = lastHeight >= 0 && Math.abs(currentHeight - lastHeight) < 1;
       lastHeight = currentHeight;
-
       if (!settled && resizeAttempts < maxAttempts) {
         rafId = requestAnimationFrame(resizeTerminal);
         return;
       }
-
       terminal.refresh(0, terminal.rows - 1);
       fit.fit();
       terminal.refresh(0, terminal.rows - 1);
-
       const currentWs = ws.current;
       if (currentWs?.readyState === WebSocket.OPEN) {
         currentWs.send(
-          JSON.stringify({
-            type: "resize",
-            cols: terminal.cols,
-            rows: terminal.rows,
-          }),
+          JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }),
         );
       }
     };
@@ -680,21 +586,14 @@ export function DirectTerminal({
         }, 50);
       }
     };
-
     const parent = container.parentElement;
     parent?.addEventListener("transitionend", handleTransitionEnd);
 
     const timer1 = setTimeout(() => {
-      if (cancelled) return;
-      resizeAttempts = 0;
-      lastHeight = -1;
-      resizeTerminal();
+      if (!cancelled) { resizeAttempts = 0; lastHeight = -1; resizeTerminal(); }
     }, 300);
     const timer2 = setTimeout(() => {
-      if (cancelled) return;
-      resizeAttempts = 0;
-      lastHeight = -1;
-      resizeTerminal();
+      if (!cancelled) { resizeAttempts = 0; lastHeight = -1; resizeTerminal(); }
     }, 600);
 
     return () => {
@@ -704,48 +603,59 @@ export function DirectTerminal({
       clearTimeout(timer1);
       clearTimeout(timer2);
     };
-  }, [fullscreen, showSearch]);
+  }, [fullscreen]);
 
-  const accentColor = "var(--color-accent)";
+  // ── Derived state for chrome ─────────────────────────────────────
 
-  const statusDotClass =
-    status === "connected"
-      ? "terminal-dot--connected"
-      : status === "error"
-        ? "bg-[var(--color-status-error)]"
-        : "terminal-dot--connecting";
-
-  const isReconnecting = status === "connecting" && reconnectAttemptRef.current > 0;
-  const statusBadgeText =
-    status === "connected"
-      ? "CONNECTED"
-      : status === "error"
-        ? "ERROR"
-        : isReconnecting
-          ? "RECONNECTING"
-          : "CONNECTING";
-
-  const statusBadgeClass =
-    status === "connected"
-      ? "text-[var(--color-status-ready)]"
-      : status === "error"
-        ? "text-[var(--color-status-error)]"
-        : "text-[var(--color-status-attention)]";
-
-  // Resolve the background color for the container from the active theme
   const containerBg = useMemo(() => {
     if (resolvedTheme === "light") return "#fafafa";
     const preset = getThemePreset(settings.themeName);
     return preset?.dark.background ?? "#0d1117";
   }, [resolvedTheme, settings.themeName]);
 
-  // Height of the top bar + status bar (+ optional search bar) for fullscreen calc
-  const chromeHeight = showSearch ? "108px" : "74px";
+  // Top bar (~42px) + status bar (~33px)
+  const chromeHeight = "75px";
+
+  // Connection dot style
+  const dotBg =
+    status === "connected" ? "#3fb950" : status === "error" ? "#f85149" : "#d29922";
+  const dotShadow =
+    status === "connected"
+      ? "0 0 8px rgba(63,185,80,0.6)"
+      : status === "error"
+        ? "0 0 8px rgba(248,81,73,0.5)"
+        : "0 0 8px rgba(210,153,34,0.5)";
+  const dotAnimation = status === "connected" ? "terminal-dot-pulse 2s ease-in-out infinite" : "none";
+
+  // Badge
+  const isReconnecting = status === "connecting" && reconnectAttemptRef.current > 0;
+  const badgeText =
+    status === "connected"
+      ? "CONNECTED"
+      : status === "error"
+        ? (error ?? "DISCONNECTED")
+        : isReconnecting
+          ? "RECONNECTING"
+          : "CONNECTING";
+  const badgeColor =
+    status === "connected" ? "#3fb950" : status === "error" ? "#f85149" : "#d29922";
+  const badgeBg =
+    status === "connected"
+      ? "rgba(63,185,80,0.15)"
+      : status === "error"
+        ? "rgba(248,81,73,0.15)"
+        : "rgba(210,153,34,0.15)";
+  const badgeBorder =
+    status === "connected"
+      ? "1px solid rgba(63,185,80,0.3)"
+      : status === "error"
+        ? "1px solid rgba(248,81,73,0.3)"
+        : "1px solid rgba(210,153,34,0.3)";
 
   return (
     <div
       className={cn(
-        "terminal-container border border-[var(--color-border-default)]",
+        "terminal-container border border-[#21262d]",
         fullscreen ? "fixed inset-0 z-50 overflow-hidden rounded-none border-0" : "overflow-x-hidden",
       )}
       style={{
@@ -756,134 +666,125 @@ export function DirectTerminal({
           : "0 8px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04)",
       }}
     >
-      {/* ── Top bar chrome ──────────────────────────────────────────── */}
+      {/* ── Top bar ─────────────────────────────────────────────────── */}
       <div
-        className="flex items-center gap-2 border-b border-[var(--color-border-subtle)] bg-[var(--color-bg-elevated)] px-3 py-2"
+        className="topbar flex items-center justify-between border-b border-[#21262d]"
         style={{
+          padding: "10px 16px",
+          background: "rgba(22, 27, 34, 0.8)",
           backdropFilter: "blur(12px)",
           WebkitBackdropFilter: "blur(12px)",
         }}
       >
-        {/* Connection dot */}
-        <div className={cn("h-2.5 w-2.5 shrink-0 rounded-full", statusDotClass)} />
-        {/* Session name — hidden on small screens */}
-        <span className="hidden font-[var(--font-mono)] text-[11px] sm:inline" style={{ color: accentColor }}>
-          {sessionId}
-        </span>
-        {/* Status badge */}
-        <span
-          className={cn("text-[9px] font-bold uppercase tracking-[0.08em]", statusBadgeClass)}
-        >
-          {statusBadgeText}
-        </span>
-        {/* XDA clipboard badge — hidden on small screens */}
-        <span
-          className="hidden px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] sm:inline"
-          style={{
-            color: accentColor,
-            background: `color-mix(in srgb, ${accentColor} 12%, transparent)`,
-            borderRadius: "3px",
-          }}
-        >
-          XDA
-        </span>
-
-        {/* Right side buttons */}
-        <div className="ml-auto flex items-center gap-1">
+        {/* Left side */}
+        <div className="topbar-left flex items-center" style={{ gap: 10 }}>
+          {/* Connection dot */}
+          <div
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: dotBg,
+              boxShadow: dotShadow,
+              animation: dotAnimation,
+              flexShrink: 0,
+            }}
+          />
+          {/* Session name */}
+          <span
+            style={{
+              fontFamily: '"JetBrains Mono", "SF Mono", Menlo, monospace',
+              fontSize: 13,
+              fontWeight: 600,
+              color: "#e6edf3",
+            }}
+          >
+            {sessionId}
+          </span>
+          {/* Connection badge */}
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              padding: "2px 8px",
+              borderRadius: 10,
+              color: badgeColor,
+              background: badgeBg,
+              border: badgeBorder,
+              lineHeight: "16px",
+            }}
+          >
+            {badgeText}
+          </span>
+          {/* Agent type badge */}
+          {agentName ? (
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                padding: "2px 8px",
+                borderRadius: 10,
+                color: "#d2a8ff",
+                background: "rgba(210,168,255,0.1)",
+                border: "1px solid rgba(210,168,255,0.25)",
+                lineHeight: "16px",
+              }}
+            >
+              {agentName}
+            </span>
+          ) : null}
+          {/* OpenCode reload button */}
           {isOpenCodeSession ? (
             <button
               onClick={handleReload}
               disabled={reloading || status !== "connected"}
               title="Restart OpenCode session"
               aria-label="Restart OpenCode session"
-              className="flex items-center gap-1 px-2 py-0.5 text-[11px] text-[var(--color-text-tertiary)] transition-colors hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-70"
-              style={{ borderRadius: "4px" }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "4px 10px",
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid #30363d",
+                borderRadius: 6,
+                color: "#8b949e",
+                fontSize: 12,
+                cursor: reloading ? "not-allowed" : "pointer",
+                opacity: reloading ? 0.6 : 1,
+              }}
             >
-              {reloading ? (
-                <svg
-                  className="h-3 w-3 animate-spin"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M12 3a9 9 0 109 9" />
-                </svg>
-              ) : (
-                <svg
-                  className="h-3 w-3"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M21 12a9 9 0 11-2.64-6.36" />
-                  <path d="M21 3v6h-6" />
-                </svg>
-              )}
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                {reloading ? <path d="M12 3a9 9 0 109 9" /> : <><path d="M21 12a9 9 0 11-2.64-6.36" /><path d="M21 3v6h-6" /></>}
+              </svg>
             </button>
           ) : null}
           {reloadError ? (
-            <span
-              className="max-w-[30ch] truncate text-[10px] font-medium text-[var(--color-status-error)]"
-              title={reloadError}
-            >
+            <span style={{ fontSize: 10, color: "#f85149", maxWidth: "30ch", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {reloadError}
             </span>
           ) : null}
+        </div>
 
-          {/* Search button */}
-          <button
-            onClick={handleSearchToggle}
-            title="Search terminal (Ctrl+F)"
-            aria-label="Search terminal"
-            className={cn(
-              "flex items-center px-2 py-1 text-[var(--color-text-tertiary)] transition-colors hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--color-text-primary)]",
-              showSearch && "bg-[rgba(255,255,255,0.08)] text-[var(--color-text-primary)]",
-            )}
-            style={{ borderRadius: "4px" }}
-          >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.35-4.35" />
-            </svg>
-          </button>
-
-          {/* Settings button */}
-          <div className="relative">
-            <button
-              ref={settingsButtonRef}
-              onClick={() => setShowSettings((prev) => !prev)}
-              title="Terminal settings"
-              aria-label="Terminal settings"
-              className={cn(
-                "flex items-center px-2 py-1 text-[var(--color-text-tertiary)] transition-colors hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--color-text-primary)]",
-                showSettings && "bg-[rgba(255,255,255,0.08)] text-[var(--color-text-primary)]",
-              )}
-              style={{ borderRadius: "4px" }}
-            >
-              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-            </button>
-            {showSettings ? (
-              <TerminalSettingsPanel
-                settings={settings}
-                onUpdate={updateSettings}
-                onClose={() => setShowSettings(false)}
-                toggleButtonRef={settingsButtonRef}
-              />
-            ) : null}
-          </div>
-
-          {/* Fullscreen button */}
+        {/* Right side */}
+        <div className="topbar-right flex items-center" style={{ gap: 8 }}>
           <button
             onClick={() => setFullscreen(!fullscreen)}
             title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
             aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-            className="flex items-center px-2 py-1 text-[var(--color-text-tertiary)] transition-colors hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--color-text-primary)]"
-            style={{ borderRadius: "4px" }}
+            className="terminal-topbar-btn"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "4px 10px",
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid #30363d",
+              borderRadius: 6,
+              color: "#8b949e",
+              fontSize: 12,
+              cursor: "pointer",
+            }}
           >
             {fullscreen ? (
               <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -894,96 +795,71 @@ export function DirectTerminal({
                 <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
               </svg>
             )}
+            <span className="hidden sm:inline">{fullscreen ? "exit fullscreen" : "fullscreen"}</span>
           </button>
         </div>
       </div>
 
-      {/* ── Search bar ──────────────────────────────────────────────── */}
-      {showSearch ? (
-        <div className="flex items-center gap-2 border-b border-[var(--color-border-subtle)] bg-[var(--color-bg-elevated)] px-3 py-1.5">
-          <svg className="h-3.5 w-3.5 shrink-0 text-[var(--color-text-tertiary)]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="8" />
-            <path d="m21 21-4.35-4.35" />
-          </svg>
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              if (e.target.value && searchAddon.current) {
-                searchAddon.current.findNext(e.target.value);
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                if (e.shiftKey) handleSearchPrev();
-                else handleSearchNext();
-              }
-              if (e.key === "Escape") handleSearchToggle();
-            }}
-            placeholder="Search..."
-            className="flex-1 border-none bg-transparent font-[var(--font-mono)] text-[12px] text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
-          />
-          <button
-            onClick={handleSearchPrev}
-            className="px-1 py-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
-            title="Previous match"
-          >
-            <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-              <path d="M18 15l-6-6-6 6" />
-            </svg>
-          </button>
-          <button
-            onClick={handleSearchNext}
-            className="px-1 py-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
-            title="Next match"
-          >
-            <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </button>
-          <button
-            onClick={handleSearchToggle}
-            className="px-1 py-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
-            title="Close search"
-          >
-            <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      ) : null}
-
       {/* ── Terminal area ───────────────────────────────────────────── */}
       <div
         ref={terminalRef}
-        className={cn("w-full px-3 py-2 md:px-4")}
+        className="w-full"
         style={{
           overflow: "hidden",
           display: "flex",
           flexDirection: "column",
+          padding: "8px 16px",
           height: fullscreen ? `calc(100dvh - ${chromeHeight})` : height,
         }}
       />
 
       {/* ── Status bar ──────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[var(--color-border-subtle)] bg-[var(--color-bg-elevated)] px-3 py-1.5">
-        <div className="flex items-center gap-3">
-          <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-text-tertiary)]">
-            {settings.fontSize}px
+      <div
+        className="flex items-center justify-between border-t border-[#21262d]"
+        style={{
+          padding: "6px 16px",
+          background: "#161b22",
+          fontSize: 11,
+        }}
+      >
+        {/* Left side */}
+        <div className="flex items-center" style={{ gap: 12, color: "#8b949e" }}>
+          {/* Permission badge */}
+          <span style={{ color: "#3fb950", fontWeight: 600, fontFamily: '"JetBrains Mono", monospace' }}>
+            <svg
+              className="mr-1 inline-block"
+              width="12" height="12" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.5"
+            >
+              <path d="M7 17l9.2-9.2M17 17V7H7" />
+            </svg>
+            bypass permissions on
           </span>
-          {error && status === "error" ? (
-            <span className="text-[11px] text-[var(--color-status-error)]">
-              {error}
-            </span>
+          <span style={{ color: "#484f58" }}>|</span>
+          <span className="hidden sm:inline">(shift+tab to cycle)</span>
+          {prNumber ? (
+            <>
+              <span className="hidden sm:inline" style={{ color: "#484f58" }}>|</span>
+              <a
+                href={prUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  color: "#58a6ff",
+                  fontFamily: '"JetBrains Mono", monospace',
+                  fontWeight: 500,
+                  textDecoration: "none",
+                }}
+                className="hover:underline"
+              >
+                PR #{prNumber}
+              </a>
+            </>
           ) : null}
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] text-[var(--color-text-tertiary)]">
-            {rendererType === "webgl" ? "WebGL" : "Canvas"}
-          </span>
-        </div>
+
+        {/* Right side — reserved for cost display */}
+        <div />
       </div>
     </div>
   );

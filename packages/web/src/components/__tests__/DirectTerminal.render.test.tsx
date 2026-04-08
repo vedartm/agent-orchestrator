@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DirectTerminal } from "../DirectTerminal";
 
@@ -88,20 +88,6 @@ vi.mock("@xterm/addon-web-links", () => ({
   WebLinksAddon: MockWebLinksAddon,
 }));
 
-class MockSearchAddon {
-  findNext() {
-    return false;
-  }
-  findPrevious() {
-    return false;
-  }
-  clearDecorations() {}
-}
-
-vi.mock("@xterm/addon-search", () => ({
-  SearchAddon: MockSearchAddon,
-}));
-
 vi.mock("@xterm/addon-webgl", () => ({
   WebglAddon: function MockWebglAddon() {
     throw new Error("WebGL not available in test");
@@ -134,7 +120,7 @@ describe("DirectTerminal render", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the shared accent chrome for orchestrator terminals", async () => {
+  it("renders session name, CONNECTED badge, and connects via WS", async () => {
     render(<DirectTerminal sessionId="ao-orchestrator" variant="orchestrator" />);
 
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/runtime/terminal", expect.any(Object)));
@@ -142,80 +128,45 @@ describe("DirectTerminal render", () => {
       expect(screen.getByText("CONNECTED")).toBeInTheDocument(),
     );
 
-    expect(screen.getByText("ao-orchestrator")).toHaveStyle({ color: "var(--color-accent)" });
-    expect(screen.getByText("XDA")).toHaveStyle({ color: "var(--color-accent)" });
+    expect(screen.getByText("ao-orchestrator")).toBeInTheDocument();
     expect(MockWebSocket.instances[0]?.url).toContain("/ao-terminal-ws?session=ao-orchestrator");
   });
 
-  it("renders search, settings, and fullscreen buttons in the top bar", async () => {
+  it("renders agent type badge when agentName is provided", async () => {
+    render(<DirectTerminal sessionId="test-session" agentName="Claude Code" />);
+
+    await waitFor(() => expect(screen.getByText("CONNECTED")).toBeInTheDocument());
+
+    expect(screen.getByText("Claude Code")).toBeInTheDocument();
+  });
+
+  it("renders fullscreen button in the top bar", async () => {
     render(<DirectTerminal sessionId="test-session" />);
 
     await waitFor(() => expect(screen.getByText("CONNECTED")).toBeInTheDocument());
 
-    expect(screen.getByTitle("Search terminal (Ctrl+F)")).toBeInTheDocument();
-    expect(screen.getByTitle("Terminal settings")).toBeInTheDocument();
     expect(screen.getByTitle("Fullscreen")).toBeInTheDocument();
   });
 
-  it("toggles search bar when search button is clicked", async () => {
+  it("renders status bar with permission badge", async () => {
     render(<DirectTerminal sessionId="test-session" />);
 
     await waitFor(() => expect(screen.getByText("CONNECTED")).toBeInTheDocument());
 
-    // Search bar should not be visible initially
-    expect(screen.queryByPlaceholderText("Search...")).toBeNull();
-
-    // Click search button to open
-    fireEvent.click(screen.getByTitle("Search terminal (Ctrl+F)"));
-
-    await waitFor(() =>
-      expect(screen.getByPlaceholderText("Search...")).toBeInTheDocument(),
-    );
-
-    // Should have prev/next/close buttons
-    expect(screen.getByTitle("Previous match")).toBeInTheDocument();
-    expect(screen.getByTitle("Next match")).toBeInTheDocument();
-    expect(screen.getByTitle("Close search")).toBeInTheDocument();
-
-    // Click close to dismiss
-    fireEvent.click(screen.getByTitle("Close search"));
-
-    await waitFor(() =>
-      expect(screen.queryByPlaceholderText("Search...")).toBeNull(),
-    );
+    expect(screen.getByText("bypass permissions on")).toBeInTheDocument();
   });
 
-  it("toggles settings panel when settings button is clicked", async () => {
-    render(<DirectTerminal sessionId="test-session" />);
+  it("renders PR link in status bar when prNumber is provided", async () => {
+    render(<DirectTerminal sessionId="test-session" prNumber={1012} prUrl="https://github.com/test/repo/pull/1012" />);
 
     await waitFor(() => expect(screen.getByText("CONNECTED")).toBeInTheDocument());
 
-    // Settings panel should not be visible initially
-    expect(screen.queryByText("Font Size")).toBeNull();
-
-    // Click settings button to open
-    fireEvent.click(screen.getByTitle("Terminal settings"));
-
-    await waitFor(() =>
-      expect(screen.getByText("Font Size")).toBeInTheDocument(),
-    );
-
-    // Should show font size, cursor, and theme sections
-    expect(screen.getByText("Cursor")).toBeInTheDocument();
-    expect(screen.getByText("Theme")).toBeInTheDocument();
+    const prLink = screen.getByText("PR #1012");
+    expect(prLink).toBeInTheDocument();
+    expect(prLink.closest("a")).toHaveAttribute("href", "https://github.com/test/repo/pull/1012");
   });
 
-  it("renders the status bar with font size and renderer label", async () => {
-    render(<DirectTerminal sessionId="test-session" />);
-
-    await waitFor(() => expect(screen.getByText("CONNECTED")).toBeInTheDocument());
-
-    expect(screen.getByText("14px")).toBeInTheDocument();
-    // WebGL mock throws in tests, so falls back to Canvas
-    expect(screen.getByText("Canvas")).toBeInTheDocument();
-  });
-
-  it("shows fullscreen exit button when startFullscreen is true", async () => {
+  it("shows exit fullscreen button when startFullscreen is true", async () => {
     searchParams = new URLSearchParams("fullscreen=true");
     render(<DirectTerminal sessionId="test-session" startFullscreen />);
 
