@@ -252,7 +252,8 @@ export function DirectTerminal({
         if (!mounted || !terminalRef.current) return;
 
         const isDark = resolvedTheme !== "light";
-        const activeTheme = isDark ? terminalThemes.dark : terminalThemes.light;
+        const preset = isDark ? getThemePreset(settings.themeName) : undefined;
+        const activeTheme = isDark ? (preset?.dark ?? terminalThemes.dark) : terminalThemes.light;
 
         const terminal = new Terminal({
           cursorBlink: true,
