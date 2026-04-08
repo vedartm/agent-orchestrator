@@ -182,7 +182,9 @@ export function DirectTerminal({
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [rendererType, setRendererType] = useState<"webgl" | "canvas">("canvas");
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
 
   // Update URL when fullscreen changes
   useEffect(() => {
@@ -354,6 +356,7 @@ export function DirectTerminal({
         if (WebglAddon) {
           try {
             terminal.loadAddon(new WebglAddon());
+            setRendererType("webgl");
           } catch {
             // Canvas fallback — no action needed
           }
@@ -700,8 +703,15 @@ export function DirectTerminal({
         ? "bg-[var(--color-status-error)]"
         : "terminal-dot--connecting";
 
+  const isReconnecting = status === "connecting" && reconnectAttemptRef.current > 0;
   const statusBadgeText =
-    status === "connected" ? "CONNECTED" : status === "error" ? "ERROR" : "RECONNECTING";
+    status === "connected"
+      ? "CONNECTED"
+      : status === "error"
+        ? "ERROR"
+        : isReconnecting
+          ? "RECONNECTING"
+          : "CONNECTING";
 
   const statusBadgeClass =
     status === "connected"
@@ -717,8 +727,8 @@ export function DirectTerminal({
     return preset?.dark.background ?? "#0d1117";
   }, [resolvedTheme, settings.themeName]);
 
-  // Height of the top bar + status bar for fullscreen calc
-  const chromeHeight = "74px"; // ~37px top + ~37px bottom
+  // Height of the top bar + status bar (+ optional search bar) for fullscreen calc
+  const chromeHeight = showSearch ? "108px" : "74px";
 
   return (
     <div
@@ -831,6 +841,7 @@ export function DirectTerminal({
           {/* Settings button */}
           <div className="relative">
             <button
+              ref={settingsButtonRef}
               onClick={() => setShowSettings((prev) => !prev)}
               title="Terminal settings"
               aria-label="Terminal settings"
@@ -850,6 +861,7 @@ export function DirectTerminal({
                 settings={settings}
                 onUpdate={updateSettings}
                 onClose={() => setShowSettings(false)}
+                toggleButtonRef={settingsButtonRef}
               />
             ) : null}
           </div>
@@ -961,7 +973,7 @@ export function DirectTerminal({
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-[var(--color-text-tertiary)]">
-            WebGL
+            {rendererType === "webgl" ? "WebGL" : "Canvas"}
           </span>
         </div>
       </div>

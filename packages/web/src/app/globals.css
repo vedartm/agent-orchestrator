@@ -498,7 +498,7 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
 /* ── Terminal connection dot ─────────────────────────────────────────── */
 
 .terminal-dot--connected {
-  background: var(--color-status-ready);
+  background: #3fb950;
   box-shadow: 0 0 6px 1px rgba(63, 185, 80, 0.5);
   animation: terminal-dot-pulse 2s ease-in-out infinite;
 }

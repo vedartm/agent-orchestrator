@@ -205,13 +205,14 @@ describe("DirectTerminal render", () => {
     expect(screen.getByText("Theme")).toBeInTheDocument();
   });
 
-  it("renders the status bar with font size and WebGL label", async () => {
+  it("renders the status bar with font size and renderer label", async () => {
     render(<DirectTerminal sessionId="test-session" />);
 
     await waitFor(() => expect(screen.getByText("CONNECTED")).toBeInTheDocument());
 
     expect(screen.getByText("14px")).toBeInTheDocument();
-    expect(screen.getByText("WebGL")).toBeInTheDocument();
+    // WebGL mock throws in tests, so falls back to Canvas
+    expect(screen.getByText("Canvas")).toBeInTheDocument();
   });
 
   it("shows fullscreen exit button when startFullscreen is true", async () => {

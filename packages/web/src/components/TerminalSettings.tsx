@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, type RefObject } from "react";
 import type { ITheme } from "xterm";
 import { cn } from "@/lib/cn";
 
@@ -11,6 +11,9 @@ export interface TerminalSettings {
   cursorStyle: "block" | "bar" | "underline";
   themeName: string;
 }
+
+const VALID_FONT_SIZES = new Set([12, 13, 14, 15, 16]);
+const VALID_CURSOR_STYLES = new Set(["block", "bar", "underline"]);
 
 export interface ThemePreset {
   name: string;
@@ -217,8 +220,22 @@ export function useTerminalSettings(): [TerminalSettings, (s: Partial<TerminalSe
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        const parsed = JSON.parse(raw) as Partial<TerminalSettings>;
-        setSettings((prev) => ({ ...prev, ...parsed }));
+        const parsed: unknown = JSON.parse(raw);
+        if (typeof parsed !== "object" || parsed === null) return;
+        const obj = parsed as Record<string, unknown>;
+        const validated: Partial<TerminalSettings> = {};
+        if (typeof obj.fontSize === "number" && VALID_FONT_SIZES.has(obj.fontSize)) {
+          validated.fontSize = obj.fontSize;
+        }
+        if (typeof obj.cursorStyle === "string" && VALID_CURSOR_STYLES.has(obj.cursorStyle)) {
+          validated.cursorStyle = obj.cursorStyle as TerminalSettings["cursorStyle"];
+        }
+        if (typeof obj.themeName === "string" && THEME_PRESETS.some((t) => t.name === obj.themeName)) {
+          validated.themeName = obj.themeName;
+        }
+        if (Object.keys(validated).length > 0) {
+          setSettings((prev) => ({ ...prev, ...validated }));
+        }
       }
     } catch {
       // Ignore invalid JSON
@@ -257,22 +274,27 @@ export function TerminalSettingsPanel({
   settings,
   onUpdate,
   onClose,
+  toggleButtonRef,
 }: {
   settings: TerminalSettings;
   onUpdate: (s: Partial<TerminalSettings>) => void;
   onClose: () => void;
+  toggleButtonRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (panelRef.current && !panelRef.current.contains(target)) {
+        // Ignore clicks on the toggle button — let its onClick handle open/close
+        if (toggleButtonRef?.current?.contains(target)) return;
         onClose();
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [onClose]);
+  }, [onClose, toggleButtonRef]);
 
   return (
     <div
