@@ -349,7 +349,6 @@ export function SessionDetail({
   };
   const headline = getSessionTitle(session);
 
-  const accentColor = "var(--color-accent)";
   const terminalVariant = isOrchestrator ? "orchestrator" : "agent";
 
   const terminalHeight = isOrchestrator ? "clamp(560px, 76vh, 920px)" : "clamp(520px, 72vh, 860px)";
@@ -390,31 +389,78 @@ export function SessionDetail({
 
       <div className="dashboard-main mx-auto max-w-full px-3 py-4 sm:px-5 sm:py-5 lg:px-8">
         <main className="min-w-0">
+          {/* ── Session header — visually unified with terminal ────── */}
+          <div id="session-terminal-section" aria-hidden="true" />
           {(!isOrchestrator || isMobile) && (
-            <SessionTopStrip
-              headline={headline}
-              activityLabel={activity.label}
-              activityColor={activity.color}
-              branch={session.branch}
-              pr={pr}
-              isOrchestrator={isOrchestrator}
-              crumbHref={crumbHref}
-              crumbLabel={crumbLabel}
-              mobileSimple={isMobile}
-            />
+            <div className="mb-2">
+              {/* Breadcrumbs */}
+              <div className="mb-2 flex items-center gap-1.5">
+                <a
+                  href={crumbHref}
+                  className="flex items-center gap-1 text-[11px] font-medium text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text-primary)] hover:no-underline"
+                >
+                  <svg className="h-3 w-3 opacity-60" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                    <path d="M15 18l-6-6 6-6" />
+                  </svg>
+                  {crumbLabel}
+                </a>
+                <span className="text-[11px] text-[var(--color-border-strong)]">/</span>
+                <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-text-tertiary)]">
+                  {headline}
+                </span>
+              </div>
+              {/* Title + badges row */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <h1 className="truncate text-[17px] font-semibold tracking-[-0.03em] text-[var(--color-text-primary)]">
+                  {headline}
+                </h1>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div
+                    className="flex items-center gap-1.5 border px-2.5 py-1"
+                    style={{
+                      background: `color-mix(in srgb, ${activity.color} 12%, transparent)`,
+                      border: `1px solid color-mix(in srgb, ${activity.color} 20%, transparent)`,
+                      borderRadius: 3,
+                    }}
+                  >
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: activity.color }} />
+                    <span className="text-[11px] font-semibold" style={{ color: activity.color }}>
+                      {activity.label}
+                    </span>
+                  </div>
+                  {session.branch ? (
+                    pr ? (
+                      <a
+                        href={`https://github.com/${pr.owner}/${pr.repo}/tree/${pr.branch}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="session-detail-link-pill session-detail-link-pill--link font-[var(--font-mono)] text-[10px] hover:no-underline"
+                      >
+                        {session.branch}
+                      </a>
+                    ) : (
+                      <span className="session-detail-link-pill font-[var(--font-mono)] text-[10px]">
+                        {session.branch}
+                      </span>
+                    )
+                  ) : null}
+                  {pr ? (
+                    <a
+                      href={pr.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="session-detail-link-pill session-detail-link-pill--link session-detail-link-pill--accent hover:no-underline"
+                    >
+                      PR #{pr.number}
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            </div>
           )}
 
-          <section className="mt-4 sm:mt-5">
-            <div id="session-terminal-section" aria-hidden="true" />
-            <div className="mb-3 flex items-center gap-2">
-              <div
-                className="h-4 w-0.5 rounded-full"
-                style={{ background: isOrchestrator ? accentColor : activity.color, opacity: 0.85 }}
-              />
-              <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--color-text-tertiary)]">
-                Live Terminal
-              </span>
-            </div>
+          {/* ── Terminal ───────────────────────────────────────────── */}
+          <section>
             <DirectTerminal
               sessionId={session.id}
               startFullscreen={startFullscreen}

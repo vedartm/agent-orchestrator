@@ -801,17 +801,24 @@ export function DirectTerminal({
       </div>
 
       {/* ── Terminal area ───────────────────────────────────────────── */}
+      {/* Outer wrapper provides visual padding; the xterm mount target
+          must have zero padding so FitAddon measures the full width. */}
       <div
-        ref={terminalRef}
-        className="w-full"
         style={{
-          overflow: "hidden",
-          display: "flex",
-          flexDirection: "column",
           padding: "8px 16px",
           height: fullscreen ? `calc(100dvh - ${chromeHeight})` : height,
+          overflow: "hidden",
         }}
-      />
+      >
+        <div
+          ref={terminalRef}
+          style={{
+            width: "100%",
+            height: "100%",
+            overflow: "hidden",
+          }}
+        />
+      </div>
 
       {/* ── Status bar ──────────────────────────────────────────────── */}
       <div
