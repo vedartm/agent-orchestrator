@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DirectTerminal } from "../DirectTerminal";
 
@@ -145,5 +145,81 @@ describe("DirectTerminal render", () => {
     expect(screen.getByText("ao-orchestrator")).toHaveStyle({ color: "var(--color-accent)" });
     expect(screen.getByText("XDA")).toHaveStyle({ color: "var(--color-accent)" });
     expect(MockWebSocket.instances[0]?.url).toContain("/ao-terminal-ws?session=ao-orchestrator");
+  });
+
+  it("renders search, settings, and fullscreen buttons in the top bar", async () => {
+    render(<DirectTerminal sessionId="test-session" />);
+
+    await waitFor(() => expect(screen.getByText("CONNECTED")).toBeInTheDocument());
+
+    expect(screen.getByTitle("Search terminal (Ctrl+F)")).toBeInTheDocument();
+    expect(screen.getByTitle("Terminal settings")).toBeInTheDocument();
+    expect(screen.getByTitle("Fullscreen")).toBeInTheDocument();
+  });
+
+  it("toggles search bar when search button is clicked", async () => {
+    render(<DirectTerminal sessionId="test-session" />);
+
+    await waitFor(() => expect(screen.getByText("CONNECTED")).toBeInTheDocument());
+
+    // Search bar should not be visible initially
+    expect(screen.queryByPlaceholderText("Search...")).toBeNull();
+
+    // Click search button to open
+    fireEvent.click(screen.getByTitle("Search terminal (Ctrl+F)"));
+
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText("Search...")).toBeInTheDocument(),
+    );
+
+    // Should have prev/next/close buttons
+    expect(screen.getByTitle("Previous match")).toBeInTheDocument();
+    expect(screen.getByTitle("Next match")).toBeInTheDocument();
+    expect(screen.getByTitle("Close search")).toBeInTheDocument();
+
+    // Click close to dismiss
+    fireEvent.click(screen.getByTitle("Close search"));
+
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText("Search...")).toBeNull(),
+    );
+  });
+
+  it("toggles settings panel when settings button is clicked", async () => {
+    render(<DirectTerminal sessionId="test-session" />);
+
+    await waitFor(() => expect(screen.getByText("CONNECTED")).toBeInTheDocument());
+
+    // Settings panel should not be visible initially
+    expect(screen.queryByText("Font Size")).toBeNull();
+
+    // Click settings button to open
+    fireEvent.click(screen.getByTitle("Terminal settings"));
+
+    await waitFor(() =>
+      expect(screen.getByText("Font Size")).toBeInTheDocument(),
+    );
+
+    // Should show font size, cursor, and theme sections
+    expect(screen.getByText("Cursor")).toBeInTheDocument();
+    expect(screen.getByText("Theme")).toBeInTheDocument();
+  });
+
+  it("renders the status bar with font size and WebGL label", async () => {
+    render(<DirectTerminal sessionId="test-session" />);
+
+    await waitFor(() => expect(screen.getByText("CONNECTED")).toBeInTheDocument());
+
+    expect(screen.getByText("14px")).toBeInTheDocument();
+    expect(screen.getByText("WebGL")).toBeInTheDocument();
+  });
+
+  it("shows fullscreen exit button when startFullscreen is true", async () => {
+    searchParams = new URLSearchParams("fullscreen=true");
+    render(<DirectTerminal sessionId="test-session" startFullscreen />);
+
+    await waitFor(() => expect(screen.getByText("CONNECTED")).toBeInTheDocument());
+
+    expect(screen.getByTitle("Exit fullscreen")).toBeInTheDocument();
   });
 });
