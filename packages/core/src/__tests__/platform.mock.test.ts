@@ -389,6 +389,22 @@ describe("getEnvDefaults", () => {
         else delete process.env["USERNAME"];
       }
     });
+
+    it("uses empty string when PATH is not set on Windows", async () => {
+      setPlatform("win32");
+      const savedPath = process.env["PATH"];
+      delete process.env["PATH"];
+
+      try {
+        const mod = await import("../platform.js");
+        mod._resetShellCache();
+        const env = mod.getEnvDefaults();
+        expect(env.PATH).toBe("");
+      } finally {
+        if (savedPath !== undefined) process.env["PATH"] = savedPath;
+        else delete process.env["PATH"];
+      }
+    });
   });
 
   describe("Unix fallbacks", () => {
