@@ -75,9 +75,12 @@ export async function killProcessTree(
   signal: "SIGTERM" | "SIGKILL" = "SIGTERM",
 ): Promise<void> {
   if (isWindows()) {
-    // taskkill /T kills the process tree, /F forces termination
+    // taskkill /T kills the process tree; /F forces termination (SIGKILL equivalent).
+    // Without /F, taskkill sends WM_CLOSE allowing the process to shut down gracefully
+    // (SIGTERM equivalent). This preserves the SIGTERM→wait→SIGKILL escalation pattern.
+    const args = signal === "SIGKILL" ? ["/T", "/F", "/PID", String(pid)] : ["/T", "/PID", String(pid)];
     try {
-      await execFileAsync("taskkill", ["/T", "/F", "/PID", String(pid)]);
+      await execFileAsync("taskkill", args);
     } catch {
       // Process may already be dead
     }
