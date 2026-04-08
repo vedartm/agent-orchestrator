@@ -84,12 +84,12 @@ export function LandingHero() {
           <span className="w-1.5 h-1.5 rounded-full bg-[rgba(134,239,172,0.7)]" />
           Open Source · MIT Licensed · 5.9k GitHub Stars
         </div>
-        <h1 className="landing-fade-rise font-sans font-[680] text-[clamp(2.5rem,7vw,5rem)] leading-[1] tracking-[-2px] max-w-[56rem]">
+        <h1 className="landing-fade-rise font-sans font-[680] text-[clamp(1.75rem,4vw,2.75rem)] leading-[1] tracking-[-2px] max-w-[56rem]">
           Run 30 AI agents in parallel.
           <br />
           <span className="text-[var(--landing-muted)]">One dashboard.</span>
         </h1>
-        <p className="landing-fade-rise-d1 text-[var(--landing-muted)] text-[clamp(0.9375rem,2vw,1.0625rem)] max-w-[38rem] mt-6 leading-[1.7]">
+        <p className="landing-fade-rise-d1 text-[var(--landing-muted)] text-[0.9375rem] max-w-[38rem] mt-6 leading-[1.7]">
           Agent Orchestrator spawns Claude Code, Codex, Aider, and OpenCode
           in isolated git worktrees. Each agent gets its own branch, creates PRs,
           fixes CI, and addresses reviews autonomously.

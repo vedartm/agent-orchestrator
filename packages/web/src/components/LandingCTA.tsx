@@ -5,7 +5,7 @@ export function LandingCTA() {
         <p className="text-[var(--landing-muted)] opacity-50 text-2xl font-sans font-[680] tracking-tight mb-4">
           Stop babysitting.
         </p>
-        <h2 className="font-sans font-[680] tracking-tight font-normal text-[clamp(2.5rem,6vw,4.5rem)] leading-[1.05] tracking-[-2px] mb-4">
+        <h2 className="font-sans font-[680] tracking-tight font-normal text-[clamp(1.375rem,3vw,2rem)] leading-[1.05] tracking-[-2px] mb-4">
           Start <em className="italic text-[var(--landing-muted)]">orchestrating.</em>
         </h2>
         <div className="landing-card inline-flex items-center gap-3 rounded-lg px-6 py-3 font-mono text-[0.9375rem] text-white mb-8">

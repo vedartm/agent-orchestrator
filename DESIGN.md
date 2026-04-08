@@ -19,13 +19,20 @@
 - **Data/Tables:** JetBrains Mono, weight 400, 11-13px, tabular-nums — agent IDs, branch names, timestamps, commit hashes, diff stats, PR numbers.
 - **Code:** JetBrains Mono, weight 400 — terminal output, code blocks, inline code.
 - **Loading:** Google Fonts via next/font/google. CSS variables: `--font-sans` (Geist), `--font-mono` (JetBrains Mono). Display strategy: swap.
-- **Scale:**
+- **Scale (dashboard):**
   - xs: 10px (timestamps, metadata)
   - sm: 11px (secondary text, captions, labels)
   - base: 13px (body text, card content)
   - lg: 15px (section titles)
   - xl: 17px (page titles)
   - display: clamp(22px, 2.8vw, 32px) (hero headings)
+- **Scale (landing page):**
+  - hero: clamp(28px, 4vw, 44px) — impactful but restrained, not screaming
+  - section-heading: clamp(22px, 3vw, 32px) — matches dashboard display max
+  - sub-heading: 18px — feature titles, step titles
+  - body: 15px — slightly larger than dashboard 13px for scanning distance
+  - labels/mono: 10-11px — matches dashboard UI labels
+  - terminal: 13px — matches dashboard body
 
 ## Color
 - **Approach:** Restrained with signal accents. Color is a priority channel, not decoration.

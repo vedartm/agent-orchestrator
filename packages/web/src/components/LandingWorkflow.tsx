@@ -38,7 +38,7 @@ export function LandingWorkflow() {
         <div className="text-xs tracking-[0.15em] uppercase text-[var(--landing-muted-dim)] mb-6 font-mono">
           Lifecycle
         </div>
-        <h2 className="font-sans font-[680] text-[clamp(2rem,5vw,3.5rem)] leading-[1.1] tracking-[-1.5px] mb-16">
+        <h2 className="font-sans font-[680] text-[clamp(1.375rem,3vw,2rem)] leading-[1.1] tracking-[-1.5px] mb-16">
           From issue to merged PR
         </h2>
       </div>

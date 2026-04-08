@@ -11,7 +11,7 @@ export function LandingQuickStart() {
         <div className="text-xs tracking-[0.15em] uppercase text-[var(--landing-muted)] opacity-60 mb-6">
           Get started in 60 seconds
         </div>
-        <h2 className="font-sans font-[680] tracking-tight font-normal text-[clamp(2.5rem,6vw,4.5rem)] leading-[1.05] tracking-[-1.5px] mb-6">
+        <h2 className="font-sans font-[680] tracking-tight font-normal text-[clamp(1.375rem,3vw,2rem)] leading-[1.05] tracking-[-1.5px] mb-6">
           Three commands to{" "}
           <em className="italic text-[var(--landing-muted)]">launch</em>
         </h2>
