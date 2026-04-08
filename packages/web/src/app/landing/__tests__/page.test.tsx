@@ -19,7 +19,7 @@ describe("LandingPage", () => {
   it("renders the full landing page", () => {
     render(<LandingPage />);
     expect(screen.getByText("Agent Orchestrator")).toBeInTheDocument();
-    expect(screen.getByText(/Where agents work/)).toBeInTheDocument();
+    expect(screen.getByText(/Run 30 AI agents in parallel/)).toBeInTheDocument();
     expect(
       screen.getByText("MIT Licensed · Open Source · Built by ComposioHQ"),
     ).toBeInTheDocument();

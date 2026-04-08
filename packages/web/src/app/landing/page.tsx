@@ -5,6 +5,7 @@ import { LandingAgentsBar } from "@/components/LandingAgentsBar";
 import { LandingStats } from "@/components/LandingStats";
 import { LandingVideo } from "@/components/LandingVideo";
 import { LandingFeatures } from "@/components/LandingFeatures";
+import { LandingDifferentiators } from "@/components/LandingDifferentiators";
 import { LandingTestimonials } from "@/components/LandingTestimonials";
 import { LandingHowItWorks } from "@/components/LandingHowItWorks";
 import { LandingQuickStart } from "@/components/LandingQuickStart";
@@ -18,11 +19,12 @@ export default function LandingPage() {
       <LandingHero />
       <LandingAbout />
       <LandingAgentsBar />
-      <LandingStats />
-      <LandingVideo />
       <LandingFeatures />
-      <LandingTestimonials />
       <LandingHowItWorks />
+      <LandingDifferentiators />
+      <LandingVideo />
+      <LandingStats />
+      <LandingTestimonials />
       <LandingQuickStart />
       <LandingCTA />
       <footer className="py-12 px-8 text-center text-[var(--landing-muted)] opacity-30 text-[0.8125rem] border-t border-white/[0.04]">

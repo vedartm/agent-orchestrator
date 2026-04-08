@@ -26,6 +26,7 @@ import { LandingTestimonials } from "../LandingTestimonials";
 import { LandingHowItWorks } from "../LandingHowItWorks";
 import { LandingQuickStart } from "../LandingQuickStart";
 import { LandingCTA } from "../LandingCTA";
+import { LandingDifferentiators } from "../LandingDifferentiators";
 import { ScrollRevealProvider } from "../ScrollRevealProvider";
 
 describe("LandingNav", () => {
@@ -50,8 +51,8 @@ describe("LandingNav", () => {
 describe("LandingHero", () => {
   it("renders heading and subtext", () => {
     render(<LandingHero />);
-    expect(screen.getByText(/Where agents work/)).toBeInTheDocument();
-    expect(screen.getByText(/orchestration layer/)).toBeInTheDocument();
+    expect(screen.getByText(/Run 30 AI agents in parallel/)).toBeInTheDocument();
+    expect(screen.getByText(/Agent Orchestrator spawns/)).toBeInTheDocument();
   });
 
   it("renders the install command", () => {
@@ -59,18 +60,31 @@ describe("LandingHero", () => {
     expect(screen.getByText(/npx @composio\/ao start/)).toBeInTheDocument();
   });
 
-  it("renders a video element", () => {
-    const { container } = render(<LandingHero />);
-    const video = container.querySelector("video");
-    expect(video).not.toBeNull();
+  it("renders terminal preview with ao output", () => {
+    render(<LandingHero />);
+    expect(screen.getByText("ao batch-spawn 42 43 44 45 46")).toBeInTheDocument();
   });
 });
 
 describe("LandingAbout", () => {
-  it("renders heading and description", () => {
+  it("renders the problem statement and description", () => {
     render(<LandingAbout />);
-    expect(screen.getByText(/Orchestrating/)).toBeInTheDocument();
-    expect(screen.getByText(/open-source platform/)).toBeInTheDocument();
+    expect(screen.getByText(/running AI agents in 10 browser tabs/)).toBeInTheDocument();
+    expect(screen.getByText(/single command/)).toBeInTheDocument();
+  });
+});
+
+describe("LandingDifferentiators", () => {
+  it("renders comparison table", () => {
+    render(<LandingDifferentiators />);
+    expect(screen.getByText("Web-based dashboard")).toBeInTheDocument();
+    expect(screen.getByText("Open source (MIT)")).toBeInTheDocument();
+    expect(screen.getByText(/Multi-agent/)).toBeInTheDocument();
+  });
+
+  it("renders section heading", () => {
+    render(<LandingDifferentiators />);
+    expect(screen.getByText(/open-source, web-based/)).toBeInTheDocument();
   });
 });
 
