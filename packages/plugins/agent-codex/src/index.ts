@@ -479,7 +479,7 @@ function createCodexAgent(): Agent {
     getRuntimeHints(): AgentRuntimeHints {
       return {
         docker: {
-          homeMounts: [{ path: ".codex" }],
+          homeMounts: [{ path: ".codex", kind: "dir" }],
           envDefaults: { CODEX_HOME: ".codex" },
           envFromHost: ["OPENAI_API_KEY"],
         },

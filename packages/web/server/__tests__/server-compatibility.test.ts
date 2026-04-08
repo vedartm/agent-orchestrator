@@ -41,6 +41,11 @@ describe("direct-terminal-ws.ts", () => {
     expect(source).not.toMatch(/existsSync.*session/i);
   });
 
+  it("uses shell -c for command-only attach specs", () => {
+    expect(source).toMatch(/\["-c", info\.command\]/);
+    expect(source).not.toMatch(/\["-lc", info\.command\]/);
+  });
+
   it("exposes terminal health metrics in /health response", () => {
     expect(source).toMatch(/metrics/);
     expect(source).toMatch(/totalConnections/);
@@ -66,6 +71,11 @@ describe("terminal-websocket.ts", () => {
 
   it("does not check file existence for session validation", () => {
     expect(source).not.toMatch(/existsSync.*session/i);
+  });
+
+  it("uses shell -c for command-only attach specs", () => {
+    expect(source).toMatch(/\["-c", info\.command\]/);
+    expect(source).not.toMatch(/\["-lc", info\.command\]/);
   });
 });
 

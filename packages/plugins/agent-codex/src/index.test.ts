@@ -462,7 +462,7 @@ describe("getRuntimeHints", () => {
   it("requests the Codex home directory for Docker runtimes", () => {
     expect(agent.getRuntimeHints?.(makeLaunchConfig())).toEqual({
       docker: {
-        homeMounts: [{ path: ".codex" }],
+        homeMounts: [{ path: ".codex", kind: "dir" }],
         envDefaults: { CODEX_HOME: ".codex" },
         envFromHost: ["OPENAI_API_KEY"],
       },

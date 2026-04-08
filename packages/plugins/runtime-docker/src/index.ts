@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -191,7 +191,23 @@ function getAgentHomeMounts(
   const mounts: VolumeMount[] = [];
   for (const mount of hints.homeMounts) {
     const hostPath = resolveHomePath(hostHome, mount.path);
-    if (!pathIsDirectory(hostPath) && !pathIsFile(hostPath)) {
+    const hostPathExists = pathIsDirectory(hostPath) || pathIsFile(hostPath);
+    if (!hostPathExists) {
+      try {
+        if (mount.kind === "dir") {
+          mkdirSync(hostPath, { recursive: true });
+        } else if (mount.kind === "file") {
+          mkdirSync(dirname(hostPath), { recursive: true });
+          writeFileSync(hostPath, "", { flag: "a", mode: 0o600 });
+        } else {
+          continue;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (!pathIsDirectory(hostPath) && !pathIsFile(hostPath) && mount.kind === undefined) {
       continue;
     }
 

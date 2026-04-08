@@ -705,7 +705,7 @@ function createClaudeCodeAgent(): Agent {
           // host macOS login-state transfer. We mount ~/.claude read-write and
           // point CLAUDE_CONFIG_DIR there so Docker sessions can persist their
           // own auth/config state without depending on the host keychain.
-          homeMounts: [{ path: ".claude" }],
+          homeMounts: [{ path: ".claude", kind: "dir" }],
           envDefaults: { CLAUDE_CONFIG_DIR: ".claude" },
           envFromHost: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"],
         },

@@ -292,6 +292,11 @@ export interface AgentDockerHomeMount {
    */
   path: string;
   /**
+   * Whether the mounted path is expected to be a file or directory.
+   * When provided, Docker runtimes may create the host path if it does not exist yet.
+   */
+  kind?: "file" | "dir";
+  /**
    * Container destination for the mount.
    * Relative paths are resolved against the container HOME directory.
    * Defaults to the same relative path as `path`.

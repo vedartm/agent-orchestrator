@@ -20,6 +20,7 @@ vi.mock("node:os", () => ({
 vi.mock("node:fs", () => ({
   existsSync: vi.fn(),
   lstatSync: vi.fn(),
+  mkdirSync: vi.fn(),
   readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
   unlinkSync: vi.fn(),
@@ -35,7 +36,9 @@ const mockExecFileCustom = (childProcess.execFile as any)[
 const expectedDockerOptions = { timeout: 30_000 };
 const mockExistsSync = fs.existsSync as ReturnType<typeof vi.fn>;
 const mockLstatSync = fs.lstatSync as ReturnType<typeof vi.fn>;
+const mockMkdirSync = fs.mkdirSync as ReturnType<typeof vi.fn>;
 const mockReadFileSync = fs.readFileSync as ReturnType<typeof vi.fn>;
+const mockWriteFileSync = fs.writeFileSync as ReturnType<typeof vi.fn>;
 
 function mockDockerSuccess(stdout = ""): void {
   mockExecFileCustom.mockResolvedValueOnce({ stdout: stdout ? `${stdout}\n` : "", stderr: "" });
@@ -98,9 +101,11 @@ beforeEach(() => {
   mockLstatSync.mockImplementation(() => {
     throw new Error("ENOENT");
   });
+  mockMkdirSync.mockImplementation(() => undefined);
   mockReadFileSync.mockImplementation(() => {
     throw new Error("ENOENT");
   });
+  mockWriteFileSync.mockImplementation(() => undefined);
 });
 
 describe("manifest & exports", () => {
@@ -339,7 +344,7 @@ describe("runtime.create()", () => {
       launchCommand: "codex --model gpt-5",
       agentRuntimeHints: {
         docker: {
-          homeMounts: [{ path: ".codex" }],
+          homeMounts: [{ path: ".codex", kind: "dir" }],
           envDefaults: { CODEX_HOME: ".codex" },
         },
       },
@@ -433,6 +438,56 @@ describe("runtime.create()", () => {
     const runArgs = mockExecFileCustom.mock.calls[0]?.[1] as string[];
     expect(runArgs).toContain("/host/home/.gitconfig:/tmp/ao-home/.gitconfig:ro");
     expect(runArgs).not.toContain("/host/home/.codex:/tmp/ao-home/.codex");
+  });
+
+  it("creates missing hinted home paths so first-time auth persists across containers", async () => {
+    addFileSystemEntries([
+      { path: "/host/home/.gitconfig", kind: "file", content: "[user]\n\tname = Test\n" },
+    ]);
+
+    mockDockerSuccess("container-id");
+    mockDockerSuccess();
+    mockDockerSuccess();
+    mockDockerSuccess();
+    mockDockerSuccess();
+
+    await create().create({
+      sessionId: "docker-session",
+      workspacePath: "/tmp/workspace",
+      launchCommand: "claude",
+      agentRuntimeHints: {
+        docker: {
+          homeMounts: [
+            { path: ".claude", kind: "dir" },
+            { path: ".local/share/opencode/auth.json", kind: "file" },
+          ],
+        },
+      },
+      environment: {
+        AO_SESSION: "docker-session",
+      },
+      runtimeConfig: { image: "ao-fake-claude:latest" },
+    });
+
+    expect(mockMkdirSync).toHaveBeenCalledWith("/host/home/.claude", { recursive: true });
+    expect(mockMkdirSync).toHaveBeenCalledWith("/host/home/.local/share/opencode", {
+      recursive: true,
+    });
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      "/host/home/.local/share/opencode/auth.json",
+      "",
+      { flag: "a", mode: 0o600 },
+    );
+
+    const runArgs = mockExecFileCustom.mock.calls[0]?.[1] as string[];
+    expect(runArgs).toEqual(
+      expect.arrayContaining([
+        "--volume",
+        "/host/home/.claude:/tmp/ao-home/.claude",
+        "--volume",
+        "/host/home/.local/share/opencode/auth.json:/tmp/ao-home/.local/share/opencode/auth.json",
+      ]),
+    );
   });
 
   it("passes through requested host env vars when present", async () => {

@@ -403,9 +403,9 @@ describe("getRuntimeHints", () => {
     expect(agent.getRuntimeHints?.(makeLaunchConfig())).toEqual({
       docker: {
         homeMounts: [
-          { path: ".opencode" },
-          { path: ".config/opencode" },
-          { path: ".local/share/opencode/auth.json" },
+          { path: ".opencode", kind: "dir" },
+          { path: ".config/opencode", kind: "dir" },
+          { path: ".local/share/opencode/auth.json", kind: "file" },
         ],
         envDefaults: { OPENCODE_CONFIG_DIR: ".config/opencode" },
         envFromHost: [

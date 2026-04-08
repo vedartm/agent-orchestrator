@@ -156,7 +156,7 @@ function buildAttachSpawnSpec(info: AttachInfo): { program: string; args: string
   }
   if (info.command) {
     const shell = process.env.SHELL || "/bin/sh";
-    return { program: shell, args: ["-lc", info.command] };
+    return { program: shell, args: ["-c", info.command] };
   }
   return null;
 }
