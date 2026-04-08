@@ -23,7 +23,7 @@ export function LandingHowItWorks() {
               Point Agent Orchestrator at your repo with a YAML config. Choose your agent, set up trackers and notifiers. One file, full control.
             </p>
           </div>
-          <div className="liquid-glass rounded-[20px] p-8 min-h-[260px]">
+          <div className="landing-card rounded-2xl p-8 min-h-[260px]">
             <div className="bg-black/40 rounded-xl overflow-hidden font-mono text-[0.8125rem]">
               <div className="flex items-center gap-2 px-4 py-3 bg-white/[0.03]">
                 <div className="w-2.5 h-2.5 rounded-full bg-white/15" />
@@ -59,7 +59,7 @@ export function LandingHowItWorks() {
               Each agent spawns in an isolated worktree. They write code, create PRs, run tests, and fix failures. Monitor everything from the live dashboard, or let them run.
             </p>
           </div>
-          <div className="liquid-glass rounded-[20px] p-8 min-h-[260px] md:order-1">
+          <div className="landing-card rounded-2xl p-8 min-h-[260px] md:order-1">
             <div className="rounded-2xl overflow-hidden bg-black/30">
               <div className="flex items-center gap-2 px-4 py-2.5 bg-white/[0.02] border-b border-white/[0.05]">
                 <div className="w-2.5 h-2.5 rounded-full bg-white/15" />
@@ -97,7 +97,7 @@ export function LandingHowItWorks() {
               Agents create pull requests, address review comments, fix CI failures, and get them to mergeable state. Your morning starts with merged PRs, not a backlog.
             </p>
           </div>
-          <div className="liquid-glass rounded-[20px] p-6 min-h-[260px]">
+          <div className="landing-card rounded-2xl p-6 min-h-[260px]">
             <div className="flex flex-col gap-2.5">
               {[
                 { branch: "feat/user-auth", title: "Add user authentication flow" },

@@ -36,7 +36,7 @@ export function LandingFeatures() {
         {features.map((f) => (
           <div
             key={f.title}
-            className="landing-reveal liquid-glass rounded-3xl p-10 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_32px_rgba(0,0,0,0.3)]"
+            className="landing-reveal landing-card rounded-2xl p-10"
           >
             <div className="w-12 h-12 rounded-xl bg-white/[0.04] flex items-center justify-center mb-6 text-xl">
               {f.icon}

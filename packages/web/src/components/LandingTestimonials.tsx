@@ -35,7 +35,7 @@ export function LandingTestimonials() {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-12">
         {testimonials.map((t) => (
-          <div key={t.initials} className="landing-reveal liquid-glass rounded-[20px] p-8">
+          <div key={t.initials} className="landing-reveal landing-card rounded-2xl p-8">
             <p className="text-[0.9375rem] text-white/80 leading-[1.7] mb-5 italic [font-family:var(--font-instrument-serif,serif)]">
               &ldquo;{t.quote}&rdquo;
             </p>

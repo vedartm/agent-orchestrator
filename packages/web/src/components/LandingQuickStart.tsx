@@ -18,7 +18,7 @@ export function LandingQuickStart() {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-12">
         {steps.map((s) => (
-          <div key={s.num} className="landing-reveal liquid-glass rounded-[20px] p-7">
+          <div key={s.num} className="landing-reveal landing-card rounded-2xl p-7">
             <div className="font-mono text-[0.625rem] tracking-[0.1em] text-[var(--landing-muted)] opacity-40 mb-3">
               {s.num}
             </div>

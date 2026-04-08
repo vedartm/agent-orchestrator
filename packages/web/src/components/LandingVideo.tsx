@@ -6,7 +6,7 @@ export function LandingVideo() {
           See it in action
         </span>
       </div>
-      <div className="liquid-glass rounded-3xl overflow-hidden aspect-video">
+      <div className="landing-card rounded-2xl overflow-hidden aspect-video">
         <iframe
           src="https://www.youtube.com/embed/QdwaeEXOmDs?autoplay=0&rel=0&modestbranding=1"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"

@@ -8,7 +8,7 @@ export function LandingCTA() {
         <h2 className="[font-family:var(--font-instrument-serif,serif)] font-normal text-[clamp(2.5rem,6vw,4.5rem)] leading-[1.05] tracking-[-2px] mb-4">
           Start <em className="italic text-[var(--landing-muted)]">orchestrating.</em>
         </h2>
-        <div className="liquid-glass inline-flex items-center gap-3 rounded-full px-8 py-4 font-mono text-[0.9375rem] text-white mb-8">
+        <div className="landing-card inline-flex items-center gap-3 rounded-full px-8 py-4 font-mono text-[0.9375rem] text-white mb-8">
           <span className="text-[var(--landing-muted)] opacity-40">$</span> npm i -g @composio/ao
         </div>
         <div className="flex items-center justify-center gap-4 flex-wrap">

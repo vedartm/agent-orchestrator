@@ -3467,18 +3467,36 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
 }
 
 .liquid-glass-solid {
-  background: hsl(0, 0%, 100%);
-  color: hsl(0, 0%, 4%);
+  background: transparent;
+  color: var(--landing-fg);
   font-weight: 500;
-  box-shadow: 0 0 24px rgba(255,255,255,0.15), 0 2px 8px rgba(0,0,0,0.3);
+  border: 1px solid rgba(255, 255, 255, 0.14);
 }
 
 .liquid-glass-solid:hover {
-  opacity: 0.9;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .liquid-glass-solid::before {
   display: none;
+}
+
+.landing-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.landing-card:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.landing-hero-grid {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
 }
 
 @keyframes landing-fade-rise {
