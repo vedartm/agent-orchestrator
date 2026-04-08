@@ -1505,9 +1505,14 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           // Pre-check: skip respawn if another session for the same issue already exists
           // (e.g. a PR-managed session like pr_open). This avoids a spawn() dedup error
           // after we've already archived the dead session.
-          // Resolve agent name the same way spawn() does — fall back to config default
-          // so the check matches spawn()'s dedup guard exactly.
-          const resolvedAgent = raw["agent"] ?? config.defaults.agent;
+          // Resolve agent name via resolveAgentSelection — the same chain spawn() uses —
+          // so per-project worker agent overrides are respected.
+          const resolvedAgent = resolveAgentSelection({
+            role: "worker",
+            project,
+            defaults: config.defaults,
+            persistedAgent: raw["agent"],
+          }).agentName;
           let existingSessionForIssue: string | null = null;
           for (const otherId of listMetadata(sessionsDir)) {
             if (otherId === sessionId) continue; // skip ourselves (already archived but just in case)
@@ -1518,7 +1523,12 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
             // Skip orchestrator sessions — matches spawn()'s isOrchestratorSessionRecord logic
             if (otherRaw["role"] === "orchestrator" || otherId.endsWith("-orchestrator")) continue;
             if (sessionPrefix && new RegExp(`^${escapeRegex(sessionPrefix)}-orchestrator-\\d+$`).test(otherId)) continue;
-            const otherAgent = otherRaw["agent"] ?? config.defaults.agent;
+            const otherAgent = resolveAgentSelection({
+              role: "worker",
+              project,
+              defaults: config.defaults,
+              persistedAgent: otherRaw["agent"],
+            }).agentName;
             if (otherRaw["issue"] === raw["issue"] && otherAgent === resolvedAgent) {
               existingSessionForIssue = otherId;
               break;
