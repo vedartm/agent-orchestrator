@@ -180,7 +180,6 @@ export {
   getShell,
   killProcessTree,
   findPidByPort,
-  getEnvDefaults,
 } from "./platform.js";
 
 // Config generator — auto-generate config from repo URL

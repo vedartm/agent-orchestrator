@@ -99,6 +99,12 @@ export function registerDashboard(program: Command): void {
           process.off("SIGINT", forward);
           process.off("SIGTERM", forward);
           void killProcessTree(pid, "SIGTERM");
+          // Fallback: if the child ignores SIGTERM and never exits, force-kill
+          // after 5 s so the parent doesn't hang with no signal handlers registered.
+          const fallback = setTimeout(() => {
+            void killProcessTree(pid, "SIGKILL").finally(() => process.exit(1));
+          }, 5000);
+          fallback.unref();
         };
         process.once("SIGINT", forward);
         process.once("SIGTERM", forward);
