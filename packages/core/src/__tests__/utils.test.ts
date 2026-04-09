@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { isRetryableHttpStatus, normalizeRetryConfig, readLastJsonlEntry } from "../utils.js";
+import { isRetryableHttpStatus, normalizeRetryConfig, readLastJsonlEntry, shellEscape } from "../utils.js";
 import { parsePrFromUrl } from "../utils/pr.js";
 
 describe("readLastJsonlEntry", () => {
@@ -113,6 +113,40 @@ describe("retry utilities", () => {
       retries: 0,
       retryDelayMs: 1000,
     });
+  });
+});
+
+describe("shellEscape", () => {
+  it("wraps simple string in single quotes", () => {
+    expect(shellEscape("hello")).toBe("'hello'");
+  });
+
+  it("handles empty string", () => {
+    expect(shellEscape("")).toBe("''");
+  });
+
+  // On Windows this tests PowerShell escaping; on Unix this tests POSIX escaping
+  // Both should produce valid output for their respective shells
+  it("escapes embedded single quotes", () => {
+    const result = shellEscape("it's");
+    if (process.platform === "win32") {
+      expect(result).toBe("'it''s'");
+    } else {
+      expect(result).toBe("'it'\\''s'");
+    }
+  });
+
+  it("escapes multiple single quotes", () => {
+    const result = shellEscape("it's a 'test'");
+    if (process.platform === "win32") {
+      expect(result).toBe("'it''s a ''test'''");
+    } else {
+      expect(result).toBe("'it'\\''s a '\\''test'\\'''");
+    }
+  });
+
+  it("preserves strings without quotes unchanged", () => {
+    expect(shellEscape("claude-opus-4-5")).toBe("'claude-opus-4-5'");
   });
 });
 

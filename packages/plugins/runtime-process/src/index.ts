@@ -153,7 +153,15 @@ export function create(): Runtime {
 
     async destroy(handle: RuntimeHandle): Promise<void> {
       const entry = processes.get(handle.id);
-      if (!entry) return;
+      if (!entry) {
+        // Process was spawned by a different Node.js process (e.g. ao spawn).
+        // The in-memory Map doesn't have it, but handle.data.pid has the OS PID.
+        const pid = (handle.data as Record<string, unknown>)?.pid;
+        if (typeof pid === "number" && pid > 0) {
+          await killProcessTree(pid, "SIGKILL");
+        }
+        return;
+      }
 
       const child = entry.process;
       if (!child) {
@@ -251,7 +259,21 @@ export function create(): Runtime {
 
     async isAlive(handle: RuntimeHandle): Promise<boolean> {
       const entry = processes.get(handle.id);
-      if (!entry || !entry.process) return false;
+      if (!entry || !entry.process) {
+        // Not in our in-memory Map — check via PID signal-0
+        const pid = (handle.data as Record<string, unknown>)?.pid;
+        if (typeof pid === "number" && pid > 0) {
+          try {
+            process.kill(pid, 0);
+            return true;
+          } catch (err: unknown) {
+            // EPERM means process exists but we don't have permission — still alive
+            if ((err as NodeJS.ErrnoException).code === "EPERM") return true;
+            return false;
+          }
+        }
+        return false;
+      }
       return entry.process.exitCode === null && entry.process.signalCode === null;
     },
 
