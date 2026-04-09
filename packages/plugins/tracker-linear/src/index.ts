@@ -17,7 +17,7 @@ import type {
   IssueUpdate,
   CreateIssueInput,
   ProjectConfig,
-} from "@aoagents/ao-core";
+} from "@composio/ao-core";
 import type { Composio } from "@composio/core";
 
 // ---------------------------------------------------------------------------

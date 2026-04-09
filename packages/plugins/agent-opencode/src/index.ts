@@ -22,7 +22,7 @@ import {
   type Session,
   type WorkspaceHooksConfig,
   type OpenCodeAgentConfig,
-} from "@aoagents/ao-core";
+} from "@composio/ao-core";
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { readFileSync } from "node:fs";

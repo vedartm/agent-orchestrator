@@ -20,35 +20,35 @@ export default defineConfig({
   resolve: {
     alias: [
       {
-        find: "@aoagents/ao-core/scm-webhook-utils",
+        find: "@composio/ao-core/scm-webhook-utils",
         replacement: resolve(__dirname, "../core/src/scm-webhook-utils.ts"),
       },
       {
-        find: "@aoagents/ao-core/types",
+        find: "@composio/ao-core/types",
         replacement: resolve(__dirname, "../core/src/types.ts"),
       },
       {
-        find: "@aoagents/ao-core",
+        find: "@composio/ao-core",
         replacement: resolve(__dirname, "../core/src/index.ts"),
       },
       {
-        find: "@aoagents/ao-plugin-agent-claude-code",
+        find: "@composio/ao-plugin-agent-claude-code",
         replacement: resolve(__dirname, "../plugins/agent-claude-code/src/index.ts"),
       },
       {
-        find: "@aoagents/ao-plugin-agent-codex",
+        find: "@composio/ao-plugin-agent-codex",
         replacement: resolve(__dirname, "../plugins/agent-codex/src/index.ts"),
       },
       {
-        find: "@aoagents/ao-plugin-agent-aider",
+        find: "@composio/ao-plugin-agent-aider",
         replacement: resolve(__dirname, "../plugins/agent-aider/src/index.ts"),
       },
       {
-        find: "@aoagents/ao-plugin-agent-opencode",
+        find: "@composio/ao-plugin-agent-opencode",
         replacement: resolve(__dirname, "../plugins/agent-opencode/src/index.ts"),
       },
       {
-        find: "@aoagents/ao-plugin-scm-github",
+        find: "@composio/ao-plugin-scm-github",
         replacement: resolve(__dirname, "../plugins/scm-github/src/index.ts"),
       },
     ],

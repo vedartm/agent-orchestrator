@@ -7,7 +7,7 @@ import {
   type OrchestratorEvent,
   type NotifyAction,
   type EventPriority,
-} from "@aoagents/ao-core";
+} from "@composio/ao-core";
 
 export const manifest = {
   name: "desktop",
@@ -17,7 +17,7 @@ export const manifest = {
 };
 
 // Re-export for backwards compatibility
-export { escapeAppleScript } from "@aoagents/ao-core";
+export { escapeAppleScript } from "@composio/ao-core";
 
 /**
  * Map event priority to notification urgency:

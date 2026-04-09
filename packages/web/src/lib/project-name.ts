@@ -1,7 +1,7 @@
 import "server-only";
 
 import { cache } from "react";
-import { loadConfig } from "@aoagents/ao-core";
+import { loadConfig } from "@composio/ao-core";
 
 export interface ProjectInfo {
   id: string;

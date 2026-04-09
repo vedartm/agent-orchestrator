@@ -8,7 +8,7 @@ import {
   type PluginSlot,
   type InstalledPluginConfig,
   type OrchestratorConfig,
-} from "@aoagents/ao-core";
+} from "@composio/ao-core";
 import { parseDocument } from "yaml";
 import {
   buildPluginDescriptor,

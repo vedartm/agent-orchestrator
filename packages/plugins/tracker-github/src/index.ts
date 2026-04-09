@@ -14,7 +14,7 @@ import type {
   IssueUpdate,
   CreateIssueInput,
   ProjectConfig,
-} from "@aoagents/ao-core";
+} from "@composio/ao-core";
 
 const execFileAsync = promisify(execFile);
 

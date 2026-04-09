@@ -4,7 +4,7 @@ import {
   resolveProjectIdForSessionId,
   type OrchestratorConfig,
   type ProjectObserver,
-} from "@aoagents/ao-core";
+} from "@composio/ao-core";
 
 export function createObserverContext(surface: string): {
   config: OrchestratorConfig | undefined;

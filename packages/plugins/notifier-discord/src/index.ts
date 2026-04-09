@@ -7,8 +7,8 @@ import {
   type NotifyContext,
   type EventPriority,
   CI_STATUS,
-} from "@aoagents/ao-core";
-import { isRetryableHttpStatus, normalizeRetryConfig } from "@aoagents/ao-core/utils";
+} from "@composio/ao-core";
+import { isRetryableHttpStatus, normalizeRetryConfig } from "@composio/ao-core/utils";
 
 export const manifest = {
   name: "discord",

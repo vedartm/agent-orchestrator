@@ -12,7 +12,7 @@ import type {
   ProjectConfig,
   OrchestratorConfig,
   PluginRegistry,
-} from "@aoagents/ao-core";
+} from "@composio/ao-core";
 import {
   sessionToDashboard,
   resolveProject,

@@ -1,2 +1,2 @@
 #!/usr/bin/env node
-import "@aoagents/ao-cli";
+import "@composio/ao-cli";

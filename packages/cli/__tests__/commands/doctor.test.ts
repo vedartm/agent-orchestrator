@@ -27,7 +27,7 @@ vi.mock("../../src/lib/script-runner.js", () => ({
   runRepoScript: (...args: unknown[]) => mockRunRepoScript(...args),
 }));
 
-vi.mock("@aoagents/ao-core", () => ({
+vi.mock("@composio/ao-core", () => ({
   createPluginRegistry: (...args: unknown[]) => mockCreatePluginRegistry(...args),
   findConfigFile: (...args: unknown[]) => mockFindConfigFile(...args),
   getObservabilityBaseDir: () => "/tmp/.agent-orchestrator/observability",

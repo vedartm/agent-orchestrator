@@ -203,7 +203,7 @@ import {
   generateConfigHash,
   generateInstanceId,
   validateAndStoreOrigin,
-} from "@aoagents/ao-core";
+} from "@composio/ao-core";
 
 // Calculate paths dynamically
 const sessionsDir = getSessionsDir(configPath, projectPath);

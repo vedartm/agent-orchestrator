@@ -36,14 +36,14 @@ pnpm install
 pnpm build
 ```
 
-Build order matters — `@aoagents/ao-core` must be built before the CLI, web, or plugins can run. `pnpm build` at the root handles this automatically.
+Build order matters — `@composio/ao-core` must be built before the CLI, web, or plugins can run. `pnpm build` at the root handles this automatically.
 
 ### Running tests
 
 ```bash
 pnpm test                                         # all packages
-pnpm --filter @aoagents/ao-core test              # core only
-pnpm --filter @aoagents/ao-core test -- --watch   # watch mode
+pnpm --filter @composio/ao-core test              # core only
+pnpm --filter @composio/ao-core test -- --watch   # watch mode
 pnpm test:integration                             # integration tests
 ```
 
@@ -52,7 +52,7 @@ pnpm test:integration                             # integration tests
 ```bash
 cp agent-orchestrator.yaml.example agent-orchestrator.yaml
 # edit agent-orchestrator.yaml for your setup
-pnpm --filter @aoagents/ao-web dev
+pnpm --filter @composio/ao-web dev
 ```
 
 ### Refreshing a local AO install
@@ -65,7 +65,7 @@ git status --short --branch   # confirm the install repo is clean
 ao update
 ```
 
-`ao update` fast-forwards the local install repo, reinstalls dependencies, clean-rebuilds `@aoagents/ao-core`, `@aoagents/ao-cli`, and `@aoagents/ao-web`, refreshes the global launcher with `npm link`, and finishes with CLI smoke tests. Use `ao update --skip-smoke` when you only need the rebuild step, or `ao update --smoke-only` when validating an existing install.
+`ao update` fast-forwards the local install repo, reinstalls dependencies, clean-rebuilds `@composio/ao-core`, `@composio/ao-cli`, and `@composio/ao-web`, refreshes the global launcher with `npm link`, and finishes with CLI smoke tests. Use `ao update --skip-smoke` when you only need the rebuild step, or `ao update --smoke-only` when validating an existing install.
 
 ---
 
@@ -98,7 +98,7 @@ cd packages/plugins/runtime-myplugin
 
 ```json
 {
-  "name": "@aoagents/ao-runtime-myplugin",
+  "name": "@composio/ao-runtime-myplugin",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -109,7 +109,7 @@ cd packages/plugins/runtime-myplugin
     "test": "vitest"
   },
   "dependencies": {
-    "@aoagents/ao-core": "workspace:*"
+    "@composio/ao-core": "workspace:*"
   }
 }
 ```
@@ -120,7 +120,7 @@ cd packages/plugins/runtime-myplugin
 
 ```typescript
 // src/index.ts
-import type { PluginModule, Runtime } from "@aoagents/ao-core";
+import type { PluginModule, Runtime } from "@composio/ao-core";
 
 export const manifest = {
   name: "myplugin",
@@ -155,7 +155,7 @@ export default { manifest, create } satisfies PluginModule<Runtime>;
 Add it to the CLI's dependencies in `packages/cli/package.json`:
 
 ```json
-"@aoagents/ao-runtime-myplugin": "workspace:*"
+"@composio/ao-runtime-myplugin": "workspace:*"
 ```
 
 Then register it in `packages/core/src/plugin-registry.ts` inside `loadBuiltins()`.
@@ -178,8 +178,8 @@ describe("myplugin runtime", () => {
 ### 6. Build and test
 
 ```bash
-pnpm --filter @aoagents/ao-runtime-myplugin build
-pnpm --filter @aoagents/ao-runtime-myplugin test
+pnpm --filter @composio/ao-runtime-myplugin build
+pnpm --filter @composio/ao-runtime-myplugin test
 ```
 
 ### Publishing to the Marketplace Registry

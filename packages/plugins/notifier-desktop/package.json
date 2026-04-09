@@ -1,5 +1,5 @@
 {
-  "name": "@aoagents/ao-plugin-notifier-desktop",
+  "name": "@composio/ao-plugin-notifier-desktop",
   "version": "0.2.0",
   "description": "Notifier plugin: OS desktop notifications",
   "license": "MIT",
@@ -34,7 +34,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@aoagents/ao-core": "workspace:*"
+    "@composio/ao-core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.2.3",

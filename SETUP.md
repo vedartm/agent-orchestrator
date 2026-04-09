@@ -60,7 +60,7 @@ Comprehensive guide to installing, configuring, and troubleshooting Agent Orches
 ### Install via npm (recommended)
 
 ```bash
-npm install -g @aoagents/ao
+npm install -g @composio/ao
 
 # Verify
 ao --version
@@ -72,17 +72,17 @@ This installs the `ao` CLI globally along with all default plugins and the web d
 
 ```bash
 # Option 1: Use sudo
-sudo npm install -g @aoagents/ao
+sudo npm install -g @composio/ao
 
 # Option 2: Use npx (no global install needed)
-npx @aoagents/ao start
+npx @composio/ao start
 
 # Option 3: Fix npm permissions permanently (recommended)
 mkdir -p ~/.npm-global
 npm config set prefix '~/.npm-global'
 echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.zshrc
 source ~/.zshrc
-npm install -g @aoagents/ao
+npm install -g @composio/ao
 ```
 
 ### Build from Source (for contributors)
@@ -385,7 +385,7 @@ curl -X POST -H 'Content-type: application/json' \
 To add a custom tracker (Jira, Asana, etc.), create a plugin:
 
 1. See plugin examples in `packages/plugins/tracker-*/`
-2. Implement the `Tracker` interface from `@aoagents/ao-core`
+2. Implement the `Tracker` interface from `@composio/ao-core`
 3. Register your plugin in the config
 
 See [Development Guide](./docs/DEVELOPMENT.md) for plugin development guidelines.

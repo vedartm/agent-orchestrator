@@ -12,7 +12,7 @@ import {
   type OrchestratorConfig,
   type DecomposerConfig,
   DEFAULT_DECOMPOSER_CONFIG,
-} from "@aoagents/ao-core";
+} from "@composio/ao-core";
 import { DEFAULT_PORT } from "../lib/constants.js";
 import { exec } from "../lib/shell.js";
 import { banner } from "../lib/format.js";

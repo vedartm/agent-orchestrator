@@ -28,7 +28,7 @@ import {
   type MergeReadiness,
   type PREnrichmentData,
   type BatchObserver,
-} from "@aoagents/ao-core";
+} from "@composio/ao-core";
 import {
   enrichSessionsPRBatch as enrichSessionsPRBatchImpl,
 } from "./graphql-batch.js";
@@ -37,7 +37,7 @@ import {
   parseWebhookBranchRef,
   parseWebhookJsonObject,
   parseWebhookTimestamp,
-} from "@aoagents/ao-core/scm-webhook-utils";
+} from "@composio/ao-core/scm-webhook-utils";
 
 const execFileAsync = promisify(execFile);
 

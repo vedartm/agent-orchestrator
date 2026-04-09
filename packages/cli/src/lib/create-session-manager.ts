@@ -15,7 +15,7 @@ import {
   type OpenCodeSessionManager,
   type PluginRegistry,
   type LifecycleManager,
-} from "@aoagents/ao-core";
+} from "@composio/ao-core";
 import { importPluginModuleFromSource } from "./plugin-store.js";
 
 const registryPromises = new Map<string, Promise<PluginRegistry>>();
