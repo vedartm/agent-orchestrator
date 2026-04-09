@@ -1432,7 +1432,10 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       if (!project) continue;
       const sessionsDir = getSessionsDir(config.configPath, project.path);
 
+      const sessionPrefix = project.sessionPrefix;
+
       for (const sessionId of listMetadata(sessionsDir)) {
+        try {
         const raw = readMetadataRaw(sessionsDir, sessionId);
         if (!raw) continue;
 
@@ -1445,7 +1448,6 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         // Skip orchestrator sessions — they manage themselves
         if (raw["role"] === "orchestrator" || sessionId.endsWith("-orchestrator")) continue;
         // Also skip prefix-orchestrator-N pattern (e.g., "web-orchestrator-1") when sessionPrefix is configured
-        const sessionPrefix = project.sessionPrefix;
         if (sessionPrefix && new RegExp(`^${escapeRegex(sessionPrefix)}-orchestrator-\\d+$`).test(sessionId)) continue;
 
         // Resolve agent plugin for optional isProcessRunning fallback
@@ -1476,7 +1478,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
 
         if (processAlive) continue;
 
-        // Session is dead — transition to terminated and archive
+        // Session is dead — archive directly (which copies to archive dir then deletes active).
+        // We archive first so if the process crashes mid-way, the session stays active with its
+        // original status and recovery retries on next boot.
         observer.recordOperation({
           metric: "lifecycle_poll",
           operation: "lifecycle.dead_session_detected",
@@ -1488,7 +1492,6 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           level: "warn",
         });
 
-        updateMetadata(sessionsDir, sessionId, { status: "terminated" });
         deleteMetadata(sessionsDir, sessionId, /* archive */ true);
 
         const result: RecoveredSession = {
@@ -1586,6 +1589,19 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         }
 
         results.push(result);
+        } catch (err) {
+          // Per-session error isolation — one bad session shouldn't block recovery of others
+          observer.recordOperation({
+            metric: "lifecycle_poll",
+            operation: "lifecycle.session_recovery_error",
+            outcome: "failure",
+            correlationId,
+            projectId,
+            sessionId,
+            reason: err instanceof Error ? err.message : String(err),
+            level: "error",
+          });
+        }
       }
     }
 

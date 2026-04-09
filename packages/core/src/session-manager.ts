@@ -1052,6 +1052,16 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     // Determine session ID — atomically reserve to prevent concurrent collisions
     const { sessionId, tmuxName } = await reserveNextSessionIdentity(project, sessionsDir);
 
+    // Claim the issue slot immediately so concurrent spawns see this reservation
+    // during the dedup scan (closes TOCTOU window between reservation and full metadata write).
+    if (spawnConfig.issueId) {
+      updateMetadata(sessionsDir, sessionId, {
+        issue: spawnConfig.issueId,
+        agent: selection.agentName,
+        status: "spawning",
+      });
+    }
+
     // Determine branch name — explicit branch always takes priority
     // When resuming, reuse the archived session's branch to preserve commits.
     let branch: string;
@@ -1082,6 +1092,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
     // Create workspace — when resuming, use workspace.restore() to reuse the archived branch
     let workspacePath = project.path;
+    let restoredWorkspace = false;
     if (plugins.workspace) {
       try {
         let wsInfo;
@@ -1090,6 +1101,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           // Restore workspace at the archived worktree path to preserve agent session file references
           try {
             wsInfo = await plugins.workspace.restore(wsConfig, archived.raw["worktree"]);
+            restoredWorkspace = true;
           } catch {
             // Restore failed — fall back to fresh workspace.create()
             wsInfo = await plugins.workspace.create(wsConfig);
@@ -1105,7 +1117,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           try {
             await plugins.workspace.postCreate(wsInfo, project);
           } catch (err) {
-            if (shouldDestroyWorkspacePath(project, spawnConfig.projectId, workspacePath)) {
+            if (!restoredWorkspace && shouldDestroyWorkspacePath(project, spawnConfig.projectId, workspacePath)) {
               try {
                 await plugins.workspace.destroy(workspacePath);
               } catch {
@@ -1245,9 +1257,11 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         },
       });
     } catch (err) {
-      // Clean up workspace and reserved ID if agent config or runtime creation failed
+      // Clean up workspace and reserved ID if agent config or runtime creation failed.
+      // Skip destroy for restored workspaces — they contain the previous session's work.
       if (
         plugins.workspace &&
+        !restoredWorkspace &&
         shouldDestroyWorkspacePath(project, spawnConfig.projectId, workspacePath)
       ) {
         try {
@@ -1328,6 +1342,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       }
       if (
         plugins.workspace &&
+        !restoredWorkspace &&
         shouldDestroyWorkspacePath(project, spawnConfig.projectId, workspacePath)
       ) {
         try {

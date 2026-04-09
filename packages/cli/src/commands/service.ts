@@ -43,7 +43,9 @@ export function quoteSystemdValue(str: string): string {
     .replace(/\\/g, "\\\\")
     .replace(/"/g, '\\"')
     .replace(/%/g, "%%") // systemd uses %% for literal %
-    .replace(/\$/g, "$$$$"); // systemd uses $$ for literal $
+    .replace(/\$/g, "$$$$") // systemd uses $$ for literal $
+    .replace(/\n/g, "") // strip newlines — they would break unit file directives
+    .replace(/\r/g, "");
   return `"${escaped}"`;
 }
 
