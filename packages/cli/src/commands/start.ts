@@ -1047,9 +1047,9 @@ async function runStartup(
     //                 Restoring keeps the original numbered id rather than
     //                 allocating a fresh one.
     const live = orchestrators.filter((s) => !isTerminalSession(s));
-    const restorable = orchestrators.filter(
-      (s) => isTerminalSession(s) && isRestorable(s),
-    );
+    // isRestorable already requires isTerminalSession internally, so no need
+    // to repeat that guard here.
+    const restorable = orchestrators.filter((s) => isRestorable(s));
     type OrchestratorCandidate = { session: Session; mode: "live" | "restore" };
     const candidates: OrchestratorCandidate[] = [
       ...live.map<OrchestratorCandidate>((session) => ({ session, mode: "live" })),
@@ -1490,6 +1490,7 @@ export function registerStop(program: Command): void {
             ([, p]) => p.sessionPrefix ?? generateSessionPrefix(p.name ?? ""),
           );
           let orchestratorToKill: { id: string } | null = null;
+          let lookupFailed = false;
           try {
             const projectSessions = await sm.list(_projectId);
             const orchestrators = projectSessions
@@ -1503,6 +1504,7 @@ export function registerStop(program: Command): void {
             );
             orchestratorToKill = sorted[0] ?? null;
           } catch (err) {
+            lookupFailed = true;
             console.log(
               chalk.yellow(
                 `  Could not list sessions to locate orchestrator: ${
@@ -1520,7 +1522,10 @@ export function registerStop(program: Command): void {
             // Also log to console.log so the killed id is visible in non-TTY callers
             // (CI, scripts) and in test capture, since spinner output is suppressed.
             console.log(chalk.green(`  Stopped orchestrator session: ${orchestratorToKill.id}`));
-          } else {
+          } else if (!lookupFailed) {
+            // Suppress the "no orchestrator found" message when sm.list threw —
+            // the catch above already explained the real reason and adding a
+            // second message would falsely imply the lookup succeeded.
             console.log(
               chalk.yellow(`No running orchestrator session found for "${project.name}"`),
             );

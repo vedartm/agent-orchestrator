@@ -1398,6 +1398,10 @@ describe("stop command", () => {
       .join("\n");
     expect(output).toContain("Could not list sessions to locate orchestrator");
     expect(output).toContain("metadata corrupted");
+    // The lookup-failed warning must NOT be followed by the misleading
+    // "No running orchestrator session found" message — that would imply
+    // the lookup succeeded and found nothing, which isn't what happened.
+    expect(output).not.toContain("No running orchestrator session found");
   });
 });
 
