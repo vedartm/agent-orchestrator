@@ -38,7 +38,7 @@ const activityMeta: Record<string, { label: string; color: string }> = {
 };
 
 function getSessionHeadline(session: DashboardSession): string {
-  return session.issueTitle ?? session.summary ?? session.id;
+  return session.issueTitle ?? session.userPrompt ?? session.summary ?? session.id;
 }
 
 function cleanBugbotComment(body: string): { title: string; description: string } {

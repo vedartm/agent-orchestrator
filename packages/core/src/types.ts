@@ -1388,6 +1388,7 @@ export interface SessionMetadata {
   terminalWsPort?: number;
   directTerminalWsPort?: number;
   opencodeSessionId?: string;
+  userPrompt?: string; // Prompt used when spawning without a tracker issue
 }
 
 // =============================================================================
