@@ -1207,6 +1207,63 @@ describe("start command — orchestrator session strategy display", () => {
     // Should have killed the dashboard
     expect(fakeDashboard.kill).toHaveBeenCalled();
   });
+
+  it("fails and cleans up dashboard when sm.restore throws on a killed orchestrator", async () => {
+    mockConfigRef.current = makeConfig({ "my-app": makeProject() });
+
+    const { findWebDir } = await import("../../src/lib/web-dir.js");
+    vi.mocked(findWebDir).mockReturnValue(tmpDir);
+    writeFileSync(join(tmpDir, "package.json"), "{}");
+
+    const fakeDashboard = { on: vi.fn(), kill: vi.fn(), emit: vi.fn() };
+    mockSpawn.mockReturnValue(fakeDashboard);
+
+    // Only candidate is restorable. sm.restore throws — runStartup must
+    // surface the error, kill the dashboard, and never fall through to
+    // spawnOrchestrator (which would silently allocate a fresh -N).
+    mockSessionManager.list.mockResolvedValue([
+      {
+        id: "app-orchestrator-3",
+        projectId: "my-app",
+        status: "killed",
+        activity: "exited",
+        metadata: { role: "orchestrator" },
+        lastActivityAt: new Date(),
+        runtimeHandle: { id: "tmux-3" },
+      },
+    ]);
+    mockSessionManager.restore.mockRejectedValue(new Error("workspace gone"));
+
+    await expect(program.parseAsync(["node", "test", "start"])).rejects.toThrow("process.exit(1)");
+
+    const errors = vi
+      .mocked(console.error)
+      .mock.calls.map((c) => c.join(" "))
+      .join("\n");
+    expect(errors).toContain("Failed to restore orchestrator session app-orchestrator-3");
+    expect(errors).toContain("workspace gone");
+
+    expect(mockSessionManager.spawnOrchestrator).not.toHaveBeenCalled();
+    expect(fakeDashboard.kill).toHaveBeenCalled();
+  });
+
+  it("opens the bare dashboard URL when --no-orchestrator skips the orchestrator block", async () => {
+    mockConfigRef.current = makeConfig({ "my-app": makeProject() });
+
+    const { findWebDir } = await import("../../src/lib/web-dir.js");
+    vi.mocked(findWebDir).mockReturnValue(tmpDir);
+    writeFileSync(join(tmpDir, "package.json"), "{}");
+
+    await program.parseAsync(["node", "test", "start", "--no-orchestrator"]);
+
+    // Without an orchestrator id, the auto-open URL falls back to the dashboard
+    // root rather than the legacy phantom `/sessions/${prefix}-orchestrator` path.
+    expect(mockWaitForPortAndOpen).toHaveBeenCalledTimes(1);
+    const args = mockWaitForPortAndOpen.mock.calls[0];
+    expect(args[1]).toBe("http://localhost:3000");
+    expect(args[1]).not.toContain("/sessions/");
+    expect(mockSessionManager.spawnOrchestrator).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1320,6 +1377,27 @@ describe("stop command", () => {
     expect(mockSessionManager.kill).toHaveBeenCalledWith("app-orchestrator-1", {
       purgeOpenCode: true,
     });
+  });
+
+  it("warns and continues when sm.list throws while looking up the orchestrator", async () => {
+    mockConfigRef.current = makeConfig({ "my-app": makeProject() });
+    // sm.list failure must not crash ao stop — we still want lifecycle/dashboard
+    // teardown to happen so the user can recover from a half-broken state.
+    mockSessionManager.list.mockRejectedValue(new Error("metadata corrupted"));
+
+    await program.parseAsync(["node", "test", "stop"]);
+
+    expect(mockSessionManager.kill).not.toHaveBeenCalled();
+    expect(mockStopLifecycleWorker).toHaveBeenCalledWith(
+      expect.objectContaining({ configPath: expect.any(String) }),
+      "my-app",
+    );
+    const output = vi
+      .mocked(console.log)
+      .mock.calls.map((c) => c.join(" "))
+      .join("\n");
+    expect(output).toContain("Could not list sessions to locate orchestrator");
+    expect(output).toContain("metadata corrupted");
   });
 });
 

@@ -1158,11 +1158,6 @@ async function runStartup(
         `${target}${restoreNote}${otherSummarySuffix}`,
       );
     }
-  } else if (hasMultipleReusable) {
-    console.log(
-      chalk.cyan("Orchestrator:"),
-      "multiple sessions found — select one in the dashboard",
-    );
   }
 
   console.log(chalk.dim(`Config: ${config.configPath}`));
