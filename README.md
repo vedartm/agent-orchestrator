@@ -158,21 +158,25 @@ All interfaces defined in [`packages/core/src/types.ts`](packages/core/src/types
 
 ### Hermes (Discord / Telegram)
 
-Control Agent Orchestrator from chat using the [Hermes](https://github.com/NousResearch/hermes-agent) plugin — spawn agents, check status, manage issues, and merge PRs without leaving Discord or Telegram.
+Control Agent Orchestrator from chat using the [Hermes](https://github.com/NousResearch/hermes-agent) plugin — spawn agents, check status, manage issues, and merge PRs without leaving Discord or Telegram. 17 tools + 1 context-injection hook.
+
+**Install:**
 
 ```bash
-hermes plugins install illegalcall/hermes-plugin-agent-orchestrator
+pip install hermes-ao
 ```
 
-Add to `~/.hermes/.env`:
+**Configure** (add to your shell profile or `~/.hermes/.env`):
 
-```env
-AO_CWD=/path/to/your/agent-orchestrator   # repo root with agent-orchestrator.yaml
+```bash
+export AO_CWD=/path/to/your/project          # where agent-orchestrator.yaml lives (required)
+export AO_API_URL=http://localhost:3000        # AO server URL (default: http://127.0.0.1:3000)
+export AO_PUBLIC_URL=http://your-server:3000   # public dashboard URL for links (optional)
 ```
 
-Restart the gateway and you're set. 17 tools available — say "what's happening?" to see live sessions, "spawn #42" to start an agent, or "doctor" to run health checks.
+**Restart Hermes** and you're set. Say "what's happening?" to see live sessions, "spawn #42" to start an agent, or "doctor" to run health checks.
 
-See the [plugin repo](https://github.com/illegalcall/hermes-plugin-agent-orchestrator) for the full tool list and configuration options.
+See the [plugin repo](https://github.com/illegalcall/hermes-plugin-agent-orchestrator) for the full tool list, architecture details, and alternative install methods.
 
 ## Why Agent Orchestrator?
 
