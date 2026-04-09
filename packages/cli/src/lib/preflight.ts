@@ -121,6 +121,17 @@ async function checkDocker(runtimeConfig?: RuntimeConfig): Promise<void> {
       "Docker runtime requires an image. Set project.runtimeConfig.image or pass --runtime-image / --runtime-config with an image override.",
     );
   }
+
+  const readOnlyRoot = runtimeConfig?.["readOnlyRoot"] === true;
+  const tmpfs = Array.isArray(runtimeConfig?.["tmpfs"])
+    ? runtimeConfig?.["tmpfs"].filter((value): value is string => typeof value === "string")
+    : [];
+  const hasTmpfsTmp = tmpfs.some((mount) => mount.split(":")[0]?.trim() === "/tmp");
+  if (readOnlyRoot && !hasTmpfsTmp) {
+    throw new Error(
+      "Docker runtime with readOnlyRoot=true also needs tmpfs to include /tmp. Add project.runtimeConfig.tmpfs: ['/tmp'] or pass --runtime-tmpfs /tmp.",
+    );
+  }
 }
 
 async function checkRuntime(

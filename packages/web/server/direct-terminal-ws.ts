@@ -11,7 +11,7 @@ import { createServer, type Server } from "node:http";
 import { spawn } from "node:child_process";
 import { WebSocketServer, WebSocket } from "ws";
 import { homedir, userInfo } from "node:os";
-import { createCorrelationId, type AttachInfo } from "@composio/ao-core";
+import { createCorrelationId } from "@composio/ao-core";
 
 // node-pty is an optionalDependency — it requires native compilation and may
 // not be available on all platforms. Load it dynamically so the rest of the
@@ -28,7 +28,7 @@ try {
   console.warn("[DirectTerminal] Install it with: npm install node-pty");
 }
 import { findTmux, validateSessionId } from "./tmux-utils.js";
-import { resolveAttachInfo } from "./attach-utils.js";
+import { buildAttachSpawnSpec, resolveAttachInfo } from "./attach-utils.js";
 import { createObserverContext, inferProjectId } from "./terminal-observability.js";
 
 interface TerminalSession {
@@ -54,17 +54,6 @@ export interface DirectTerminalServer {
   wss: WebSocketServer;
   activeSessions: Map<string, TerminalSession>;
   shutdown: () => void;
-}
-
-function buildAttachSpawnSpec(info: AttachInfo): { program: string; args: string[] } | null {
-  if (info.program) {
-    return { program: info.program, args: info.args ?? [] };
-  }
-  if (info.command) {
-    const shell = process.env.SHELL || "/bin/sh";
-    return { program: shell, args: ["-c", info.command] };
-  }
-  return null;
 }
 
 /**

@@ -169,6 +169,19 @@ describe("preflight.checkDocker", () => {
 
     await expect(preflight.checkDocker()).rejects.toThrow("--runtime-image");
   });
+
+  it("rejects readOnlyRoot without a /tmp tmpfs", async () => {
+    mockExec
+      .mockResolvedValueOnce({ stdout: "Docker version 27.0.0", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "Server: Docker Engine", stderr: "" });
+
+    await expect(
+      preflight.checkDocker({
+        image: "ghcr.io/composio/ao:test",
+        readOnlyRoot: true,
+      }),
+    ).rejects.toThrow("tmpfs");
+  });
 });
 
 describe("preflight.checkRuntime", () => {

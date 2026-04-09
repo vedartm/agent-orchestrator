@@ -1,8 +1,17 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
 import type {
@@ -22,6 +31,7 @@ const LONG_MESSAGE_THRESHOLD = 200;
 const CONTAINER_AO_BIN_DIR = "/tmp/ao/bin";
 const CONTAINER_AO_DATA_DIR = "/tmp/ao/data";
 const CONTAINER_HOME_DIR = "/tmp/ao-home";
+const CONTAINER_RUNTIME_DIR = "/tmp/ao/runtime";
 const AO_METADATA_HELPER = "ao-metadata-helper.sh";
 
 export const manifest = {
@@ -64,6 +74,22 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function parseDockerRuntimeConfig(config?: Record<string, unknown>): DockerRuntimeConfig {
   return isPlainObject(config) ? (config as DockerRuntimeConfig) : {};
+}
+
+function hasTmpfsTarget(runtimeConfig: DockerRuntimeConfig, target: string): boolean {
+  return (runtimeConfig.tmpfs ?? []).some((mount) => mount.split(":")[0]?.trim() === target);
+}
+
+function validateDockerRuntimeConfig(runtimeConfig: DockerRuntimeConfig): void {
+  if (!runtimeConfig.image) {
+    throw new Error("Docker runtime requires runtimeConfig.image");
+  }
+
+  if (runtimeConfig.readOnlyRoot && !hasTmpfsTarget(runtimeConfig, "/tmp")) {
+    throw new Error(
+      "Docker runtime with readOnlyRoot=true requires tmpfs to include /tmp so tmux and agent CLIs can create runtime state.",
+    );
+  }
 }
 
 function shellQuote(value: string): string {
@@ -476,7 +502,8 @@ async function removeContainer(containerName: string): Promise<void> {
 async function sendTextToTmux(
   containerName: string,
   tmuxSessionName: string,
-  workspacePath: string,
+  hostBufferDir: string,
+  containerBufferDir: string,
   execUser: string | undefined,
   text: string,
   clearInput = true,
@@ -488,10 +515,11 @@ async function sendTextToTmux(
 
   if (text.includes("\n") || text.length > LONG_MESSAGE_THRESHOLD) {
     const bufferName = `ao-${randomUUID()}`;
-    const hostTmpPath = join(workspacePath, `.ao-tmux-buffer-${randomUUID()}.txt`);
+    const hostTmpPath = join(hostBufferDir, `.ao-tmux-buffer-${randomUUID()}.txt`);
+    const containerTmpPath = join(containerBufferDir, basename(hostTmpPath));
     writeFileSync(hostTmpPath, text, { encoding: "utf-8", mode: 0o600 });
     try {
-      await dockerTmux(containerName, ["load-buffer", "-b", bufferName, hostTmpPath], execUser);
+      await dockerTmux(containerName, ["load-buffer", "-b", bufferName, containerTmpPath], execUser);
       await dockerTmux(containerName, [
         "paste-buffer",
         "-b",
@@ -526,7 +554,9 @@ export function create(): Runtime {
       assertValidSessionId(config.sessionId);
 
       const runtimeConfig = parseDockerRuntimeConfig(config.runtimeConfig);
-      if (!runtimeConfig.image) {
+      validateDockerRuntimeConfig(runtimeConfig);
+      const image = runtimeConfig.image;
+      if (!image) {
         throw new Error("Docker runtime requires runtimeConfig.image");
       }
 
@@ -534,6 +564,7 @@ export function create(): Runtime {
       const tmuxSessionName = config.sessionId;
       const shell = runtimeConfig.shell ?? "/bin/sh";
       const execUser = runtimeConfig.user ?? getDefaultDockerUser();
+      const hostRuntimeDir = mkdtempSync(join(tmpdir(), `ao-runtime-docker-${config.sessionId}-`));
       const preparedEnvironment = prepareContainerEnvironment(
         config.environment ?? {},
         config.agentRuntimeHints?.docker,
@@ -541,6 +572,7 @@ export function create(): Runtime {
       const mounts = dedupeMounts([
         ...getWorkspaceMounts(config.workspacePath),
         ...preparedEnvironment.mounts,
+        { hostPath: hostRuntimeDir, containerPath: CONTAINER_RUNTIME_DIR },
       ]);
       const launchCommand = rewriteMountedPathsInCommand(config.launchCommand, mounts);
 
@@ -578,7 +610,7 @@ export function create(): Runtime {
       }
 
       runArgs.push(
-        runtimeConfig.image,
+        image,
         shell,
         "-lc",
         'mkdir -p "$HOME"; trap \'exit 0\' TERM INT; while :; do sleep 3600; done',
@@ -614,13 +646,15 @@ export function create(): Runtime {
         await sendTextToTmux(
           containerName,
           tmuxSessionName,
-          config.workspacePath,
+          hostRuntimeDir,
+          CONTAINER_RUNTIME_DIR,
           execUser,
           launchCommand,
           false,
         );
       } catch (err) {
         await removeContainer(containerName);
+        rmSync(hostRuntimeDir, { recursive: true, force: true });
         const msg = err instanceof Error ? err.message : String(err);
         throw new Error(
           `Failed to create docker runtime for session "${config.sessionId}": ${msg}`,
@@ -637,6 +671,7 @@ export function create(): Runtime {
           containerName,
           tmuxSessionName,
           workspacePath: config.workspacePath,
+          hostRuntimeDir,
           execUser,
           createdAt: Date.now(),
         },
@@ -645,13 +680,21 @@ export function create(): Runtime {
 
     async destroy(handle: RuntimeHandle): Promise<void> {
       await removeContainer(getContainerName(handle));
+      const hostRuntimeDir = handle.data["hostRuntimeDir"];
+      if (typeof hostRuntimeDir === "string" && hostRuntimeDir.length > 0) {
+        rmSync(hostRuntimeDir, { recursive: true, force: true });
+      }
     },
 
     async sendMessage(handle: RuntimeHandle, message: string): Promise<void> {
+      const hostRuntimeDir = handle.data["hostRuntimeDir"];
       await sendTextToTmux(
         getContainerName(handle),
         getTmuxSessionName(handle),
-        handle.data["workspacePath"] as string,
+        typeof hostRuntimeDir === "string" && hostRuntimeDir.length > 0
+          ? hostRuntimeDir
+          : (handle.data["workspacePath"] as string),
+        CONTAINER_RUNTIME_DIR,
         getExecUser(handle),
         message,
         true,

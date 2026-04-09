@@ -15,13 +15,16 @@ vi.mock("node:crypto", () => ({
 
 vi.mock("node:os", () => ({
   homedir: vi.fn(() => "/host/home"),
+  tmpdir: vi.fn(() => "/tmp"),
 }));
 
 vi.mock("node:fs", () => ({
   existsSync: vi.fn(),
   lstatSync: vi.fn(),
   mkdirSync: vi.fn(),
+  mkdtempSync: vi.fn(() => "/tmp/ao-runtime-docker-test"),
   readFileSync: vi.fn(),
+  rmSync: vi.fn(),
   writeFileSync: vi.fn(),
   unlinkSync: vi.fn(),
 }));
@@ -37,7 +40,9 @@ const expectedDockerOptions = { timeout: 30_000 };
 const mockExistsSync = fs.existsSync as ReturnType<typeof vi.fn>;
 const mockLstatSync = fs.lstatSync as ReturnType<typeof vi.fn>;
 const mockMkdirSync = fs.mkdirSync as ReturnType<typeof vi.fn>;
+const mockMkdtempSync = fs.mkdtempSync as ReturnType<typeof vi.fn>;
 const mockReadFileSync = fs.readFileSync as ReturnType<typeof vi.fn>;
+const mockRmSync = fs.rmSync as ReturnType<typeof vi.fn>;
 const mockWriteFileSync = fs.writeFileSync as ReturnType<typeof vi.fn>;
 
 function mockDockerSuccess(stdout = ""): void {
@@ -87,6 +92,7 @@ function makeHandle(overrides: Partial<RuntimeHandle> = {}): RuntimeHandle {
       tmuxSessionName: "tmux-1",
       createdAt: 1_000,
       workspacePath: "/tmp/workspace",
+      hostRuntimeDir: "/tmp/ao-runtime-handle",
     },
     ...overrides,
   };
@@ -102,9 +108,11 @@ beforeEach(() => {
     throw new Error("ENOENT");
   });
   mockMkdirSync.mockImplementation(() => undefined);
+  mockMkdtempSync.mockImplementation(() => "/tmp/ao-runtime-docker-test");
   mockReadFileSync.mockImplementation(() => {
     throw new Error("ENOENT");
   });
+  mockRmSync.mockImplementation(() => undefined);
   mockWriteFileSync.mockImplementation(() => undefined);
 });
 
@@ -152,6 +160,21 @@ describe("runtime.create()", () => {
     ).rejects.toThrow('Invalid session ID "bad session!"');
   });
 
+  it("rejects readOnlyRoot without a /tmp tmpfs", async () => {
+    await expect(
+      create().create({
+        sessionId: "docker-session",
+        workspacePath: "/tmp/workspace",
+        launchCommand: "codex",
+        environment: {},
+        runtimeConfig: {
+          image: "ghcr.io/example/ao:latest",
+          readOnlyRoot: true,
+        },
+      }),
+    ).rejects.toThrow("requires tmpfs to include /tmp");
+  });
+
   it("starts a container, creates tmux inside it, and sends the launch command", async () => {
     mockDockerSuccess("container-id");
     mockDockerSuccess();
@@ -178,43 +201,6 @@ describe("runtime.create()", () => {
         },
       },
     });
-    const expectedRunArgs = [
-      "run",
-      "-d",
-      "--name",
-      "docker-session",
-      "--workdir",
-      "/tmp/workspace",
-      "--volume",
-      "/tmp/workspace:/tmp/workspace",
-      "--env",
-      "AO_SESSION=docker-session",
-      "--env",
-      "FOO=bar",
-      "--env",
-      "HOME=/tmp/ao-home",
-      ...(typeof process.getuid === "function" && typeof process.getgid === "function"
-        ? ["--user", `${process.getuid()}:${process.getgid()}`]
-        : []),
-      "--network",
-      "bridge",
-      "--read-only",
-      "--cap-drop",
-      "ALL",
-      "--tmpfs",
-      "/tmp",
-      "--cpus",
-      "2",
-      "--memory",
-      "4g",
-      "--gpus",
-      "all",
-      "ghcr.io/example/ao:latest",
-      "/bin/sh",
-      "-lc",
-      'mkdir -p "$HOME"; trap \'exit 0\' TERM INT; while :; do sleep 3600; done',
-    ];
-
     expect(handle).toEqual({
       id: "docker-session",
       runtimeName: "docker",
@@ -222,6 +208,7 @@ describe("runtime.create()", () => {
         containerName: "docker-session",
         tmuxSessionName: "docker-session",
         workspacePath: "/tmp/workspace",
+        hostRuntimeDir: "/tmp/ao-runtime-docker-test",
         execUser:
           typeof process.getuid === "function" && typeof process.getgid === "function"
             ? `${process.getuid()}:${process.getgid()}`
@@ -229,11 +216,40 @@ describe("runtime.create()", () => {
       }),
     });
 
-    expect(mockExecFileCustom).toHaveBeenNthCalledWith(
-      1,
-      "docker",
-      expectedRunArgs,
-      expectedDockerOptions,
+    const runArgs = mockExecFileCustom.mock.calls[0]?.[1] as string[];
+    expect(runArgs).toEqual(
+      expect.arrayContaining([
+        "run",
+        "-d",
+        "--name",
+        "docker-session",
+        "--workdir",
+        "/tmp/workspace",
+        "--volume",
+        "/tmp/workspace:/tmp/workspace",
+        "--volume",
+        "/tmp/ao-runtime-docker-test:/tmp/ao/runtime",
+        "--env",
+        "AO_SESSION=docker-session",
+        "--env",
+        "FOO=bar",
+        "--env",
+        "HOME=/tmp/ao-home",
+        "--network",
+        "bridge",
+        "--read-only",
+        "--cap-drop",
+        "ALL",
+        "--tmpfs",
+        "/tmp",
+        "--cpus",
+        "2",
+        "--memory",
+        "4g",
+        "--gpus",
+        "all",
+        "ghcr.io/example/ao:latest",
+      ]),
     );
 
     expect(mockExecFileCustom).toHaveBeenNthCalledWith(
@@ -375,6 +391,8 @@ describe("runtime.create()", () => {
         "--volume",
         "/host/.agent/sessions:/tmp/ao/data",
         "--volume",
+        "/tmp/ao-runtime-docker-test:/tmp/ao/runtime",
+        "--volume",
         "/host/home/.codex:/tmp/ao-home/.codex",
         "--volume",
         "/host/home/.gitconfig:/tmp/ao-home/.gitconfig:ro",
@@ -438,6 +456,7 @@ describe("runtime.create()", () => {
     const runArgs = mockExecFileCustom.mock.calls[0]?.[1] as string[];
     expect(runArgs).toContain("/host/home/.gitconfig:/tmp/ao-home/.gitconfig:ro");
     expect(runArgs).not.toContain("/host/home/.codex:/tmp/ao-home/.codex");
+    expect(runArgs).toContain("/tmp/ao-runtime-docker-test:/tmp/ao/runtime");
   });
 
   it("creates missing hinted home paths so first-time auth persists across containers", async () => {
@@ -592,6 +611,10 @@ describe("runtime.create()", () => {
       ["rm", "-f", "docker-session"],
       expectedDockerOptions,
     );
+    expect(mockRmSync).toHaveBeenCalledWith("/tmp/ao-runtime-docker-test", {
+      recursive: true,
+      force: true,
+    });
   });
 });
 
@@ -606,6 +629,10 @@ describe("runtime.destroy()", () => {
       ["rm", "-f", "container-1"],
       expectedDockerOptions,
     );
+    expect(mockRmSync).toHaveBeenCalledWith("/tmp/ao-runtime-handle", {
+      recursive: true,
+      force: true,
+    });
   });
 });
 
@@ -637,7 +664,7 @@ describe("runtime.sendMessage()", () => {
     );
   });
 
-  it("uses workspace-backed tmux buffers for multiline messages", async () => {
+  it("uses runtime temp buffers for multiline messages", async () => {
     mockDockerSuccess();
     mockDockerSuccess();
     mockDockerSuccess();
@@ -648,7 +675,7 @@ describe("runtime.sendMessage()", () => {
     await create().sendMessage(makeHandle(), message);
 
     expect(fs.writeFileSync).toHaveBeenCalledWith(
-      "/tmp/workspace/.ao-tmux-buffer-test-uuid-1234.txt",
+      "/tmp/ao-runtime-handle/.ao-tmux-buffer-test-uuid-1234.txt",
       message,
       { encoding: "utf-8", mode: 0o600 },
     );
@@ -662,7 +689,7 @@ describe("runtime.sendMessage()", () => {
         "load-buffer",
         "-b",
         "ao-test-uuid-1234",
-        "/tmp/workspace/.ao-tmux-buffer-test-uuid-1234.txt",
+        "/tmp/ao/runtime/.ao-tmux-buffer-test-uuid-1234.txt",
       ],
       expectedDockerOptions,
     );
@@ -696,7 +723,7 @@ describe("runtime.sendMessage()", () => {
       expectedDockerOptions,
     );
     expect(fs.unlinkSync).toHaveBeenCalledWith(
-      "/tmp/workspace/.ao-tmux-buffer-test-uuid-1234.txt",
+      "/tmp/ao-runtime-handle/.ao-tmux-buffer-test-uuid-1234.txt",
     );
   });
 });

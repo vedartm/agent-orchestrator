@@ -17,7 +17,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, request } from "node:http";
 import { createCorrelationId, type AttachInfo } from "@composio/ao-core";
 import { findTmux, validateSessionId } from "./tmux-utils.js";
-import { resolveAttachInfo } from "./attach-utils.js";
+import { buildAttachSpawnSpec, resolveAttachInfo } from "./attach-utils.js";
 import { createObserverContext, inferProjectId } from "./terminal-observability.js";
 
 /** Cached full path to tmux binary */
@@ -148,17 +148,6 @@ function waitForTtyd(port: number, sessionId: string, timeoutMs = 3000): Promise
 
     checkReady();
   });
-}
-
-function buildAttachSpawnSpec(info: AttachInfo): { program: string; args: string[] } | null {
-  if (info.program) {
-    return { program: info.program, args: info.args ?? [] };
-  }
-  if (info.command) {
-    const shell = process.env.SHELL || "/bin/sh";
-    return { program: shell, args: ["-c", info.command] };
-  }
-  return null;
 }
 
 /**

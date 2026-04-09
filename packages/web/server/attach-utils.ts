@@ -41,6 +41,17 @@ function resolveLegacyTmuxAttachInfo(sessionId: string): AttachInfo | null {
   };
 }
 
+export function buildAttachSpawnSpec(info: AttachInfo): { program: string; args: string[] } | null {
+  if (info.program) {
+    return { program: info.program, args: info.args ?? [] };
+  }
+  if (info.command) {
+    const shell = process.env.SHELL || "/bin/sh";
+    return { program: shell, args: ["-c", info.command] };
+  }
+  return null;
+}
+
 export async function resolveAttachInfo(sessionId: string): Promise<AttachInfo | null> {
   try {
     const sessionManager = await getSessionManager();
