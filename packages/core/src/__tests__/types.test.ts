@@ -8,10 +8,6 @@ describe("isOrchestratorSession", () => {
     ).toBe(true);
   });
 
-  it("falls back to orchestrator naming for legacy sessions", () => {
-    expect(isOrchestratorSession({ id: "app-orchestrator", metadata: {} }, "app")).toBe(true);
-  });
-
   it("detects numbered worktree orchestrators by prefix pattern", () => {
     expect(isOrchestratorSession({ id: "app-orchestrator-1", metadata: {} }, "app")).toBe(true);
     expect(isOrchestratorSession({ id: "app-orchestrator-42", metadata: {} }, "app")).toBe(true);
@@ -31,6 +27,26 @@ describe("isOrchestratorSession", () => {
       isOrchestratorSession(
         { id: "my-orchestrator-orchestrator-1", metadata: {} },
         "my-orchestrator",
+      ),
+    ).toBe(true);
+  });
+
+  // Regression coverage for issue #1048: stale legacy `{projectId}-orchestrator`
+  // records that lack a `role` metadata stamp must NOT be treated as orchestrators.
+  // The session-manager backfills `role: orchestrator` on read for any record loaded
+  // via sm.list(), so the only records that get rejected here are truly abandoned
+  // bare ids that never went through that backfill path.
+  it("rejects bare {projectId}-orchestrator legacy ids without role metadata", () => {
+    expect(
+      isOrchestratorSession({ id: "integrator-orchestrator", metadata: {} }, "int"),
+    ).toBe(false);
+  });
+
+  it("accepts bare legacy ids when role metadata is explicitly stamped", () => {
+    expect(
+      isOrchestratorSession(
+        { id: "integrator-orchestrator", metadata: { role: "orchestrator" } },
+        "int",
       ),
     ).toBe(true);
   });

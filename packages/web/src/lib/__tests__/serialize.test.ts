@@ -22,6 +22,7 @@ import {
   enrichSessionsMetadata,
   enrichSessionsMetadataFast,
   computeStats,
+  listDashboardOrchestrators,
 } from "../serialize";
 import { prCache, prCacheKey } from "../cache";
 import type { DashboardSession } from "../types";
@@ -1143,6 +1144,68 @@ describe("computeStats", () => {
     const stats = computeStats(sessions);
     expect(stats.totalSessions).toBe(5);
     expect(stats.workingSessions).toBe(3); // active + idle + ready
+  });
+});
+
+describe("listDashboardOrchestrators (issue #1048)", () => {
+  // ProjectConfig only needs the fields the function reads.
+  const projects = {
+    "my-app": { name: "My App", sessionPrefix: "app" },
+  } as unknown as Record<string, ProjectConfig>;
+
+  it("excludes stale {projectId}-orchestrator legacy records that lack role metadata", () => {
+    // Pre-numbered AO version wrote bare-named records without `role`. After
+    // tightening isOrchestratorSession, these must NOT leak into the dashboard's
+    // orchestrator list, otherwise the dashboard link points at a stale id while
+    // the CLI prints a different (numbered) id.
+    const sessions: Session[] = [
+      createCoreSession({
+        id: "my-app-orchestrator", // legacy bare name
+        projectId: "my-app",
+        metadata: {}, // no role stamp
+      }),
+    ];
+
+    const result = listDashboardOrchestrators(sessions, projects);
+
+    expect(result).toEqual([]);
+  });
+
+  it("includes the numbered live orchestrator with the matching id", () => {
+    const sessions: Session[] = [
+      createCoreSession({
+        id: "app-orchestrator-3",
+        projectId: "my-app",
+        metadata: { role: "orchestrator" },
+      }),
+    ];
+
+    const result = listDashboardOrchestrators(sessions, projects);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({
+      id: "app-orchestrator-3",
+      projectId: "my-app",
+      projectName: "My App",
+    });
+  });
+
+  it("still includes legacy bare records when they have explicit role metadata", () => {
+    // Records that went through SM's repairSingleSessionMetadataOnRead get
+    // role: orchestrator stamped — those must keep working so users with
+    // legacy data don't lose access to their orchestrator history.
+    const sessions: Session[] = [
+      createCoreSession({
+        id: "my-app-orchestrator",
+        projectId: "my-app",
+        metadata: { role: "orchestrator" },
+      }),
+    ];
+
+    const result = listDashboardOrchestrators(sessions, projects);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("my-app-orchestrator");
   });
 });
 
