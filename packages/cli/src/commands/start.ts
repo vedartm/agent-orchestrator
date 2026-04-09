@@ -75,7 +75,6 @@ import { formatCommandError } from "../lib/cli-errors.js";
 import { detectOpenClawInstallation } from "../lib/openclaw-probe.js";
 import { applyOpenClawCredentials } from "../lib/credential-resolver.js";
 import { findProjectForDirectory } from "../lib/project-resolution.js";
-import { formatAttachCommand } from "../lib/attach.js";
 import {
   appendStringOption,
   resolveRuntimeOverride,
