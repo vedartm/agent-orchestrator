@@ -17,7 +17,8 @@ export function registerSession(program: Command): void {
     .command("ls")
     .description("List all sessions")
     .option("-p, --project <id>", "Filter by project ID")
-    .action(async (opts: { project?: string }) => {
+    .option("-a, --all", "Include orchestrator sessions")
+    .action(async (opts: { project?: string; all?: boolean }) => {
       const config = loadConfig();
       if (opts.project && !config.projects[opts.project]) {
         console.error(chalk.red(`Unknown project: ${opts.project}`));
@@ -25,7 +26,14 @@ export function registerSession(program: Command): void {
       }
 
       const sm = await getSessionManager(config);
-      const sessions = await sm.list(opts.project);
+      const allSessions = await sm.list(opts.project);
+
+      // Filter out orchestrator sessions unless --all is passed
+      const sessions = opts.all
+        ? allSessions
+        : allSessions.filter(
+            (s) => !isOrchestratorSessionName(config, s.id, s.projectId),
+          );
 
       // Group sessions by project
       const byProject = new Map<string, typeof sessions>();
