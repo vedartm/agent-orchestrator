@@ -1144,6 +1144,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       lastActivityAt: new Date(),
       metadata: {
         ...(reusedOpenCodeSessionId ? { opencodeSessionId: reusedOpenCodeSessionId } : {}),
+        ...(spawnConfig.prompt ? { userPrompt: spawnConfig.prompt } : {}),
       },
     };
 
