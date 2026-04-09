@@ -374,10 +374,14 @@ function findRealGh() {
   const pathDirs = (process.env["PATH"] || "").split(path.delimiter);
   for (const dir of pathDirs) {
     if (!dir || path.resolve(dir) === AO_BIN_DIR) continue;
-    for (const ext of ["", ".exe", ".cmd"]) {
+    // Windows executables always have an extension (.exe/.cmd). Skip the bare
+    // no-extension case — on Windows X_OK is identical to F_OK (execute bit
+    // doesn't exist), so a bare text file named "gh" would otherwise be
+    // selected before gh.exe.
+    for (const ext of [".exe", ".cmd"]) {
       const candidate = path.join(dir, "gh" + ext);
       try {
-        fs.accessSync(candidate, fs.constants.X_OK);
+        fs.accessSync(candidate, fs.constants.F_OK);
         return candidate;
       } catch {}
     }
@@ -448,10 +452,14 @@ function findRealGit() {
   const pathDirs = (process.env["PATH"] || "").split(path.delimiter);
   for (const dir of pathDirs) {
     if (!dir || path.resolve(dir) === AO_BIN_DIR) continue;
-    for (const ext of ["", ".exe", ".cmd"]) {
+    // Windows executables always have an extension (.exe/.cmd). Skip the bare
+    // no-extension case — on Windows X_OK is identical to F_OK (execute bit
+    // doesn't exist), so a bare text file named "git" would otherwise be
+    // selected before git.exe.
+    for (const ext of [".exe", ".cmd"]) {
       const candidate = path.join(dir, "git" + ext);
       try {
-        fs.accessSync(candidate, fs.constants.X_OK);
+        fs.accessSync(candidate, fs.constants.F_OK);
         return candidate;
       } catch {}
     }
