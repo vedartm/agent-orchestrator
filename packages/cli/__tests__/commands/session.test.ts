@@ -550,10 +550,12 @@ describe("session attach", () => {
     // close handler calls process.exit(0) which throws synchronously through emit
     expect(() => mockSocket.emit("close")).toThrow("process.exit(0)");
     expect(mockNetConnect).toHaveBeenCalledWith("\\\\.\\pipe\\ao-pty-hash-app-1");
+    // Remove stdin listeners to prevent cross-test contamination
+    process.stdin.removeAllListeners("data");
     mockIsWindows.mockReturnValue(false);
   });
 
-  it.skipIf(process.platform === "win32")("handles PTY exit status and detach on Windows", async () => {
+  it.skipIf(process.platform === "win32")("handles PTY exit status on Windows", async () => {
     mockIsWindows.mockReturnValue(true);
     mockSessionManager.get.mockResolvedValue({
       id: "app-1",
@@ -582,12 +584,19 @@ describe("session attach", () => {
     await new Promise((r) => setTimeout(r, 10));
 
     // Exercise PTY exit status (MSG_STATUS_RES = 0x07, alive=false)
+    // process.exit is inside try/catch in the data handler, so the mock throw
+    // gets swallowed. Verify via side effects instead.
     const statusPayload = Buffer.from(JSON.stringify({ alive: false, exitCode: 42 }));
     const statusFrame = Buffer.alloc(5 + statusPayload.length);
     statusFrame.writeUInt8(0x07, 0);
     statusFrame.writeUInt32BE(statusPayload.length, 1);
     statusPayload.copy(statusFrame, 5);
-    expect(() => mockSocket.emit("data", statusFrame)).toThrow("process.exit(42)");
+    mockSocket.emit("data", statusFrame);
+
+    // cleanup() was called (socket destroyed)
+    expect((mockSocket as { destroy: ReturnType<typeof vi.fn> }).destroy).toHaveBeenCalled();
+    // process.exit was called with the exit code from the status message
+    expect(process.exit).toHaveBeenCalledWith(42);
 
     mockIsWindows.mockReturnValue(false);
   });
@@ -614,6 +623,12 @@ describe("session attach", () => {
     Object.assign(mockSocket, { destroy: vi.fn(), write: vi.fn() });
     mockNetConnect.mockReturnValue(mockSocket);
 
+    // Temporarily replace process.exit with a non-throwing spy so it doesn't
+    // propagate through EventEmitter and prevent subsequent listener calls.
+    // The global beforeEach spy throws, which breaks emit() propagation for
+    // listeners registered on process.stdin (a shared singleton).
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+
     void program.parseAsync(["node", "test", "session", "attach", "app-1"]);
 
     await new Promise((r) => setTimeout(r, 10));
@@ -621,9 +636,14 @@ describe("session attach", () => {
     await new Promise((r) => setTimeout(r, 10));
 
     // Ctrl+\ (0x1c) triggers detach
-    expect(() => process.stdin.emit("data", Buffer.from([0x1c]))).toThrow("process.exit(0)");
-    expect((mockSocket as { destroy: ReturnType<typeof vi.fn> }).destroy).toHaveBeenCalled();
+    process.stdin.emit("data", Buffer.from([0x1c]));
 
+    expect((mockSocket as { destroy: ReturnType<typeof vi.fn> }).destroy).toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(0);
+    exitSpy.mockRestore();
+
+    // Remove the stdin listener we attached to prevent cross-test contamination
+    process.stdin.removeAllListeners("data");
     mockIsWindows.mockReturnValue(false);
   });
 
