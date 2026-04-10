@@ -72,6 +72,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 const mockNetConnect = vi.fn();
 vi.mock("node:net", async (importOriginal) => {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
   const actual = await importOriginal<typeof import("node:net")>();
   return {
     ...actual,
@@ -519,9 +520,8 @@ describe("session attach", () => {
     Object.assign(mockSocket, { destroy: vi.fn(), write: vi.fn() });
     mockNetConnect.mockReturnValue(mockSocket);
 
-    // Suppress process.exit throw — just verify the pipe connection was made
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
-
+    // process.exit already throws via beforeEach mock — the close handler calls
+    // process.exit(0) which throws, breaking the infinite await and rejecting the promise.
     const attachPromise = program.parseAsync(["node", "test", "session", "attach", "app-1"]);
 
     await new Promise((r) => setTimeout(r, 10));
@@ -529,11 +529,8 @@ describe("session attach", () => {
     await new Promise((r) => setTimeout(r, 10));
     mockSocket.emit("close");
 
-    await attachPromise.catch(() => {});
-
+    await expect(attachPromise).rejects.toThrow("process.exit(0)");
     expect(mockNetConnect).toHaveBeenCalledWith("\\\\.\\pipe\\ao-pty-hash-app-1");
-    expect(exitSpy).toHaveBeenCalledWith(0);
-    exitSpy.mockRestore();
     mockIsWindows.mockReturnValue(false);
   });
 
@@ -559,17 +556,14 @@ describe("session attach", () => {
     Object.assign(mockSocket, { destroy: vi.fn() });
     mockNetConnect.mockReturnValue(mockSocket);
 
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
-
+    // process.exit already throws via beforeEach mock — the error handler calls
+    // process.exit(1) which throws, breaking the infinite await.
     const attachPromise = program.parseAsync(["node", "test", "session", "attach", "app-1"]);
 
     await new Promise((r) => setTimeout(r, 10));
     mockSocket.emit("error", new Error("connect ENOENT"));
 
-    await attachPromise.catch(() => {});
-
-    expect(exitSpy).toHaveBeenCalledWith(1);
-    exitSpy.mockRestore();
+    await expect(attachPromise).rejects.toThrow("process.exit(1)");
     mockIsWindows.mockReturnValue(false);
   });
 });
