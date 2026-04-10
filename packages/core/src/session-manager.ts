@@ -1030,11 +1030,13 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     const respawnStrategy = project.workerRespawnStrategy ?? "resume";
     let archived: { sessionId: string; raw: Record<string, string> } | null = null;
     let attemptNativeResume = false;
+    let didResumableOnlySearch = false;
 
     if (respawnStrategy !== "fresh" && spawnConfig.issueId) {
       // For native resume, only match resumable statuses (killed/errored/terminated).
       // For context injection, also match "done" sessions.
       if (respawnStrategy === "resume" && plugins.agent.getRestoreCommand) {
+        didResumableOnlySearch = true;
         archived = findArchivedSessionForIssue(sessionsDir, spawnConfig.issueId, selection.agentName, {
           resumableOnly: true,
         });
@@ -1214,11 +1216,11 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       }
 
       // Step 4: Context injection fallback
-      // When native resume was attempted (resumableOnly search), re-search with the broader
-      // status set — a newer "done" session may have richer context (PR URL, summary).
+      // When the initial search was resumableOnly, re-search with the broader status set —
+      // a newer "done" session may have richer context (PR URL, summary).
       // Skip re-search when archived was already found with the broad set (context-inject strategy).
       if (!launchCommand) {
-        const contextArchived = attemptNativeResume
+        const contextArchived = didResumableOnlySearch
           ? (findArchivedSessionForIssue(sessionsDir, spawnConfig.issueId!, selection.agentName) ?? archived)
           : archived;
         const context = await buildPreviousSessionContext(
