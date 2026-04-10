@@ -165,7 +165,17 @@ export function registerSession(program: Command): void {
 
         const sock = netConnect(pipePath);
 
+        // Resize handler ref — set in connect, cleaned up on exit
+        let sendResize: (() => void) | null = null;
+
+        const cleanup = () => {
+          if (process.stdin.isTTY) process.stdin.setRawMode(false);
+          if (sendResize) process.stdout.removeListener("resize", sendResize);
+          sock.destroy();
+        };
+
         sock.on("error", (err: Error) => {
+          cleanup();
           console.error(chalk.red(`Cannot attach to ${sessionName}: ${err.message}`));
           process.exit(1);
         });
@@ -224,7 +234,7 @@ export function registerSession(program: Command): void {
           });
 
           // Send terminal resize (MSG_RESIZE = 0x03)
-          const sendResize = () => {
+          sendResize = () => {
             const payload = Buffer.from(
               JSON.stringify({ cols: process.stdout.columns, rows: process.stdout.rows }),
             );
@@ -235,11 +245,6 @@ export function registerSession(program: Command): void {
           };
           process.stdout.on("resize", sendResize);
           sendResize(); // send initial size
-
-          const cleanup = () => {
-            if (process.stdin.isTTY) process.stdin.setRawMode(false);
-            sock.destroy();
-          };
 
           sock.on("close", () => {
             cleanup();

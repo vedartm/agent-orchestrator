@@ -520,16 +520,15 @@ describe("session attach", () => {
     Object.assign(mockSocket, { destroy: vi.fn(), write: vi.fn() });
     mockNetConnect.mockReturnValue(mockSocket);
 
-    // process.exit already throws via beforeEach mock — the close handler calls
-    // process.exit(0) which throws, breaking the infinite await and rejecting the promise.
-    const attachPromise = program.parseAsync(["node", "test", "session", "attach", "app-1"]);
+    // Fire the command — it awaits an infinite promise, so don't await it.
+    // The process.exit mock throws, which surfaces synchronously through emit().
+    void program.parseAsync(["node", "test", "session", "attach", "app-1"]);
 
     await new Promise((r) => setTimeout(r, 10));
     mockSocket.emit("connect");
     await new Promise((r) => setTimeout(r, 10));
-    mockSocket.emit("close");
-
-    await expect(attachPromise).rejects.toThrow("process.exit(0)");
+    // close handler calls process.exit(0) which throws synchronously through emit
+    expect(() => mockSocket.emit("close")).toThrow("process.exit(0)");
     expect(mockNetConnect).toHaveBeenCalledWith("\\\\.\\pipe\\ao-pty-hash-app-1");
     mockIsWindows.mockReturnValue(false);
   });
@@ -556,14 +555,12 @@ describe("session attach", () => {
     Object.assign(mockSocket, { destroy: vi.fn() });
     mockNetConnect.mockReturnValue(mockSocket);
 
-    // process.exit already throws via beforeEach mock — the error handler calls
-    // process.exit(1) which throws, breaking the infinite await.
-    const attachPromise = program.parseAsync(["node", "test", "session", "attach", "app-1"]);
+    // Fire the command — it awaits an infinite promise, so don't await it.
+    void program.parseAsync(["node", "test", "session", "attach", "app-1"]);
 
     await new Promise((r) => setTimeout(r, 10));
-    mockSocket.emit("error", new Error("connect ENOENT"));
-
-    await expect(attachPromise).rejects.toThrow("process.exit(1)");
+    // error handler calls process.exit(1) which throws synchronously through emit
+    expect(() => mockSocket.emit("error", new Error("connect ENOENT"))).toThrow("process.exit(1)");
     mockIsWindows.mockReturnValue(false);
   });
 });
