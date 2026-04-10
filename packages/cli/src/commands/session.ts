@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { connect as netConnect } from "node:net";
 import chalk from "chalk";
 import type { Command } from "commander";
-import { generateConfigHash, isWindows, loadConfig, SessionNotRestorableError, WorkspaceMissingError } from "@aoagents/ao-core";
+import { generateConfigHash, isOrchestratorSession, isWindows, loadConfig, SessionNotRestorableError, WorkspaceMissingError } from "@aoagents/ao-core";
 import { DEFAULT_PORT } from "../lib/constants.js";
 import { git, getTmuxActivity, tmux } from "../lib/shell.js";
 import { formatAge } from "../lib/format.js";
@@ -103,7 +103,11 @@ export function registerSession(program: Command): void {
           const prUrl = s.metadata["pr"] ?? null;
 
           if (opts.json) {
-            const role = isOrchestratorSessionName(config, s.id, projectId)
+            const role = isOrchestratorSession(
+              s,
+              project.sessionPrefix ?? projectId,
+              allSessionPrefixes,
+            )
               ? "orchestrator"
               : "worker";
 

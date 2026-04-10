@@ -386,8 +386,9 @@ export function toClaudeProjectPath(workspacePath: string): string {
   // Claude Code encodes project paths by replacing special chars with dashes.
   // On Windows: C:\Users\foo → C--Users-foo (colon becomes dash, backslash becomes dash)
   // On Unix: /home/foo → -home-foo (leading slash becomes leading dash)
+  // Verified against actual ~/.claude/projects/ directory names on both platforms.
   const normalized = workspacePath.replace(/\\/g, "/");
-  return normalized.replace(/[/:. ]/g, "-");
+  return normalized.replace(/[/:.]/g, "-");
 }
 
 /** Find the most recently modified .jsonl session file in a directory */
