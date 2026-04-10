@@ -1109,6 +1109,8 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           }
         } else {
           wsInfo = await plugins.workspace.create(wsConfig);
+          // Fresh workspace — native resume won't work for CWD-dependent agents
+          if (attemptNativeResume) attemptNativeResume = false;
         }
         workspacePath = wsInfo.path;
 

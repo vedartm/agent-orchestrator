@@ -189,6 +189,7 @@ describe("restore", () => {
 
     const mockWorkspaceNoRestore: Workspace = {
       ...mockWorkspace,
+      restore: undefined,
       exists: vi.fn().mockResolvedValue(false),
       // No restore method
     };
