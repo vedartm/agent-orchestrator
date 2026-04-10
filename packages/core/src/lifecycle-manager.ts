@@ -956,6 +956,64 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         }
       }
     }
+
+    // --- Plain PR conversation comments (not review threads) ---
+    // Handles the case where PR author can't submit a formal review on their own PR.
+    if (scm.getConversationComments) {
+      try {
+        const conversationComments = await scm.getConversationComments(session.pr);
+        if (conversationComments.length > 0) {
+          const convFingerprint = makeFingerprint(
+            conversationComments.map((c) => String(c.id)),
+          );
+          const lastConvFingerprint =
+            session.metadata["lastConversationCommentFingerprint"] ?? "";
+
+          if (convFingerprint && convFingerprint !== lastConvFingerprint) {
+            updateSessionMetadata(session, {
+              lastConversationCommentFingerprint: convFingerprint,
+            });
+
+            // Build message from new comments
+            const newComments = conversationComments.filter((c) => {
+              const lastDispatchAt =
+                session.metadata["lastConversationDispatchAt"] ?? "";
+              return !lastDispatchAt || String(c.createdAt) > lastDispatchAt;
+            });
+
+            if (newComments.length > 0) {
+              const commentBodies = newComments
+                .map((c) => `@${c.author}: ${c.body}`)
+                .join("\n\n");
+              const message = `PR comments to address:\n\n${commentBodies}`;
+
+              const convReactionConfig = getReactionConfigForSession(
+                session,
+                "changes-requested",
+              );
+              if (
+                convReactionConfig?.action === "send-to-agent" &&
+                convReactionConfig.auto !== false
+              ) {
+                const result = await executeReaction(
+                  session.id,
+                  session.projectId,
+                  "pr-comments",
+                  { ...convReactionConfig, message },
+                );
+                if (result.success) {
+                  updateSessionMetadata(session, {
+                    lastConversationDispatchAt: new Date().toISOString(),
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        // Conversation comments are best-effort
+      }
+    }
   }
 
   /**

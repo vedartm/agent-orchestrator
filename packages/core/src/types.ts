@@ -742,6 +742,9 @@ export interface SCM {
   /** Get automated review comments (bots, linters, security scanners) */
   getAutomatedComments(pr: PRInfo): Promise<AutomatedComment[]>;
 
+  /** Get plain PR conversation comments (not review threads, not bot comments) */
+  getConversationComments?(pr: PRInfo): Promise<ReviewComment[]>;
+
   // --- Merge Readiness ---
 
   /** Check if PR is ready to merge */

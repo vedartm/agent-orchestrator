@@ -1041,6 +1041,31 @@ function createGitHubSCM(): SCM {
     ): Promise<Map<string, PREnrichmentData>> {
       return enrichSessionsPRBatchImpl(prs, observer);
     },
+
+    async getConversationComments(pr: PRInfo): Promise<ReviewComment[]> {
+      try {
+        const raw = await gh([
+          "api",
+          `repos/${pr.owner}/${pr.repo}/issues/${pr.number}/comments`,
+          "--jq",
+          `[.[] | select(.user.type != "Bot") | {id: .id, body: .body, author: .user.login, path: "", line: null, url: .html_url, createdAt: .created_at, severity: "comment"}]`,
+        ]);
+        const parsed: unknown = JSON.parse(raw || "[]");
+        if (!Array.isArray(parsed)) return [];
+        return parsed.map((c: Record<string, unknown>) => ({
+          id: String(c.id ?? ""),
+          body: String(c.body ?? ""),
+          author: String(c.author ?? ""),
+          path: "",
+          line: undefined,
+          isResolved: false,
+          url: String(c.url ?? ""),
+          createdAt: new Date(String(c.createdAt ?? "")),
+        }));
+      } catch {
+        return [];
+      }
+    },
   };
 }
 
