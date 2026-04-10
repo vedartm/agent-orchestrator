@@ -199,11 +199,17 @@ export function createWorkerLoop(deps: WorkerLoopDeps): WorkerLoop {
         if (activeForRepo >= maxConcurrent) continue;
 
         const issues = await tracker.listIssues(
-          { labels: ["worker-ready", `repo:${repoName}`], state: "open" },
+          { labels: ["worker-ready"], state: "open" },
           project,
         );
 
         for (const issue of issues) {
+          // Client-side filter: must have BOTH worker-ready AND repo:<name>
+          // Linear's label filter is OR-based, so we verify here
+          if (!issue.labels.includes("worker-ready") || !issue.labels.includes(`repo:${repoName}`)) {
+            continue;
+          }
+
           // Skip already processing or processed
           if (processedIssues.has(issue.id)) continue;
           if (activeWorkers.some((w) => w.issueId === issue.id)) continue;

@@ -105,20 +105,27 @@ async function runPhase(
 
 function buildPlanPrompt(config: WorkerPipelineConfig, failureContext?: string): string {
   const base = [
-    "You are a planning agent. Read the ticket and explore the codebase.",
-    "Produce a step-by-step implementation plan. Do NOT implement anything.",
+    "You are a planning agent. Your job is to explore the codebase and produce an implementation plan.",
+    "",
+    "RULES:",
+    "- Do NOT ask clarifying questions. Make reasonable assumptions and proceed.",
+    "- Do NOT implement anything. Only produce the plan.",
+    "- Explore the repo thoroughly — read relevant files, understand the patterns, then plan.",
+    "- If something is ambiguous, pick the most reasonable interpretation and note your assumption.",
     "",
     `Ticket: ${config.ticketDescription}`,
+    "",
     `Acceptance Criteria:\n${config.acceptanceCriteria.join("\n")}`,
     "",
-    "Output your plan as structured markdown with:",
+    "Explore the codebase, then output your plan as structured markdown with:",
     "1. Step-by-step implementation steps",
     "2. Files to modify/create",
     "3. Key code changes per file",
+    "4. Any assumptions you made",
   ];
 
   if (failureContext) {
-    base.push("", `Previous attempt failed: ${failureContext}. Re-plan from scratch.`);
+    base.push("", `Previous attempt failed: ${failureContext}. Re-plan from scratch with a different approach.`);
   }
 
   return base.join("\n");
