@@ -169,6 +169,10 @@ export { predictFileImpact } from "./file-impact.js";
 export { createDependencyTracker } from "./dependency-tracker.js";
 export type { DependencyTracker } from "./dependency-tracker.js";
 
+// Worker loop — polls for worker-ready sub-tickets and runs pipeline
+export { createWorkerLoop } from "./worker-loop.js";
+export type { WorkerLoop, WorkerLoopDeps } from "./worker-loop.js";
+
 // Worker pipeline — three-phase Plan/Execute/Test agent loop
 export { runWorkerPipeline, waitForSession } from "./worker-pipeline.js";
 export type {

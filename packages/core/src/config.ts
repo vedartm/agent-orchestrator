@@ -262,6 +262,13 @@ const OrchestratorLoopConfigSchema = z.object({
   sequencingRules: z.array(SequencingRuleSchema).default([]),
 });
 
+const WorkerLoopConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  pollIntervalMs: z.number().positive().default(600_000),
+  maxConcurrent: z.number().positive().default(1),
+  maxRetries: z.number().positive().default(3),
+});
+
 const OrchestratorConfigSchema = z.object({
   port: z.number().default(3000),
   terminalPort: z.number().optional(),
@@ -277,6 +284,7 @@ const OrchestratorConfigSchema = z.object({
   notificationRouting: z.record(z.array(z.string())).default({}),
   reactions: z.record(ReactionConfigSchema).default({}),
   orchestratorLoop: OrchestratorLoopConfigSchema.optional(),
+  workerLoop: WorkerLoopConfigSchema.optional(),
 });
 
 // =============================================================================

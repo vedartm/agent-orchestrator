@@ -659,6 +659,15 @@ export interface OrchestratorLoopConfig {
   sequencingRules: SequencingRule[];
 }
 
+/** Worker loop configuration — polls for worker-ready sub-tickets and runs pipeline */
+export interface WorkerLoopConfig {
+  enabled: boolean;
+  pollIntervalMs: number;
+  /** Max concurrent worker pipelines per repo */
+  maxConcurrent?: number;
+  maxRetries?: number;
+}
+
 // =============================================================================
 // SCM — Plugin Slot 5
 // =============================================================================
@@ -1133,6 +1142,9 @@ export interface OrchestratorConfig {
 
   /** Multi-repo orchestrator loop configuration */
   orchestratorLoop?: OrchestratorLoopConfig;
+
+  /** Worker loop — polls for worker-ready sub-tickets and runs Plan/Execute/Test pipeline */
+  workerLoop?: WorkerLoopConfig;
 
   /**
    * Internal: External plugin entries collected from inline tracker/scm/notifier configs.

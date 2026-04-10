@@ -31,6 +31,7 @@ import {
   isOrchestratorSession,
   isTerminalSession,
   createOrchestratorLoop,
+  createWorkerLoop,
   ConfigNotFoundError,
   type OrchestratorConfig,
   type ProjectConfig,
@@ -1035,6 +1036,42 @@ async function runStartup(
       spinner.succeed(`Orchestrator loop started (polling every ${loopConfig.pollIntervalMs / 1000}s)`);
     } catch (err) {
       spinner.fail(`Orchestrator loop failed to start: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // Start worker loop if configured
+  if (config.workerLoop?.enabled && config.orchestratorLoop) {
+    try {
+      const { getPluginRegistry } = await import("../lib/create-session-manager.js");
+      const registry = await getPluginRegistry(config);
+      const sm = await getSessionManager(config);
+      const wLoop = createWorkerLoop({
+        config,
+        loopConfig: config.orchestratorLoop,
+        workerConfig: config.workerLoop,
+        sessionManager: sm,
+        getTracker(pid: string) {
+          const p = config.projects[pid];
+          if (!p?.tracker?.plugin) throw new Error(`No tracker for project ${pid}`);
+          const tracker = registry.get<import("@aoagents/ao-core").Tracker>("tracker", p.tracker.plugin);
+          if (!tracker) throw new Error(`Tracker plugin '${p.tracker.plugin}' not found`);
+          return tracker;
+        },
+        getProject(pid: string) {
+          const p = config.projects[pid];
+          if (!p) throw new Error(`Unknown project: ${pid}`);
+          return p;
+        },
+        getWorkspace(pid: string) {
+          const p = config.projects[pid];
+          const wsName = p?.workspace ?? config.defaults.workspace;
+          return registry.get<import("@aoagents/ao-core").Workspace>("workspace", wsName);
+        },
+      });
+      wLoop.start(config.workerLoop.pollIntervalMs);
+      spinner.succeed(`Worker loop started (polling every ${config.workerLoop.pollIntervalMs / 1000}s)`);
+    } catch (err) {
+      spinner.fail(`Worker loop failed to start: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
