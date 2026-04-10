@@ -648,7 +648,42 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
               escalated: false,
             };
           } catch {
-            // Send failed — allow retry on next poll cycle (don't escalate immediately)
+            // Send failed — session may be dead. Try to respawn with review context.
+            try {
+              const session = await sessionManager.get(sessionId);
+              if (session && TERMINAL_STATUSES.has(session.status)) {
+                const project = config.projects[session.projectId];
+                if (project && session.workspacePath && session.branch) {
+                  console.error(
+                    `[lifecycle] Session ${sessionId} is dead — respawning for review feedback`,
+                  );
+                  const newSession = await sessionManager.spawn({
+                    projectId: session.projectId,
+                    issueId: session.metadata["issueId"],
+                    branch: session.branch,
+                    workspacePath: session.workspacePath,
+                    agent: session.metadata["agent"] ?? undefined,
+                    prompt: [
+                      "A reviewer left comments on your PR. Address them.",
+                      "",
+                      reactionConfig.message,
+                    ].join("\n"),
+                  });
+                  console.error(
+                    `[lifecycle] Respawned as ${newSession.id} for ${sessionId}`,
+                  );
+                  return {
+                    reactionType: reactionKey,
+                    success: true,
+                    action: "send-to-agent",
+                    message: reactionConfig.message,
+                    escalated: false,
+                  };
+                }
+              }
+            } catch {
+              // Respawn also failed — fall through to retry
+            }
             return {
               reactionType: reactionKey,
               success: false,

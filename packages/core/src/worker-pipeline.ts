@@ -87,17 +87,22 @@ async function runPhase(
   deps: WorkerPipelineDeps,
   spawnConfig: SessionSpawnConfig,
   phaseName: string,
+  options?: { keepAlive?: boolean },
 ): Promise<Session | null> {
   const session = await deps.sessionManager.spawn(spawnConfig);
   console.error(`[worker-pipeline] ${phaseName} spawned: ${session.id}`);
 
   const result = await waitForSession(deps.sessionManager, session.id);
 
-  // Best-effort kill to clean up resources
-  try {
-    await deps.sessionManager.kill(session.id);
-  } catch (_err) {
-    console.error(`[worker-pipeline] failed to kill ${phaseName} session ${session.id}`);
+  // Kill session unless keepAlive (e.g. Test phase leaves session for PR reviews)
+  if (!options?.keepAlive) {
+    try {
+      await deps.sessionManager.kill(session.id);
+    } catch (_err) {
+      console.error(`[worker-pipeline] failed to kill ${phaseName} session ${session.id}`);
+    }
+  } else {
+    console.error(`[worker-pipeline] ${phaseName} session ${session.id} left alive for reviews`);
   }
 
   return result;
@@ -162,7 +167,7 @@ export async function runWorkerPipeline(
       branch: config.branch,
       workspacePath: config.workspacePath,
       agent: "claude-code",
-      model: "opus",
+      model: "sonnet",
       prompt: buildPlanPrompt(config, failureContext),
     }, "plan");
 
@@ -197,6 +202,8 @@ export async function runWorkerPipeline(
     }
 
     // ── Phase 3: TEST ──────────────────────────────────────────────────────
+    // keepAlive: leave session running after PR creation so lifecycle manager
+    // can forward review comments to it (even days later if session survives)
     const testSession = await runPhase(deps, {
       projectId: deps.projectId,
       issueId: config.issueId,
@@ -211,7 +218,7 @@ export async function runWorkerPipeline(
         "If tests pass, create a PR to develop branch.",
         "If tests fail, report the failure details.",
       ].join("\n"),
-    }, "test");
+    }, "test", { keepAlive: true });
 
     // Check for PR creation
     const prUrl = testSession?.metadata["pr"] ?? testSession?.pr?.url;
