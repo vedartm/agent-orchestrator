@@ -84,6 +84,11 @@ export default tseslint.config(
   {
     files: ["packages/web/**/*.tsx", "packages/web/**/*.ts"],
     plugins: { "@next/next": nextPlugin },
+    settings: {
+      next: {
+        rootDir: "packages/web",
+      },
+    },
     rules: {
       ...nextPlugin.configs.recommended.rules,
       "no-console": "off",
