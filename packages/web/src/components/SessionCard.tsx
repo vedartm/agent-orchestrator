@@ -491,9 +491,7 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
 
       <div className="session-card__body flex min-h-0 flex-1 flex-col">
         <div className="card__title-wrap">
-          <p
-            className={cn("card__title", level === "working" && "card__title--dim")}
-          >
+          <p className="card__title">
             {title}
           </p>
         </div>
