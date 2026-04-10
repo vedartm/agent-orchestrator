@@ -1,11 +1,14 @@
 /**
  * File Impact Predictor — LLM-driven prediction of which files a task will touch.
  *
- * Uses the Anthropic SDK to analyze a task description against repo context
- * and return a list of likely impacted file paths.
+ * Uses Claude Code CLI (`claude -p`) to analyze a task description against repo
+ * context and return a list of likely impacted file paths.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 const FILE_IMPACT_SYSTEM = `You predict which files in a repository a given task will likely touch.
 
@@ -23,40 +26,33 @@ Respond with ONLY a JSON array of strings. Example:
 Nothing else — just the JSON array.`;
 
 /**
- * Predict which files a task will likely touch using LLM analysis.
+ * Predict which files a task will likely touch using Claude Code CLI.
  *
  * @param taskDescription - Description of the task to analyze
  * @param repoContext - Context about the repository structure and contents
- * @param model - Anthropic model to use (default: claude-sonnet-4-20250514)
+ * @param model - Model to use (default: sonnet)
  * @returns Array of predicted file paths, or empty array if prediction fails
  */
 export async function predictFileImpact(
   taskDescription: string,
   repoContext: string,
-  model = "claude-sonnet-4-20250514",
+  model = "sonnet",
 ): Promise<string[]> {
-  const client = new Anthropic();
-
-  const res = await client.messages.create({
-    model,
-    max_tokens: 1024,
-    system: FILE_IMPACT_SYSTEM,
-    messages: [
-      {
-        role: "user",
-        content: `Repository context:\n${repoContext}\n\nTask:\n${taskDescription}`,
-      },
-    ],
-  });
-
-  const text = res.content[0].type === "text" ? res.content[0].text.trim() : "[]";
-  const jsonMatch = text.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) return [];
+  const prompt = `${FILE_IMPACT_SYSTEM}\n\nRepository context:\n${repoContext}\n\nTask:\n${taskDescription}`;
 
   try {
+    const { stdout } = await execFileAsync(
+      "claude",
+      ["-p", prompt, "--model", model, "--output-format", "text"],
+      { timeout: 60_000, maxBuffer: 1024 * 1024 },
+    );
+
+    const text = stdout.trim();
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) return [];
+
     const parsed: unknown = JSON.parse(jsonMatch[0]);
     if (!Array.isArray(parsed)) return [];
-    // Validate every element is a string
     if (!parsed.every((item): item is string => typeof item === "string")) return [];
     return parsed;
   } catch {

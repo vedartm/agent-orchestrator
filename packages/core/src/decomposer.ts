@@ -10,7 +10,11 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { MultiRepoDecompositionPlan, MultiRepoSubTask } from "./types.js";
+
+const execFileAsync = promisify(execFile);
 
 // =============================================================================
 // TYPES
@@ -317,13 +321,13 @@ Nothing else — just the JSON object.`;
 
 /**
  * Decompose a task across multiple repositories into self-contained sub-tasks.
+ * Uses Claude Code CLI (`claude -p`) instead of direct API calls.
  */
 export async function decomposeMultiRepo(
   taskDescription: string,
   config: MultiRepoDecomposeConfig,
 ): Promise<MultiRepoDecompositionPlan> {
-  const client = new Anthropic();
-  const model = config.model ?? "claude-opus-4";
+  const model = config.model ?? "opus";
 
   const repoContext = Object.entries(config.repos)
     .map(([name, desc]) => `- **${name}**: ${desc}`)
@@ -336,16 +340,15 @@ export async function decomposeMultiRepo(
           .join("\n")
       : "  No explicit sequencing rules.";
 
-  const userMessage = `Repos:\n${repoContext}\n\nSequencing rules:\n${sequencingContext}\n\nTask:\n${taskDescription}`;
+  const prompt = `${MULTI_REPO_DECOMPOSE_SYSTEM}\n\nRepos:\n${repoContext}\n\nSequencing rules:\n${sequencingContext}\n\nTask:\n${taskDescription}`;
 
-  const res = await client.messages.create({
-    model,
-    max_tokens: 4096,
-    system: MULTI_REPO_DECOMPOSE_SYSTEM,
-    messages: [{ role: "user", content: userMessage }],
-  });
+  const { stdout } = await execFileAsync(
+    "claude",
+    ["-p", prompt, "--model", model, "--output-format", "text"],
+    { timeout: 120_000, maxBuffer: 5 * 1024 * 1024 },
+  );
 
-  const text = res.content[0].type === "text" ? res.content[0].text.trim() : "{}";
+  const text = stdout.trim();
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     throw new Error(`Multi-repo decomposition failed — no JSON object in response: ${text}`);

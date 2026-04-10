@@ -6,7 +6,8 @@
  * pattern from lifecycle-manager.ts.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 import type {
   OrchestratorConfig,
@@ -47,10 +48,12 @@ export interface OrchestratorLoop {
 }
 
 // =============================================================================
-// CLARITY CHECK
+// CLARITY CHECK (via Claude Code CLI)
 // =============================================================================
 
-const CLARITY_CHECK_SYSTEM = `You assess whether a software task ticket is clear enough for an AI agent to work on autonomously.
+const execFileAsync = promisify(execFile);
+
+const CLARITY_CHECK_PROMPT = `You assess whether a software task ticket is clear enough for an AI agent to work on autonomously.
 
 A ticket is CLEAR if it has:
 - A specific, actionable goal
@@ -71,27 +74,22 @@ or
 Nothing else — just the JSON object.`;
 
 async function checkTicketClarity(
-  client: Anthropic,
   model: string,
   issue: Issue,
 ): Promise<{ clear: boolean; reason?: string }> {
-  const res = await client.messages.create({
-    model,
-    max_tokens: 256,
-    system: CLARITY_CHECK_SYSTEM,
-    messages: [
-      {
-        role: "user",
-        content: `Title: ${issue.title}\n\nDescription:\n${issue.description}`,
-      },
-    ],
-  });
-
-  const text = res.content[0].type === "text" ? res.content[0].text.trim() : "{}";
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) return { clear: true };
+  const prompt = `${CLARITY_CHECK_PROMPT}\n\nTitle: ${issue.title}\n\nDescription:\n${issue.description}`;
 
   try {
+    const { stdout } = await execFileAsync(
+      "claude",
+      ["-p", prompt, "--model", model, "--output-format", "text"],
+      { timeout: 60_000, maxBuffer: 1024 * 1024 },
+    );
+
+    const text = stdout.trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { clear: true };
+
     const parsed: unknown = JSON.parse(jsonMatch[0]);
     if (typeof parsed === "object" && parsed !== null && "clear" in parsed) {
       const result = parsed as { clear: unknown; reason?: unknown };
@@ -101,7 +99,7 @@ async function checkTicketClarity(
       };
     }
   } catch {
-    // Parse failure → assume clear to avoid blocking
+    // CLI failure → assume clear to avoid blocking
   }
 
   return { clear: true };
@@ -174,9 +172,8 @@ export function createOrchestratorLoop(deps: OrchestratorLoopDeps): Orchestrator
         // ---------------------------------------------------------------------
         // Phase 2: Clarity check
         // ---------------------------------------------------------------------
-        const clarificationModel = loopConfig.clarificationModel ?? "claude-sonnet-4-20250514";
-        const client = new Anthropic();
-        const clarity = await checkTicketClarity(client, clarificationModel, issue);
+        const clarificationModel = loopConfig.clarificationModel ?? "sonnet";
+        const clarity = await checkTicketClarity(clarificationModel, issue);
 
         if (!clarity.clear) {
           console.error(
