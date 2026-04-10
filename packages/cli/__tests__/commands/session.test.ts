@@ -27,6 +27,7 @@ const {
   mockGh,
   mockExec,
   mockSpawn,
+  mockIsWindows,
   mockConfigRef,
   mockSessionManager,
   sessionsDirRef,
@@ -36,6 +37,7 @@ const {
   mockGh: vi.fn(),
   mockExec: vi.fn(),
   mockSpawn: vi.fn(),
+  mockIsWindows: vi.fn().mockReturnValue(false),
   mockConfigRef: { current: null as Record<string, unknown> | null },
   mockSessionManager: {
     list: vi.fn(),
@@ -68,6 +70,15 @@ vi.mock("node:child_process", async (importOriginal) => {
   };
 });
 
+const mockNetConnect = vi.fn();
+vi.mock("node:net", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:net")>();
+  return {
+    ...actual,
+    connect: (...args: unknown[]) => mockNetConnect(...args),
+  };
+});
+
 vi.mock("../../src/lib/shell.js", () => ({
   tmux: mockTmux,
   exec: mockExec,
@@ -93,6 +104,8 @@ vi.mock("@aoagents/ao-core", async (importOriginal) => {
   return {
     ...actual,
     loadConfig: () => mockConfigRef.current,
+    isWindows: () => mockIsWindows(),
+    generateConfigHash: () => "abcdef123456",
   };
 });
 
@@ -475,12 +488,89 @@ describe("session attach", () => {
   });
 
   it("fails when tmux session does not exist", async () => {
+    mockIsWindows.mockReturnValue(false);
     mockSessionManager.get.mockResolvedValue(null);
     mockTmux.mockResolvedValue(null);
 
     await expect(
       program.parseAsync(["node", "test", "session", "attach", "unknown-1"]),
     ).rejects.toThrow("process.exit(1)");
+  });
+
+  it.skipIf(process.platform === "win32")("connects to named pipe on Windows", async () => {
+    mockIsWindows.mockReturnValue(true);
+    mockSessionManager.get.mockResolvedValue({
+      id: "app-1",
+      projectId: "my-app",
+      status: "working",
+      activity: null,
+      branch: null,
+      issueId: null,
+      pr: null,
+      workspacePath: null,
+      runtimeHandle: { id: "hash-app-1", runtimeName: "process", data: { pipePath: "\\\\.\\pipe\\ao-pty-hash-app-1" } },
+      agentInfo: null,
+      createdAt: new Date(),
+      lastActivityAt: new Date(),
+      metadata: {},
+    } satisfies Session);
+
+    const mockSocket = new EventEmitter();
+    Object.assign(mockSocket, { destroy: vi.fn(), write: vi.fn() });
+    mockNetConnect.mockReturnValue(mockSocket);
+
+    // Suppress process.exit throw — just verify the pipe connection was made
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+
+    const attachPromise = program.parseAsync(["node", "test", "session", "attach", "app-1"]);
+
+    await new Promise((r) => setTimeout(r, 10));
+    mockSocket.emit("connect");
+    await new Promise((r) => setTimeout(r, 10));
+    mockSocket.emit("close");
+
+    await attachPromise.catch(() => {});
+
+    expect(mockNetConnect).toHaveBeenCalledWith("\\\\.\\pipe\\ao-pty-hash-app-1");
+    expect(exitSpy).toHaveBeenCalledWith(0);
+    exitSpy.mockRestore();
+    mockIsWindows.mockReturnValue(false);
+  });
+
+  it.skipIf(process.platform === "win32")("shows error when pipe not available on Windows", async () => {
+    mockIsWindows.mockReturnValue(true);
+    mockSessionManager.get.mockResolvedValue({
+      id: "app-1",
+      projectId: "my-app",
+      status: "working",
+      activity: null,
+      branch: null,
+      issueId: null,
+      pr: null,
+      workspacePath: null,
+      runtimeHandle: { id: "hash-app-1", runtimeName: "process", data: { pipePath: "\\\\.\\pipe\\ao-pty-hash-app-1" } },
+      agentInfo: null,
+      createdAt: new Date(),
+      lastActivityAt: new Date(),
+      metadata: {},
+    } satisfies Session);
+
+    const mockSocket = new EventEmitter();
+    Object.assign(mockSocket, { destroy: vi.fn() });
+    mockNetConnect.mockReturnValue(mockSocket);
+
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+
+    const attachPromise = program.parseAsync(["node", "test", "session", "attach", "app-1"]);
+
+    await new Promise((r) => setTimeout(r, 10));
+    mockSocket.emit("error", new Error("connect ENOENT"));
+
+    await attachPromise.catch(() => {});
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+    mockIsWindows.mockReturnValue(false);
   });
 });
 
