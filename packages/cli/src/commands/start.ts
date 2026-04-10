@@ -1012,25 +1012,30 @@ async function runStartup(
   // Start orchestrator loop if configured
   if (config.orchestratorLoop?.enabled) {
     const loopConfig = config.orchestratorLoop;
-    const loop = createOrchestratorLoop({
-      config,
-      loopConfig,
-      getTracker(pid: string) {
-        // Tracker resolution deferred to runtime — plugins loaded by lifecycle service
-        const p = config.projects[pid];
-        if (!p?.tracker) throw new Error(`No tracker configured for project ${pid}`);
-        // The tracker is resolved via the plugin registry at runtime
-        // For now, return a placeholder that will be wired properly when plugin registry is available
-        throw new Error("Tracker resolution via plugin registry not yet wired");
-      },
-      getProject(pid: string) {
-        const p = config.projects[pid];
-        if (!p) throw new Error(`Unknown project: ${pid}`);
-        return p;
-      },
-    });
-    loop.start(loopConfig.pollIntervalMs);
-    spinner.succeed(`Orchestrator loop started (polling every ${loopConfig.pollIntervalMs / 1000}s)`);
+    try {
+      const { getPluginRegistry } = await import("../lib/create-session-manager.js");
+      const registry = await getPluginRegistry(config);
+      const loop = createOrchestratorLoop({
+        config,
+        loopConfig,
+        getTracker(pid: string) {
+          const p = config.projects[pid];
+          if (!p?.tracker?.plugin) throw new Error(`No tracker configured for project ${pid}`);
+          const tracker = registry.get<import("@aoagents/ao-core").Tracker>("tracker", p.tracker.plugin);
+          if (!tracker) throw new Error(`Tracker plugin '${p.tracker.plugin}' not found for project ${pid}`);
+          return tracker;
+        },
+        getProject(pid: string) {
+          const p = config.projects[pid];
+          if (!p) throw new Error(`Unknown project: ${pid}`);
+          return p;
+        },
+      });
+      loop.start(loopConfig.pollIntervalMs);
+      spinner.succeed(`Orchestrator loop started (polling every ${loopConfig.pollIntervalMs / 1000}s)`);
+    } catch (err) {
+      spinner.fail(`Orchestrator loop failed to start: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   // Create orchestrator session (unless --no-orchestrator or existing orchestrators found)
