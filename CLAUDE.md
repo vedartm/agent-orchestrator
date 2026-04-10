@@ -114,6 +114,19 @@ agent-orchestrator.yaml -> Config Loader (Zod) -> Plugin Registry
   -> Dashboard (React + xterm.js)
 ```
 
+### Multi-Repo Orchestration (opt-in)
+
+When `orchestratorLoop` and `workerLoop` are enabled in config:
+
+```
+Linear "agent-ready" ticket
+  → Orchestrator loop (clarity check → decompose → create sub-tickets)
+  → Worker loop (poll "worker-ready" → Plan/Execute/Test pipeline → PR)
+  → Lifecycle manager (CI reactions, review comment forwarding, auto-respawn)
+```
+
+Core modules: `orchestrator-loop.ts`, `worker-loop.ts`, `worker-pipeline.ts`, `dependency-tracker.ts`, `file-impact.ts`. All use Claude Code CLI for LLM calls (no separate API key). See [docs/MULTI_REPO_ORCHESTRATION.md](docs/MULTI_REPO_ORCHESTRATION.md).
+
 ### Storage
 
 No database. Flat files + memory:
@@ -195,6 +208,12 @@ Hash = SHA-256 of config directory (first 12 chars). Prevents collision across m
 | `packages/core/src/config.ts` | YAML config loading with Zod validation |
 | `packages/core/src/plugin-registry.ts` | Plugin discovery and resolution |
 | `packages/core/src/index.ts` | Core public API (stable, do not break) |
+| `packages/core/src/orchestrator-loop.ts` | Multi-repo ticket polling, clarity check, decomposition |
+| `packages/core/src/worker-loop.ts` | Worker-ready sub-ticket polling, pipeline dispatch |
+| `packages/core/src/worker-pipeline.ts` | Three-phase Plan/Execute/Test agent pipeline |
+| `packages/core/src/dependency-tracker.ts` | In-memory DAG for cross-repo sequencing |
+| `packages/core/src/file-impact.ts` | LLM file impact prediction |
+| `packages/core/src/decomposer.ts` | Task decomposition (single-repo + multi-repo) |
 | `packages/web/src/components/Dashboard.tsx` | Main dashboard view |
 | `packages/web/src/components/SessionDetail.tsx` | Session detail view |
 | `packages/web/src/components/DirectTerminal.tsx` | xterm.js terminal with WebSocket |

@@ -154,6 +154,42 @@ Seven plugin slots. Lifecycle stays in core.
 
 All interfaces defined in [`packages/core/src/types.ts`](packages/core/src/types.ts). A plugin implements one interface and exports a `PluginModule`. That's it.
 
+## Multi-Repo Orchestration
+
+For teams with multiple repos (e.g., server + web-app + dashboard), Agent Orchestrator can automatically decompose tickets across repos and run a three-phase worker pipeline.
+
+```
+Label a ticket "agent-ready" in Linear
+    → Orchestrator checks clarity, decomposes into per-repo sub-tickets
+    → Workers run: Plan (Sonnet) → Execute (OpenCode) → Test (Sonnet) → PR
+    → Cross-repo sequencing ensures server changes land before frontend
+    → PR comments auto-forwarded to agents for fixes
+```
+
+Add `orchestratorLoop` and `workerLoop` to your config:
+
+```yaml
+orchestratorLoop:
+  enabled: true
+  pollIntervalMs: 600000
+  repos:
+    server: { projectId: my-server }
+    web-app: { projectId: my-web }
+  sequencingRules:
+    - upstream: server
+      downstream: [web-app]
+
+workerLoop:
+  enabled: true
+  pollIntervalMs: 600000
+  maxConcurrent: 1
+  maxRetries: 3
+```
+
+Both blocks are optional — without them, everything works as before.
+
+See [Multi-Repo Orchestration Guide](docs/MULTI_REPO_ORCHESTRATION.md) for the full reference.
+
 ## Why Agent Orchestrator?
 
 Running one AI agent in a terminal is easy. Running 30 across different issues, branches, and PRs is a coordination problem.
@@ -170,6 +206,7 @@ Running one AI agent in a terminal is easy. Running 30 across different issues, 
 | [CLI Reference](docs/CLI.md)             | All `ao` commands (mostly used by the orchestrator agent)    |
 | [Examples](examples/)                    | Config templates (GitHub, Linear, multi-project, auto-merge) |
 | [Development Guide](docs/DEVELOPMENT.md) | Architecture, conventions, plugin pattern                    |
+| [Multi-Repo Orchestration](docs/MULTI_REPO_ORCHESTRATION.md) | Automated ticket decomposition, worker pipeline, cross-repo sequencing |
 | [Contributing](CONTRIBUTING.md)          | How to contribute, build plugins, PR process                 |
 
 ## Development
