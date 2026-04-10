@@ -103,11 +103,7 @@ export function registerSession(program: Command): void {
           const prUrl = s.metadata["pr"] ?? null;
 
           if (opts.json) {
-            const role = isOrchestratorSession(
-              s,
-              project.sessionPrefix ?? projectId,
-              allSessionPrefixes,
-            )
+            const role = isOrchestratorSessionName(config, s.id, projectId)
               ? "orchestrator"
               : "worker";
 
