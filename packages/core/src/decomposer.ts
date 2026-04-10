@@ -10,6 +10,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import type { MultiRepoDecompositionPlan, MultiRepoSubTask } from "./types.js";
 
 // =============================================================================
 // TYPES
@@ -273,4 +274,119 @@ export function propagateStatus(task: TaskNode): void {
   } else if (task.children.some((c) => c.status === "running" || c.status === "done")) {
     task.status = "running";
   }
+}
+
+// =============================================================================
+// MULTI-REPO DECOMPOSITION
+// =============================================================================
+
+export interface MultiRepoDecomposeConfig {
+  model?: string; // default "claude-opus-4"
+  repos: Record<string, string>; // repo name -> context/description
+  sequencingRules: Array<{ upstream: string; downstream: string[] }>;
+}
+
+const MULTI_REPO_DECOMPOSE_SYSTEM = `You are a multi-repo task decomposition engine.
+
+You decompose a high-level task into per-repo sub-tasks for a distributed system.
+
+CRITICAL RULES:
+- Each sub-task MUST be completely self-contained. Workers only see their sub-task — never the parent ticket or other sub-tasks.
+- Include API contracts, type definitions, and acceptance criteria directly in each sub-task description.
+- If a sub-task depends on another repo's output (e.g., an API endpoint), spell out the exact contract (method, path, request/response types) in the sub-task description.
+- Respect sequencing rules: upstream repos must be completed before downstream repos can start.
+- Use the minimum number of sub-tasks needed. One sub-task per repo is typical; only split within a repo if truly independent work streams exist.
+
+Respond with a JSON object matching this shape:
+{
+  "subTasks": [
+    {
+      "title": "Short title",
+      "description": "Self-contained description with API contracts, type defs, acceptance criteria",
+      "repo": "repo-name",
+      "fileImpactList": ["src/file.ts"],
+      "dependsOn": [],
+      "acceptanceCriteria": ["criterion 1", "criterion 2"]
+    }
+  ],
+  "sequencingNotes": "Brief explanation of execution order"
+}
+
+dependsOn is an array of zero-based indices into the subTasks array.
+Nothing else — just the JSON object.`;
+
+/**
+ * Decompose a task across multiple repositories into self-contained sub-tasks.
+ */
+export async function decomposeMultiRepo(
+  taskDescription: string,
+  config: MultiRepoDecomposeConfig,
+): Promise<MultiRepoDecompositionPlan> {
+  const client = new Anthropic();
+  const model = config.model ?? "claude-opus-4";
+
+  const repoContext = Object.entries(config.repos)
+    .map(([name, desc]) => `- **${name}**: ${desc}`)
+    .join("\n");
+
+  const sequencingContext =
+    config.sequencingRules.length > 0
+      ? config.sequencingRules
+          .map((r) => `  ${r.upstream} → [${r.downstream.join(", ")}]`)
+          .join("\n")
+      : "  No explicit sequencing rules.";
+
+  const userMessage = `Repos:\n${repoContext}\n\nSequencing rules:\n${sequencingContext}\n\nTask:\n${taskDescription}`;
+
+  const res = await client.messages.create({
+    model,
+    max_tokens: 4096,
+    system: MULTI_REPO_DECOMPOSE_SYSTEM,
+    messages: [{ role: "user", content: userMessage }],
+  });
+
+  const text = res.content[0].type === "text" ? res.content[0].text.trim() : "{}";
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error(`Multi-repo decomposition failed — no JSON object in response: ${text}`);
+  }
+
+  const parsed: unknown = JSON.parse(jsonMatch[0]);
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    !("subTasks" in parsed) ||
+    !Array.isArray((parsed as Record<string, unknown>).subTasks)
+  ) {
+    throw new Error("Multi-repo decomposition returned invalid shape — missing subTasks array");
+  }
+
+  const raw = parsed as { subTasks: unknown[]; sequencingNotes?: unknown };
+
+  const subTasks: MultiRepoSubTask[] = raw.subTasks.map((item: unknown, idx: number) => {
+    const t = item as Record<string, unknown>;
+    if (typeof t.title !== "string" || typeof t.description !== "string" || typeof t.repo !== "string") {
+      throw new Error(`Sub-task at index ${idx} missing required string fields (title, description, repo)`);
+    }
+    return {
+      title: t.title,
+      description: t.description,
+      repo: t.repo,
+      fileImpactList: Array.isArray(t.fileImpactList)
+        ? (t.fileImpactList as unknown[]).filter((f): f is string => typeof f === "string")
+        : [],
+      dependsOn: Array.isArray(t.dependsOn)
+        ? (t.dependsOn as unknown[]).filter((d): d is number => typeof d === "number")
+        : [],
+      acceptanceCriteria: Array.isArray(t.acceptanceCriteria)
+        ? (t.acceptanceCriteria as unknown[]).filter((c): c is string => typeof c === "string")
+        : [],
+    };
+  });
+
+  return {
+    parentTaskDescription: taskDescription,
+    subTasks,
+    sequencingNotes: typeof raw.sequencingNotes === "string" ? raw.sequencingNotes : "",
+  };
 }

@@ -183,6 +183,8 @@ export interface LifecycleManagerDeps {
   sessionManager: SessionManager;
   /** When set, only poll sessions belonging to this project. */
   projectId?: string;
+  /** Optional dependency tracker for cross-repo sequencing */
+  dependencyTracker?: { isBlocked(issueId: string): boolean };
 }
 
 /** Track attempt counts for reactions per session. */
@@ -193,7 +195,7 @@ interface ReactionTracker {
 
 /** Create a LifecycleManager instance. */
 export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleManager {
-  const { config, registry, sessionManager, projectId: scopedProjectId } = deps;
+  const { config, registry, sessionManager, projectId: scopedProjectId, dependencyTracker } = deps;
   const observer = createProjectObserver(config, "lifecycle-manager");
 
   const states = new Map<SessionId, SessionStatus>();
@@ -354,6 +356,14 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
   async function determineStatus(session: Session): Promise<SessionStatus> {
     const project = config.projects[session.projectId];
     if (!project) return session.status;
+
+    // Check if session's issue is blocked by dependencies (cross-repo sequencing)
+    if (dependencyTracker && session.metadata["issueId"]) {
+      const issueId = session.metadata["issueId"];
+      if (dependencyTracker.isBlocked(issueId)) {
+        return session.status; // Keep current status, don't progress
+      }
+    }
 
     const agentName = resolveAgentSelection({
       role: resolveSessionRole(

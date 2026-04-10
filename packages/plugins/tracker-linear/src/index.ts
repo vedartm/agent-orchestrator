@@ -13,6 +13,8 @@ import type {
   PluginModule,
   Tracker,
   Issue,
+  IssueRelation,
+  IssueComment,
   IssueFilters,
   IssueUpdate,
   CreateIssueInput,
@@ -229,6 +231,15 @@ interface LinearIssueNode {
   team: {
     key: string;
   };
+  parent?: {
+    identifier: string;
+  } | null;
+  relations?: {
+    nodes: Array<{
+      type: string;
+      relatedIssue: { identifier: string };
+    }>;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -249,6 +260,29 @@ function mapLinearState(stateType: string): Issue["state"] {
   }
 }
 
+function mapLinearRelations(node: LinearIssueNode): IssueRelation[] | undefined {
+  if (!node.relations?.nodes?.length) return undefined;
+  return node.relations.nodes.map((r) => ({
+    type: r.type.toLowerCase() as IssueRelation["type"],
+    issueId: r.relatedIssue.identifier,
+  }));
+}
+
+function mapIssueNode(node: LinearIssueNode): Issue {
+  return {
+    id: node.identifier,
+    title: node.title,
+    description: node.description ?? "",
+    url: node.url,
+    state: mapLinearState(node.state.type),
+    labels: node.labels.nodes.map((l) => l.name),
+    assignee: node.assignee?.displayName ?? node.assignee?.name,
+    priority: node.priority,
+    parentId: node.parent?.identifier,
+    relations: mapLinearRelations(node),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Issue fields fragment
 // ---------------------------------------------------------------------------
@@ -264,6 +298,8 @@ const ISSUE_FIELDS = `
   labels { nodes { name } }
   assignee { name displayName }
   team { key }
+  parent { identifier }
+  relations { nodes { type relatedIssue { identifier } } }
 `;
 
 // ---------------------------------------------------------------------------
@@ -284,17 +320,7 @@ function createLinearTracker(query: GraphQLTransport): Tracker {
         { id: identifier },
       );
 
-      const node = data.issue;
-      return {
-        id: node.identifier,
-        title: node.title,
-        description: node.description ?? "",
-        url: node.url,
-        state: mapLinearState(node.state.type),
-        labels: node.labels.nodes.map((l) => l.name),
-        assignee: node.assignee?.displayName ?? node.assignee?.name,
-        priority: node.priority,
-      };
+      return mapIssueNode(data.issue);
     },
 
     async isCompleted(identifier: string, _project: ProjectConfig): Promise<boolean> {
@@ -417,16 +443,7 @@ function createLinearTracker(query: GraphQLTransport): Tracker {
         variables,
       );
 
-      return data.issues.nodes.map((node) => ({
-        id: node.identifier,
-        title: node.title,
-        description: node.description ?? "",
-        url: node.url,
-        state: mapLinearState(node.state.type),
-        labels: node.labels.nodes.map((l) => l.name),
-        assignee: node.assignee?.displayName ?? node.assignee?.name,
-        priority: node.priority,
-      }));
+      return data.issues.nodes.map(mapIssueNode);
     },
 
     async updateIssue(
@@ -557,6 +574,34 @@ function createLinearTracker(query: GraphQLTransport): Tracker {
         );
       }
 
+      // Handle removeLabels (subtract from existing)
+      if (update.removeLabels && update.removeLabels.length > 0) {
+        const existingData2 = await query<{
+          issue: { labels: { nodes: Array<{ id: string; name: string }> } };
+        }>(
+          `query($id: String!) {
+            issue(id: $id) {
+              labels { nodes { id name } }
+            }
+          }`,
+          { id: issueUuid },
+        );
+
+        const removeSet = new Set(update.removeLabels);
+        const remainingIds = existingData2.issue.labels.nodes
+          .filter((l) => !removeSet.has(l.name))
+          .map((l) => l.id);
+
+        await query(
+          `mutation($id: String!, $labelIds: [String!]!) {
+            issueUpdate(id: $id, input: { labelIds: $labelIds }) {
+              success
+            }
+          }`,
+          { id: issueUuid, labelIds: remainingIds },
+        );
+      }
+
       // Handle comment
       if (update.comment) {
         await query(
@@ -586,18 +631,28 @@ function createLinearTracker(query: GraphQLTransport): Tracker {
         variables["priority"] = input.priority;
       }
 
+      // Resolve parent issue UUID if provided
+      if (input.parentIssueId) {
+        const parentData = await query<{ issue: { id: string } }>(
+          `query($id: String!) { issue(id: $id) { id } }`,
+          { id: input.parentIssueId },
+        );
+        variables["parentId"] = parentData.issue.id;
+      }
+
       const data = await query<{
         issueCreate: {
           success: boolean;
           issue: LinearIssueNode;
         };
       }>(
-        `mutation($title: String!, $description: String!, $teamId: String!, $priority: Int) {
+        `mutation($title: String!, $description: String!, $teamId: String!, $priority: Int, $parentId: String) {
           issueCreate(input: {
             title: $title,
             description: $description,
             teamId: $teamId,
-            priority: $priority
+            priority: $priority,
+            parentId: $parentId
           }) {
             success
             issue {
@@ -609,16 +664,7 @@ function createLinearTracker(query: GraphQLTransport): Tracker {
       );
 
       const node = data.issueCreate.issue;
-      const issue: Issue = {
-        id: node.identifier,
-        title: node.title,
-        description: node.description ?? "",
-        url: node.url,
-        state: mapLinearState(node.state.type),
-        labels: node.labels.nodes.map((l) => l.name),
-        assignee: node.assignee?.displayName ?? node.assignee?.name,
-        priority: node.priority,
-      };
+      const issue: Issue = mapIssueNode(node);
 
       // Assign after creation (Linear's issueCreate uses assigneeId, not display name)
       if (input.assignee) {
@@ -695,6 +741,81 @@ function createLinearTracker(query: GraphQLTransport): Tracker {
       }
 
       return issue;
+    },
+
+    async addIssueRelation(
+      sourceId: string,
+      targetId: string,
+      type: "blocks" | "blocked_by",
+      _project: ProjectConfig,
+    ): Promise<void> {
+      // Resolve both identifiers to UUIDs
+      const [sourceData, targetData] = await Promise.all([
+        query<{ issue: { id: string } }>(
+          `query($id: String!) { issue(id: $id) { id } }`,
+          { id: sourceId },
+        ),
+        query<{ issue: { id: string } }>(
+          `query($id: String!) { issue(id: $id) { id } }`,
+          { id: targetId },
+        ),
+      ]);
+
+      await query(
+        `mutation($issueId: String!, $relatedIssueId: String!, $type: String!) {
+          issueRelationCreate(input: {
+            issueId: $issueId,
+            relatedIssueId: $relatedIssueId,
+            type: $type
+          }) {
+            success
+          }
+        }`,
+        {
+          issueId: sourceData.issue.id,
+          relatedIssueId: targetData.issue.id,
+          type: type === "blocks" ? "blocks" : "blocked_by",
+        },
+      );
+    },
+
+    async getIssueComments(
+      identifier: string,
+      _project: ProjectConfig,
+    ): Promise<IssueComment[]> {
+      const data = await query<{
+        issue: {
+          comments: {
+            nodes: Array<{
+              id: string;
+              body: string;
+              user: { displayName: string; name: string } | null;
+              createdAt: string;
+            }>;
+          };
+        };
+      }>(
+        `query($id: String!) {
+          issue(id: $id) {
+            comments {
+              nodes {
+                id
+                body
+                user { displayName name }
+                createdAt
+              }
+            }
+          }
+        }`,
+        { id: identifier },
+      );
+
+      return data.issue.comments.nodes.map((c) => ({
+        id: c.id,
+        body: c.body,
+        author: c.user?.displayName ?? c.user?.name,
+        createdAt: c.createdAt,
+      }));
     },
   };
 }

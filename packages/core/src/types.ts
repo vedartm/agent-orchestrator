@@ -236,6 +236,10 @@ export interface SessionSpawnConfig {
   lineage?: string[];
   /** Decomposition context — sibling task descriptions (passed to prompt builder) */
   siblings?: string[];
+  /** Reuse an existing workspace path instead of creating a new one */
+  workspacePath?: string;
+  /** Override the model for this session (e.g. "opus", "sonnet") */
+  model?: string;
 }
 
 /** Config for creating an orchestrator session */
@@ -534,6 +538,17 @@ export interface Tracker {
 
   /** Optional: create a new issue */
   createIssue?(input: CreateIssueInput, project: ProjectConfig): Promise<Issue>;
+
+  /** Optional: add a relation between two issues */
+  addIssueRelation?(
+    sourceId: string,
+    targetId: string,
+    type: "blocks" | "blocked_by",
+    project: ProjectConfig,
+  ): Promise<void>;
+
+  /** Optional: get comments on an issue */
+  getIssueComments?(identifier: string, project: ProjectConfig): Promise<IssueComment[]>;
 }
 
 export interface Issue {
@@ -545,6 +560,13 @@ export interface Issue {
   labels: string[];
   assignee?: string;
   priority?: number;
+  parentId?: string;
+  relations?: IssueRelation[];
+}
+
+export interface IssueRelation {
+  type: "blocks" | "blocked_by" | "related" | "duplicate";
+  issueId: string;
 }
 
 export interface IssueFilters {
@@ -568,6 +590,73 @@ export interface CreateIssueInput {
   labels?: string[];
   assignee?: string;
   priority?: number;
+  parentIssueId?: string;
+}
+
+export interface IssueComment {
+  id: string;
+  body: string;
+  author?: string;
+  createdAt: string;
+}
+
+// =============================================================================
+// DOSHI ORCHESTRATION — Multi-repo agent system
+// =============================================================================
+
+/** Worker execution phase within the Plan/Execute/Test pipeline */
+export type WorkerPhase = "plan" | "execute" | "test" | "pr" | "review" | "done" | "parked";
+
+/** Metadata stored on sub-tickets created by the orchestrator */
+export interface SubTicketMeta {
+  parentIssueId: string;
+  repo: string;
+  fileImpactList: string[];
+  blockedBy: string[];
+  retryCount: number;
+  lastFailureReason: string;
+  workerPhase: WorkerPhase;
+}
+
+/** A sub-task scoped to a single repo, output of multi-repo decomposition */
+export interface MultiRepoSubTask {
+  title: string;
+  /** Self-contained description including API contracts, type defs, acceptance criteria */
+  description: string;
+  repo: string;
+  fileImpactList: string[];
+  /** Indices of other sub-tasks this depends on */
+  dependsOn: number[];
+  acceptanceCriteria: string[];
+}
+
+/** Result of multi-repo ticket decomposition */
+export interface MultiRepoDecompositionPlan {
+  parentTaskDescription: string;
+  subTasks: MultiRepoSubTask[];
+  sequencingNotes: string;
+}
+
+/** Cross-repo sequencing rule */
+export interface SequencingRule {
+  upstream: string;
+  downstream: string[];
+  postMergeCommands?: string[];
+}
+
+/** Repo mapping for orchestrator loop */
+export interface RepoConfig {
+  projectId: string;
+}
+
+/** Orchestrator loop configuration */
+export interface OrchestratorLoopConfig {
+  enabled: boolean;
+  pollIntervalMs: number;
+  decompositionModel: string;
+  clarificationModel?: string;
+  repos: Record<string, RepoConfig>;
+  sequencingRules: SequencingRule[];
 }
 
 // =============================================================================
@@ -1041,6 +1130,9 @@ export interface OrchestratorConfig {
 
   /** Default reaction configs */
   reactions: Record<string, ReactionConfig>;
+
+  /** Multi-repo orchestrator loop configuration */
+  orchestratorLoop?: OrchestratorLoopConfig;
 
   /**
    * Internal: External plugin entries collected from inline tracker/scm/notifier configs.

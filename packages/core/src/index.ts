@@ -154,6 +154,29 @@ export type {
   PersistedFeedbackReport,
 } from "./feedback-tools.js";
 
+// Orchestrator loop — multi-repo ticket decomposition + worker dispatch
+export { createOrchestratorLoop } from "./orchestrator-loop.js";
+export type { OrchestratorLoop, OrchestratorLoopDeps } from "./orchestrator-loop.js";
+
+// Multi-repo decomposer extension
+export { decomposeMultiRepo } from "./decomposer.js";
+export type { MultiRepoDecomposeConfig } from "./decomposer.js";
+
+// File impact prediction
+export { predictFileImpact } from "./file-impact.js";
+
+// Dependency tracker — cross-repo task sequencing DAG
+export { createDependencyTracker } from "./dependency-tracker.js";
+export type { DependencyTracker } from "./dependency-tracker.js";
+
+// Worker pipeline — three-phase Plan/Execute/Test agent loop
+export { runWorkerPipeline, waitForSession } from "./worker-pipeline.js";
+export type {
+  WorkerPipelineDeps,
+  WorkerPipelineConfig,
+  WorkerPipelineResult,
+} from "./worker-pipeline.js";
+
 // Path utilities — hash-based directory structure
 export {
   generateConfigHash,

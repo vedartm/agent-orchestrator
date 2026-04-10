@@ -1007,8 +1007,11 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     }
 
     // Create workspace (if workspace plugin is available)
+    // If spawnConfig.workspacePath is set, reuse it (e.g. multi-phase worker pipeline)
     let workspacePath = project.path;
-    if (plugins.workspace) {
+    if (spawnConfig.workspacePath) {
+      workspacePath = spawnConfig.workspacePath;
+    } else if (plugins.workspace) {
       try {
         const wsInfo = await plugins.workspace.create({
           projectId: spawnConfig.projectId,
@@ -1082,12 +1085,13 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         agentConfig: {
           ...selection.agentConfig,
           ...(reusedOpenCodeSessionId ? { opencodeSessionId: reusedOpenCodeSessionId } : {}),
+          ...(spawnConfig.model ? { model: spawnConfig.model } : {}),
         },
       },
       issueId: spawnConfig.issueId,
       prompt: composedPrompt,
       permissions: selection.permissions,
-      model: selection.model,
+      model: spawnConfig.model ?? selection.model,
       subagent: spawnConfig.subagent ?? selection.subagent,
     };
 

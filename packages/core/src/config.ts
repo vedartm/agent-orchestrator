@@ -243,6 +243,25 @@ const InstalledPluginConfigSchema = z
     }
   });
 
+const RepoConfigSchema = z.object({
+  projectId: z.string(),
+});
+
+const SequencingRuleSchema = z.object({
+  upstream: z.string(),
+  downstream: z.array(z.string()).min(1),
+  postMergeCommands: z.array(z.string()).optional(),
+});
+
+const OrchestratorLoopConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  pollIntervalMs: z.number().positive().default(600_000),
+  decompositionModel: z.string().default("claude-opus-4"),
+  clarificationModel: z.string().default("claude-sonnet-4-20250514"),
+  repos: z.record(RepoConfigSchema).default({}),
+  sequencingRules: z.array(SequencingRuleSchema).default([]),
+});
+
 const OrchestratorConfigSchema = z.object({
   port: z.number().default(3000),
   terminalPort: z.number().optional(),
@@ -257,6 +276,7 @@ const OrchestratorConfigSchema = z.object({
   notifiers: z.record(NotifierConfigSchema).default({}),
   notificationRouting: z.record(z.array(z.string())).default({}),
   reactions: z.record(ReactionConfigSchema).default({}),
+  orchestratorLoop: OrchestratorLoopConfigSchema.optional(),
 });
 
 // =============================================================================
