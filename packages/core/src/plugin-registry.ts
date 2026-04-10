@@ -493,8 +493,8 @@ export function createPluginRegistry(): PluginRegistry {
 
           // Check if this plugin was auto-added from inline tracker/scm/notifier config.
           // Multiple projects may share the same external plugin, so find ALL matching entries.
-          // We validate and update configs FIRST, before extracting plugin config, because
-          // extractPluginConfig looks up by manifest.name which may differ from the temp name.
+          // We validate and update configs FIRST so notifier alias registration uses
+          // the final manifest.name instead of any temporary inferred plugin name.
           const matchingEntries = findAllExternalPluginEntries(plugin, externalIndex);
           for (const externalEntry of matchingEntries) {
             try {
