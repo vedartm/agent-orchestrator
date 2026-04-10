@@ -1096,7 +1096,7 @@ describe("stop command", () => {
 
   it("calls killProcessTree with numeric PID when findPidByPort returns a PID", async () => {
     mockConfigRef.current = makeConfig({ "my-app": makeProject() });
-    mockSessionManager.get.mockResolvedValue(null);
+    mockSessionManager.list.mockResolvedValue([]);
     mockFindPidByPort.mockResolvedValue("1234");
 
     await program.parseAsync(["node", "test", "stop"]);
@@ -1107,7 +1107,7 @@ describe("stop command", () => {
 
   it("does not call killProcessTree when findPidByPort returns null", async () => {
     mockConfigRef.current = makeConfig({ "my-app": makeProject() });
-    mockSessionManager.get.mockResolvedValue(null);
+    mockSessionManager.list.mockResolvedValue([]);
     mockFindPidByPort.mockResolvedValue(null);
 
     await program.parseAsync(["node", "test", "stop"]);
